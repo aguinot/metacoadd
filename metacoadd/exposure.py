@@ -5,6 +5,7 @@ import galsim
 from astropy.io import fits
 
 from tqdm import tqdm
+import copy
 
 
 DEFAULT_INTERP_CONFIG = {
@@ -15,17 +16,10 @@ DEFAULT_INTERP_CONFIG = {
         'calculate_maxk': True,
         'calculate_stepk': True,
     },
-    'weight': {
+    'nearest': {
         'pad_factor': 4,
-        'x_interpolant': 'linear',
-        'k_interpolant': 'linear',
-        'calculate_maxk': True,
-        'calculate_stepk': True,
-    },
-    'flag': {
-        'pad_factor': 4,
-        'x_interpolant': 'linear',
-        'k_interpolant': 'linear',
+        'x_interpolant': 'nearest',
+        'k_interpolant': 'nearest',
         'calculate_maxk': True,
         'calculate_stepk': True,
     },
@@ -38,6 +32,9 @@ class Exposure():
     """Exposure
 
     Structure to store all the informations for an exposure.
+
+    TODO: Add consistancy check if several images are provided:
+        Same size. Oter?
 
     Args:
         image (numpy.ndarray or galsim.Image): Science image.
@@ -52,12 +49,10 @@ class Exposure():
             None.
         noise (numpy.ndarray or galsim.Image, optional): Noise image. Defaults
             to None.
-        interp_config (dict, optional): Set of parameters for the
-            interpolation. If `None` use the default configuration. Defaults
-            to None.
-        gsparams (galsim.GSParams, optional): set the gsparams for the
-            interpolation. If `None` use the default configuration. Defaults
-            to None.
+        set_meta (bool): If `True` will set the metadata information during the 
+            initialization. Should always be `True`. This is mainly to be able
+            to probagate those information when a resizing is apply through
+            `__getitem__`. Defaults to True.
     """
 
     def __init__(
@@ -68,8 +63,7 @@ class Exposure():
         weight=None,
         flag=None,
         noise=None,
-        interp_config=None,
-        gsparams=None,
+        set_meta=True,
     ):
 
         self._exposure_images = []
@@ -100,27 +94,14 @@ class Exposure():
 
         self._init_input_image(image, 'image')
         if weight is not None:
-            self._init_input_image(image, 'weight')
+            self._init_input_image(weight, 'weight')
         if flag is not None:
-            self._init_input_image(image, 'flag')
+            self._init_input_image(flag, 'flag')
         if noise is not None:
-            self._init_input_image(image, 'noise')
+            self._init_input_image(noise, 'noise')
 
-        if interp_config is None:
-            self.interp_config = DEFAULT_INTERP_CONFIG
-        else:
-            if isinstance(interp_config, dict):
-                self.interp_config = interp_config
-            else:
-                raise ValueError('interp_config must be a dict.')
-
-        if gsparams is None:
-            self._gsparams = DEFAULT_GSPARAMS
-        else:
-            if isinstance(interp_config, galsim.GSParams):
-                self._gsparams = gsparams
-            else:
-                raise ValueError('gsparams must be a galsim.GSParams.')
+        if set_meta:
+            self._set_meta()
 
     def __getitem__(self, bounds):
         """
@@ -134,53 +115,16 @@ class Exposure():
         """
         if not isinstance(bounds, galsim.BoundsI):
             raise TypeError('bounds must be a galsim.BoundsI.')
-        new_exposure = {}
+        new_exp_dict = {}
         for image_kind in self._exposure_images:
-            new_exposure[image_kind] = getattr(self, image_kind)[bounds]
+            new_exp_dict[image_kind] = getattr(self, image_kind)[bounds]
         # Here it is safe to request 'image' since it is a requiered input.
-        new_exposure['wcs'] = new_exposure['image'].wcs
+        new_exp_dict['wcs'] = new_exp_dict['image'].wcs
 
-        return Exposure(**new_exposure)
+        new_exposure = Exposure(set_meta=False, **new_exp_dict)
+        new_exposure._meta = copy.deepcopy(self._meta)
 
-    def get_all_interp_images(
-        self,
-        weight_interp_method='linear',
-        flag_interp_method='linear',
-    ):
-        """
-        Get all interpolated images.
-
-        Args:
-            flag_interp_method (str, optional): Method to use to interpolate
-                flag image. Defaults to 'linear'.
-            weight_interp_method (str, optional): Method to use to interpolate
-                weight image. Defaults to 'linear'.
-        """
-
-        print("Interpolate image...")
-        self.image_interp = self._do_interp(self.image)
-
-        if hasattr(self, 'weight'):
-            print("Interpolate weight...")
-            self.weight_interp = self._do_interp(
-                self.weight,
-                x_interpolant=weight_interp_method,
-                k_interpolant=weight_interp_method,
-            )
-
-        if hasattr(self, 'flag'):
-            print("Interpolate flag...")
-            self.flag_interp = self._do_interp(
-                self.flag,
-                x_interpolant=flag_interp_method,
-                k_interpolant=flag_interp_method,
-            )
-
-        if hasattr(self, 'noise'):
-            print("Interpolate noise...")
-            self.weight_interp = self._do_interp(
-                self.noise,
-            )
+        return new_exposure
 
     def _set_wcs(self):
         """Set WCS
@@ -246,32 +190,15 @@ class Exposure():
         self._exposure_images.append(image_kind)
         setattr(self, image_kind, galsim_image)
 
-    def _do_interp(self, image, **kwargs):
-        """Run interpolation
-
-        Interpolate an image using galsim and return a
-        `galsim.interpolatedimage.InterpolatedImage`. This method use the wcs
-        set in the initialization by default.
-
-        Args:
-            image (numpy.ndarray): Image to interpolate.
-
-        Returns:
-            galsim.interpolatedimage.InterpolatedImage: Interpolated image.
+    def _set_meta(self):
+        """
+        Set metadata information.
+        At moment, save only the image bounds.
         """
 
-        interp_config = self.interp_config.copy()
-        interp_config.update(kwargs)
-
-        galsim_image = galsim.Image(image, wcs=self.wcs, copy=True)
-        interp_image = galsim.InterpolatedImage(
-            galsim_image,
-            wcs=self.wcs,
-            gsparams=self._gsparams,
-            **interp_config,
-        )
-
-        return interp_image
+        self._meta = {
+            'image_bounds': self.image.bounds,
+        }
 
 
 class ExpList(list):
@@ -418,7 +345,7 @@ class CoaddImage():
         else:
             raise ValueError(
                 'Either image_coadd_size or world_coadd_size has to be '
-                'provided'
+                'provided.'
             )
 
         # Set galsim bounds and dervie center for the coadd
@@ -429,19 +356,21 @@ class CoaddImage():
         if isinstance(scale, float):
             self._set_coadd_wcs(scale)
         else:
-            TypeError('scale has to be a float')
+            TypeError('scale has to be a float.')
 
         # Resize the exposures if requested
+        self._relax_resize = None
         if resize_exposure:
             if relax_resize is None:
                 raise ValueError(
-                    'relax_resize has to be provided to resize exposure'
+                    'relax_resize has to be provided to resize exposure.'
                 )
             if isinstance(relax_resize, float):
                 if relax_resize > 0. and relax_resize <= 1.:
                     self.resize_explist(relax_resize)
+                    self._relax_resize = relax_resize
                 else:
-                    raise ValueError('relax_resize has to be in ]0, 1]')
+                    raise ValueError('relax_resize has to be in ]0, 1].')
             else:
                 raise TypeError('relax_resize has to be a float.')
         else:
@@ -519,6 +448,7 @@ class CoaddImage():
             world_origin=self.world_coadd_center,
             units=galsim.arcsec,
         )
+        self.coadd_pixel_scale = scale
 
     def resize_explist(self, relax_resize):
         """Resize exposure list
@@ -532,7 +462,7 @@ class CoaddImage():
             resized_exp = self._resize_exp(exp, relax_resize)
             if resized_exp is not None:
                 # Might be weird to set this here, but this function is called
-                # automatically and will need this parameter later.
+                # automatically and we will need this parameter later.
                 # NOTE: Maybe find a better way to do this..
                 resized_exp._interp = False
                 resized_explist.append(resized_exp)
@@ -550,6 +480,8 @@ class CoaddImage():
         Args:
             exp (metacoadd.Exposure): Exposure to resize.
             relax_resize (float): Resize relax parameter.
+        Returns:
+            TODO
         """
 
         exp_bounds = exp.image.bounds
@@ -614,39 +546,31 @@ class CoaddImage():
         Get all interpolated images.
 
         Args:
-            flag_interp_method (str, optional): Method to use to interpolate
-                flag image. Defaults to 'linear'.
-            weight_interp_method (str, optional): Method to use to interpolate
-                weight image. Defaults to 'linear'.
             kwargs: Any additionnal keywords arguments for
                 galsim.InterpolatedImage.
         """
 
-        _image_kinds = ['image', 'weight', 'flag', 'noise']
         for exp in tqdm(self.explist, total=len(self.explist)):
             # ggalsim.InterpolatedImage works with local WCS so we force it to
             # take the one at the center of the coadd for better accuracy.
             # This probably do not make a difference but it is more
             # "elegant" to do it :)
             wcs = exp.wcs.local(world_pos=self.world_coadd_center)
-            for image_kind in _image_kinds:
-                if not hasattr(exp, image_kind):
-                    continue
+            for image_kind in exp._exposure_images:
 
-                if image_kind == 'weight':
-                    interp_method = 'weight'
-                elif image_kind == 'flag':
-                    interp_method = 'flag'
+                if image_kind == 'weight' or image_kind == 'flag':
+                    interp_method = 'nearest'
                 else:
                     interp_method = 'classic'
 
                 print(f"Interpolate {image_kind}...")
-                exp.image_interp = self._do_interp(
+                interpolated = self._do_interp(
                     getattr(exp, image_kind),
                     wcs,
                     interp_method,
                     **kargs,
                     )
+                setattr(exp, image_kind+'_interp', interpolated)
             exp._interp = True
 
     def _do_interp(self, image, wcs, interp_method, **kwargs):
@@ -661,7 +585,7 @@ class CoaddImage():
             wcs (galsim.BaseWCS): WCS of the Image.
             interp_method (str): Select which interpolation to use. Hard coded.
                 Must be in ['classic', 'weight', 'flag']. Will set the
-                interpolation to 'linear' for the weight and flag images.
+                interpolation to 'nearest' for the weight and flag images.
             kwargs: Any additionnal keywords arguments for
                 galsim.InterpolatedImage.
 
@@ -680,3 +604,22 @@ class CoaddImage():
         )
 
         return interp_image
+
+    def setup_coadd(self):
+        """
+        Setup the coadd image and weight.
+        """
+
+        self.image = galsim.Image(
+            bounds=self.coadd_bounds,
+            wcs=self.coadd_wcs,
+        )
+        # Initially the image is fill with zeros to avoid issues in case the
+        # exposures does not fill the entire footprint.
+        self.image.fill(0)
+
+        self.weight = galsim.Image(
+            bounds=self.coadd_bounds,
+            wcs=self.coadd_wcs,
+        )
+        self.weight.fill(0)
