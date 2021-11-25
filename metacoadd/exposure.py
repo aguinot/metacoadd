@@ -49,7 +49,7 @@ class Exposure():
             None.
         noise (numpy.ndarray or galsim.Image, optional): Noise image. Defaults
             to None.
-        set_meta (bool): If `True` will set the metadata information during the 
+        set_meta (bool): If `True` will set the metadata information during the
             initialization. Should always be `True`. This is mainly to be able
             to probagate those information when a resizing is apply through
             `__getitem__`. Defaults to True.
