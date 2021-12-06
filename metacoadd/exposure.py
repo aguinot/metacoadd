@@ -4,7 +4,6 @@ import numpy as np
 import galsim
 from astropy.io import fits
 
-from tqdm import tqdm
 import copy
 
 
@@ -255,9 +254,9 @@ class CoaddImage():
             be square.  Otherwise, has to be a `list` or `tuple` of `int`.
             Either `image_coadd_size` or `world_coadd_size` as to be provided.
         world_coadd_size (tuple, list or galsim.angle.Angle): Size of the coadd
-            in world coordinates, in arcmin. If a `galsim.angle.Angle` is 
-            provided, will assume the coadd to be square. Otherwise, has to be 
-            a `list` or `tuple` of `galsim.angle.Angle`. Either 
+            in world coordinates, in arcmin. If a `galsim.angle.Angle` is
+            provided, will assume the coadd to be square. Otherwise, has to be
+            a `list` or `tuple` of `galsim.angle.Angle`. Either
             `image_coadd_size` or `world_coadd_size` as to be provided.
         interp_config (dict, optional): Set of parameters for the
             interpolation. If `None` use the default configuration. Defaults to
@@ -481,8 +480,8 @@ class CoaddImage():
             exp (metacoadd.Exposure): Exposure to resize.
             relax_resize (float): Resize relax parameter.
         Returns:
-            metacoadd.Exposure or `None`: Return the resized exposure or None if
-                the exposure is not in the coadd footprint.
+            metacoadd.Exposure or `None`: Return the resized exposure or None
+                if the exposure is not in the coadd footprint.
         """
 
         exp_bounds = exp.image.bounds
