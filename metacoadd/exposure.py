@@ -34,7 +34,7 @@ class Exposure():
     Structure to store all the informations for an exposure.
 
     TODO: Add consistancy check if several images are provided:
-        Same size. Oter?
+        Same size. Other?
 
     Args:
         image (numpy.ndarray or galsim.Image): Science image.
@@ -255,10 +255,10 @@ class CoaddImage():
             be square.  Otherwise, has to be a `list` or `tuple` of `int`.
             Either `image_coadd_size` or `world_coadd_size` as to be provided.
         world_coadd_size (tuple, list or galsim.angle.Angle): Size of the coadd
-            in world coordinates. If a `galsim.angle.Angle` is provided, will
-            assume the coadd to be square. Otherwise, has to be a `list` or
-            `tuple` of `galsim.angle.Angle`. Either `image_coadd_size` or
-            `world_coadd_size` as to be provided.
+            in world coordinates, in arcmin. If a `galsim.angle.Angle` is 
+            provided, will assume the coadd to be square. Otherwise, has to be 
+            a `list` or `tuple` of `galsim.angle.Angle`. Either 
+            `image_coadd_size` or `world_coadd_size` as to be provided.
         interp_config (dict, optional): Set of parameters for the
             interpolation. If `None` use the default configuration. Defaults to
             None.
@@ -404,8 +404,8 @@ class CoaddImage():
 
         from math import ceil
 
-        size_x = ceil((world_coadd_size[0]/galsim.arcsec)/scale)
-        size_y = ceil((world_coadd_size[1]/galsim.arcsec)/scale)
+        size_x = ceil((world_coadd_size[0]/galsim.arcmin)/scale)
+        size_y = ceil((world_coadd_size[1]/galsim.arcmin)/scale)
 
         self.image_coadd_size = [size_x, size_y]
 
@@ -481,7 +481,8 @@ class CoaddImage():
             exp (metacoadd.Exposure): Exposure to resize.
             relax_resize (float): Resize relax parameter.
         Returns:
-            TODO
+            metacoadd.Exposure or `None`: Return the resized exposure or None if
+                the exposure is not in the coadd footprint.
         """
 
         exp_bounds = exp.image.bounds
@@ -498,8 +499,8 @@ class CoaddImage():
             ).round()
         except TypeError:
             world_pos = galsim.PositionD(
-                self.world_coadd_center.ra,
-                self.world_coadd_center.dec,
+                self.world_coadd_center.ra.deg,
+                self.world_coadd_center.dec.deg,
                 )
             image_coadd_center_on_exp = exp.image.wcs.toImage(
                 world_pos
@@ -550,12 +551,15 @@ class CoaddImage():
                 galsim.InterpolatedImage.
         """
 
-        for exp in tqdm(self.explist, total=len(self.explist)):
+        for exp in self.explist:
             # ggalsim.InterpolatedImage works with local WCS so we force it to
             # take the one at the center of the coadd for better accuracy.
             # This probably do not make a difference but it is more
             # "elegant" to do it :)
-            wcs = exp.wcs.local(world_pos=self.world_coadd_center)
+            if exp.wcs.isLocal():
+                wcs = exp.wcs
+            else:
+                wcs = exp.wcs.local(world_pos=self.world_coadd_center)
             for image_kind in exp._exposure_images:
 
                 if image_kind == 'weight' or image_kind == 'flag':
@@ -563,7 +567,8 @@ class CoaddImage():
                 else:
                     interp_method = 'classic'
 
-                print(f"Interpolate {image_kind}...")
+                # NOTE: Add verbose option
+                # print(f"Interpolate {image_kind}...")
                 interpolated = self._do_interp(
                     getattr(exp, image_kind),
                     wcs,
@@ -617,6 +622,14 @@ class CoaddImage():
         # Initially the image is fill with zeros to avoid issues in case the
         # exposures does not fill the entire footprint.
         self.image.fill(0)
+
+        self.noise = galsim.Image(
+            bounds=self.coadd_bounds,
+            wcs=self.coadd_wcs,
+        )
+        # Initially the noise is fill with zeros to avoid issues in case the
+        # exposures does not fill the entire footprint.
+        self.noise.fill(0)
 
         self.weight = galsim.Image(
             bounds=self.coadd_bounds,
