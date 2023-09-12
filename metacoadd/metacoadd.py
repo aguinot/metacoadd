@@ -155,7 +155,9 @@ class SimpleCoadd:
             if coadd_method in _available_method:
                 self._coadd_method = coadd_method
             else:
-                raise ValueError(f"coadd_method must be in {_available_method}.")
+                raise ValueError(
+                    f"coadd_method must be in {_available_method}."
+                )
         else:
             raise TypeError("coadd_method must be of type str.")
 
@@ -189,7 +191,9 @@ class SimpleCoadd:
                     # NOTE: check for the presence of a 'weight' for the
                     # weighted average coadding
                     self.coaddimage.image[b] += (
-                        all_stamp["image"] * all_stamp["weight"] * all_stamp["border"]
+                        all_stamp["image"]
+                        * all_stamp["weight"]
+                        * all_stamp["border"]
                     )
                     if "noise" in list(all_stamp.keys()):
                         self.coaddimage.noise[b] += (
@@ -197,13 +201,15 @@ class SimpleCoadd:
                             * all_stamp["weight"]
                             * all_stamp["border"]
                         )
-                    self.coaddimage.weight += all_stamp["weight"] * all_stamp["border"]
+                    self.coaddimage.weight += (
+                        all_stamp["weight"]
+                        * all_stamp["border"]
+                    )
             stamps.append(all_stamp)
         self.stamps = stamps
         non_zero_weights = np.where(self.coaddimage.weight.array != 0)
-        self.coaddimage.image.array[non_zero_weights] /= self.coaddimage.weight.array[
-            non_zero_weights
-        ]
+        self.coaddimage.image.array[non_zero_weights] /= \
+            self.coaddimage.weight.array[non_zero_weights]
         if "noise" in list(all_stamp.keys()):
             self.coaddimage.noise.array[
                 non_zero_weights
@@ -317,10 +323,8 @@ class MetaCoadd(SimpleCoadd):
 
         self.psf_coaddimage = psfs
 
-        # self._process_psf(psfs)
         self.step = step
         self.types = types
-        # self._get_reconv_psf(self.psf_coaddimage.explist)
 
         self._do_border = True
 
@@ -423,14 +427,11 @@ class MetaCoadd(SimpleCoadd):
                     self.coaddimage.image[type].array,
                     dtype=np.int32,
                 ),
-                # bmask=all_stamp["border"].array.astype(np.int32),
                 ormask=np.zeros_like(
                     self.coaddimage.image[type].array,
                     dtype=np.int32,
                 ),
-                # ormask=all_stamp["border"].array.astype(np.int32),
                 noise=self.coaddimage.noise[type].array,
-                # noise=self.coaddimage.explist[0].noise.array,
                 jacobian=img_jac,
                 psf=psf_obs,
             )
@@ -456,8 +457,7 @@ class MetaCoadd(SimpleCoadd):
             step=self.step,
             types=self.types,
             use_noise_image=True,
-            # psf='gauss',
-            psf=galsim.Gaussian(sigma=0.6, flux=1.0),
+            psf='gauss',
             rng=rng,
         )
 
@@ -671,9 +671,6 @@ class MetaCoadd(SimpleCoadd):
         """
 
         medsifier = self._do_detect(mbobs)
-        # if self._show:
-        #     import descwl_coadd.vis
-        #     descwl_coadd.vis.show_image(medsifier.seg)
         mbm = medsifier.get_multiband_meds()
         mbobs_list = mbm.get_mbobs_list()
 
@@ -694,7 +691,6 @@ class MetaCoadd(SimpleCoadd):
         res = fit_mbobs_list_wavg(
             mbobs_list=mbobs_list,
             fitter=self._fitter,
-            # nonshear_mbobs_list=nonshear_mbobs_list,
             bmask_flags=TEST_METADETECT_CONFIG.get("bmask_flags", 0),
         )
 
@@ -793,12 +789,6 @@ class MetaCoadd(SimpleCoadd):
                 bmask_region = TEST_METADETECT_CONFIG["mask_region"]
             else:
                 bmask_region = 1
-
-            # logger.debug(
-            #     'ormask|bmask region: %s|%s',
-            #     ormask_region,
-            #     bmask_region,
-            # )
 
             newres["ormask"] = _fill_in_mask_col(
                 mask_region=ormask_region,

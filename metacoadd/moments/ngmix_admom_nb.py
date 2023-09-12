@@ -70,10 +70,6 @@ def admom(confarray, wt, pixels, resarray):
         Irr = res["sums"][4] * finv
         T = Irr + Icc
 
-        # Irr = 0.5*(T - M1)
-        # Icc = 0.5*(T + M1)
-        # Irc = 0.5*M2
-
         if T <= 0.0:
             res["flags"] = ngmix.flags.NONPOS_SIZE
             break
@@ -81,22 +77,11 @@ def admom(confarray, wt, pixels, resarray):
         e1 = (Icc - Irr) / T
         e2 = 2 * Irc / T
 
-        # convergence_factor = get_converg(convergence_factor, Icc, Irc, Irr,
-        #                                  wt['icc'][0], wt['irc'][0], wt['irr'][0])
-
         if (
             (abs(e1 - e1old) < conf["etol"])
             and (abs(e2 - e2old) < conf["etol"])
             and (abs(T / Told - 1.0) < conf["Ttol"])
         ):
-            # if convergence_factor < conf["etol"]:
-
-            # res['pars'][0] = wt['row'][0]
-            # res['pars'][1] = wt['col'][0]
-            # res['pars'][2] = wt['icc'][0] - wt['irr'][0]
-            # res['pars'][3] = 2.0*wt['irc'][0]
-            # res['pars'][4] = wt['icc'][0] + wt['irr'][0]
-            # res['pars'][5] = 1.0
             res["pars"][0] = wt["row"][0]
             res["pars"][1] = wt["col"][0]
             res["pars"][2] = wt["icc"][0]

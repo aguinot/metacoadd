@@ -78,21 +78,27 @@ class Exposure:
 
         if header is not None:
             if wcs is not None:
-                raise ValueError("Either header or wcs has to be provided, not both.")
+                raise ValueError(
+                    "Either header or wcs has to be provided, not both."
+                )
             if isinstance(header, fits.header.Header):
                 self.header = header
                 # Set WCS
                 # We do that first because we need it for consistency checks.
                 self._set_wcs(header=header)
             else:
-                raise TypeError("header must be an astropy.io.fits.header.Header.")
+                raise TypeError(
+                    "header must be an astropy.io.fits.header.Header."
+                )
         elif wcs is not None:
             if isinstance(wcs, galsim.BaseWCS):
                 self._set_wcs(galsim_wcs=wcs)
             elif isinstance(wcs, WCS):
                 self._set_wcs(astropy_wcs=wcs)
             else:
-                raise TypeError(f"wcs must be a galsim.BaseWCS or {type(WCS)}.")
+                raise TypeError(
+                    f"wcs must be a galsim.BaseWCS or {type(WCS)}."
+                )
         else:
             raise ValueError("Either header or wcs has to be provided")
 
@@ -122,7 +128,9 @@ class Exposure:
             raise TypeError("bounds must be a galsim.BoundsI.")
         new_exp_dict = {}
         for image_kind in self._exposure_images:
-            new_exp_dict[image_kind] = copy.deepcopy(getattr(self, image_kind))[bounds]
+            new_exp_dict[image_kind] = copy.deepcopy(
+                getattr(self, image_kind)
+            )[bounds]
 
         # We need to update the WCS to match new origin
         # WARNING: only if the origin changes
@@ -351,7 +359,8 @@ class CoaddImage:
             self.world_coadd_center = world_coadd_center
         else:
             raise TypeError(
-                "world_coadd_center has to be a " "galsim.celestial.CelestialCoord"
+                "world_coadd_center has to be a "
+                "galsim.celestial.CelestialCoord"
             )
 
         if image_coadd_size is not None:
@@ -372,12 +381,16 @@ class CoaddImage:
             elif isinstance(image_coadd_size, int):
                 self.image_coadd_size = [image_coadd_size] * 2
             else:
-                raise TypeError("image_coadd_size has to be a list, tuple or int.")
+                raise TypeError(
+                    "image_coadd_size has to be a list, tuple or int."
+                )
         elif world_coadd_size is not None:
             if isinstance(world_coadd_size, list) or isinstance(
                 world_coadd_size, tuple
             ):
-                if all(isinstance(n, galsim.angle.Angle) for n in world_coadd_size):
+                if all(
+                    isinstance(n, galsim.angle.Angle) for n in world_coadd_size
+                ):
                     self._set_image_coadd_size(list(world_coadd_size), scale)
                 else:
                     raise TypeError(
@@ -387,11 +400,13 @@ class CoaddImage:
                 self._set_image_coadd_size([world_coadd_size] * 2, scale)
             else:
                 raise TypeError(
-                    "world_coadd_size has to be a list, tuple or " "galsim.angle.Angle."
+                    "world_coadd_size has to be a list, tuple or "
+                    "galsim.angle.Angle."
                 )
         else:
             raise ValueError(
-                "Either image_coadd_size or world_coadd_size has to be " "provided."
+                "Either image_coadd_size or world_coadd_size has to be "
+                "provided."
             )
 
         # Set galsim bounds and dervie center for the coadd
@@ -408,7 +423,9 @@ class CoaddImage:
         self._relax_resize = None
         if resize_exposure:
             if relax_resize is None:
-                raise ValueError("relax_resize has to be provided to resize exposure.")
+                raise ValueError(
+                    "relax_resize has to be provided to resize exposure."
+                )
             if isinstance(relax_resize, float):
                 if relax_resize > 0.0 and relax_resize <= 1.0:
                     self.resize_explist(relax_resize)
@@ -568,7 +585,9 @@ class CoaddImage:
         #       in the coadd footprint but it would have contribute for a few
         #       pixels (a line or a column maximum).
         try:
-            image_coadd_center_on_exp = exp.image.wcs.toImage(self.world_coadd_center)
+            image_coadd_center_on_exp = exp.image.wcs.toImage(
+                self.world_coadd_center
+            )
         except TypeError:
             world_pos = galsim.PositionD(
                 self.world_coadd_center.ra.deg,
@@ -627,13 +646,15 @@ class CoaddImage:
 
                 # NOTE: Add verbose option
                 # print(f"Interpolate {image_kind}...")
-                input_reproj = (getattr(exp, image_kind).array, exp.wcs.astropy)
+                input_reproj = (
+                    getattr(exp, image_kind).array,
+                    exp.wcs.astropy
+                )
                 resampled, footprint = self._do_resamp(
                     input_reproj,
                     resamp_method,
                     **kwargs,
                 )
-                # exp._init_input_image(resampled, image_kind+'_resamp')
                 gal_img_tmp = galsim.Image(
                     resampled,
                     wcs=copy.deepcopy(self.coadd_wcs),

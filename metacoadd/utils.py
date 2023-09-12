@@ -90,11 +90,6 @@ def exp2obs(exp, exp_psf=None, use_resamp=True):
                 image_pos=galsim.PositionD(cen_psf[0], cen_psf[1]),
             ),
         )
-        # psf_obs = ngmix.Observation(
-        #     image=img_psf,
-        #     weight=weight_psf,
-        #     jacobian=psf_jac,
-        # )
         psf_obs = ngmix.Observation(
             image=img_psf,
             weight=None,

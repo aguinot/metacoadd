@@ -153,7 +153,6 @@ def get_resi_img(
     xx_f = xx_gal - xx_psf
     yy_f = yy_gal - yy_psf
     xy_f = xy_gal - xy_psf
-    # det_f = xx_f*yy_f - xy_f*xy_f
     if xx_f <= obs.jacobian.area:
         xx_f = obs.jacobian.area
     if yy_f <= obs.jacobian.area:
@@ -271,7 +270,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
     # Get PSF info
     xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5]
     T_psf = xx_psf + yy_psf
-    # det_psf = xx_psf*yy_psf - xy_psf*xy_psf
 
     e1_psf = (xx_psf - yy_psf) / T_psf
     e2_psf = 2.0 * xy_psf / T_psf
@@ -283,7 +281,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
     guess = fitter._generate_guess(obs, guess_fwhm)
     find_ellipmom2(obs.pixels, guess, res_gal, fitter.conf)
     xx_gal, xy_gal, yy_gal = res_gal[0]["pars"][2:5]
-    # det_gal = xx_gal*yy_gal - xy_gal*xy_gal
 
     T_gal = xx_gal + yy_gal
 
@@ -310,7 +307,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
     res_resi = fitter._get_am_result()
     find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
     xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
-    # det_gal = xx_gal*yy_gal - xy_gal*xy_gal
 
     T_gal = xx_gal + yy_gal
     e1_gal = (xx_gal - yy_gal) / T_gal
