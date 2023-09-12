@@ -1,24 +1,20 @@
-import numpy as np
+import copy
 
 import galsim
 import ngmix
-
-import copy
+import numpy as np
 
 
 def shift_wcs(wcs, offset):
-
     # TODO: check inputs
 
     wcs_orig = copy.deepcopy(wcs)
-    if hasattr(wcs_orig, 'astropy'):
+    if hasattr(wcs_orig, "astropy"):
         ap_wcs = wcs_orig.astropy
-    elif hasattr(wcs_orig, 'wcs'):
+    elif hasattr(wcs_orig, "wcs"):
         ap_wcs = wcs_orig.wcs
     else:
-        raise ValueError(
-            "wcs must have an astropy component. Either .astropy or .wcs"
-        )
+        raise ValueError("wcs must have an astropy component. Either .astropy or .wcs")
 
     # Get header
     h = ap_wcs.to_header(relax=True)
@@ -38,45 +34,44 @@ def shift_wcs(wcs, offset):
 
 
 def exp2obs(exp, exp_psf=None, use_resamp=True):
-
     if use_resamp:
         kind = "_resamp"
     else:
         kind = ""
     # Set images
-    if hasattr(exp, "image"+kind):
-        img = getattr(exp, "image"+kind).array
+    if hasattr(exp, "image" + kind):
+        img = getattr(exp, "image" + kind).array
     else:
         raise ValueError("Exposure has no image set.")
 
-    if hasattr(exp, "weight"+kind):
-        weight = getattr(exp, "weight"+kind).array
+    if hasattr(exp, "weight" + kind):
+        weight = getattr(exp, "weight" + kind).array
     else:
         weight = None
 
-    if hasattr(exp, "noise"+kind):
-        noise = getattr(exp, "noise"+kind).array
+    if hasattr(exp, "noise" + kind):
+        noise = getattr(exp, "noise" + kind).array
     else:
         noise = None
 
     # Set wcs
-    wcs = getattr(exp, "wcs"+kind)
+    wcs = getattr(exp, "wcs" + kind)
 
     if not isinstance(exp_psf, type(None)):
-        if hasattr(exp_psf, "image"+kind):
-            img_psf = getattr(exp_psf, "image"+kind).array + 1e-5
+        if hasattr(exp_psf, "image" + kind):
+            img_psf = getattr(exp_psf, "image" + kind).array + 1e-5
         else:
             raise ValueError("PSF Exposure has no image set.")
 
-        if hasattr(exp_psf, "weight"+kind):
-            weight_psf = getattr(exp_psf, "weight"+kind).array
+        if hasattr(exp_psf, "weight" + kind):
+            getattr(exp_psf, "weight" + kind).array
         else:
-            weight_psf = None
+            pass
 
-        wcs_psf = getattr(exp_psf, "wcs"+kind)
+        wcs_psf = getattr(exp_psf, "wcs" + kind)
 
     dim = np.array(img.shape)
-    cen = (dim-1)/2.
+    cen = (dim - 1) / 2.0
     img_jac = ngmix.Jacobian(
         x=cen[0],
         y=cen[1],
@@ -87,7 +82,7 @@ def exp2obs(exp, exp_psf=None, use_resamp=True):
 
     if not isinstance(exp_psf, type(None)):
         dim_psf = np.array(img_psf.shape)
-        cen_psf = (dim_psf-1)/2.
+        cen_psf = (dim_psf - 1) / 2.0
         psf_jac = ngmix.Jacobian(
             row=cen_psf[0],
             col=cen_psf[1],

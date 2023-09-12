@@ -1,29 +1,28 @@
-import numpy as np
 import ngmix
+import numpy as np
 
 from .galsim_admom import GAdmomFitter
-from .galsim_regauss_nb import regauss, _check_exp, find_ellipmom2
+from .galsim_regauss_nb import _check_exp, find_ellipmom2, regauss
 
 
 def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
-
     # PSF
     res_psf = fitter.go(obs.psf, guess_fwhm)
-    xx_psf, xy_psf, yy_psf = res_psf["pars"][2:5]/res_psf["wsum"]
-    T_psf = (xx_psf + yy_psf)
+    xx_psf, xy_psf, yy_psf = res_psf["pars"][2:5] / res_psf["wsum"]
+    T_psf = xx_psf + yy_psf
 
     return xx_psf, yy_psf, xy_psf, T_psf
 
 
 def check_exp(obs, psf_res, safe_factor=2):
-    xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5]/psf_res["wsum"]
-    T_psf = (xx_psf + yy_psf)
+    xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5] / psf_res["wsum"]
+    T_psf = xx_psf + yy_psf
 
-    e1_psf = (xx_psf-yy_psf)/T_psf
-    e2_psf = 2.*xy_psf/T_psf
+    e1_psf = (xx_psf - yy_psf) / T_psf
+    e2_psf = 2.0 * xy_psf / T_psf
 
     g1_psf, g2_psf = ngmix.shape.e1e2_to_g1g2(e1_psf, e2_psf)
-    pars = [0, 0, g1_psf, g2_psf, safe_factor*T_psf, 1.]
+    pars = [0, 0, g1_psf, g2_psf, safe_factor * T_psf, 1.0]
     weight = ngmix.GMixModel(pars, "gauss")
     w_data = weight._data
     ngmix.gmix.gmix_nb.gmix_set_norms(w_data)
@@ -33,7 +32,6 @@ def check_exp(obs, psf_res, safe_factor=2):
 
 
 def ME_regauss(obslist, guess_fwhm=0.6, seed=1234, safe_check=0.99):
-
     rng = np.random.RandomState(seed)
     fitter = GAdmomFitter(rng=rng)
 
@@ -72,17 +70,14 @@ def ME_regauss(obslist, guess_fwhm=0.6, seed=1234, safe_check=0.99):
         if i in bad_check_sum:
             continue
         flux_tmp, T_tmp, Res_tmp, xx_tmp, yy_tmp, xy_tmp, w_sum_tmp = regauss(
-            obs,
-            psf_res_list[i],
-            fitter=fitter,
-            guess_fwhm=guess_fwhm,
-            do_fit=True)
-        xx += xx_tmp*w_sum_tmp
-        yy += yy_tmp*w_sum_tmp
-        xy += xy_tmp*w_sum_tmp
-        flux += flux_tmp*w_sum_tmp
-        T += T_tmp*w_sum_tmp
-        Res += Res_tmp*w_sum_tmp
+            obs, psf_res_list[i], fitter=fitter, guess_fwhm=guess_fwhm, do_fit=True
+        )
+        xx += xx_tmp * w_sum_tmp
+        yy += yy_tmp * w_sum_tmp
+        xy += xy_tmp * w_sum_tmp
+        flux += flux_tmp * w_sum_tmp
+        T += T_tmp * w_sum_tmp
+        Res += Res_tmp * w_sum_tmp
         norm += w_sum_tmp
         n_good += 1
 
