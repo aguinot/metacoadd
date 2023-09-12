@@ -4,10 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metacoadd"
-<<<<<<< HEAD
-=======
 version = "0.0.1"
->>>>>>> 42f6925 (Fix)
 authors = [
   { name="Axel Guinot", email="axel.guinot.astro@gmail.com" },
 ]
@@ -32,13 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pre-commit", "black", "ruff"]
 
-<<<<<<< HEAD
-[tool.setuptools_scm]
-# write_to = "metacoadd/_version.py"
-=======
 [tool.setuptools]
 packages = ["metacoadd", "metacoadd.moments", "metacoadd.simu"]
->>>>>>> 42f6925 (Fix)
 
 [tool.ruff]
 select = ["E", "F", "UP", "I"]
