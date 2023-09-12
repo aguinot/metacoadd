@@ -650,7 +650,6 @@ class CoaddImage:
                     resamp_method,
                     **kwargs,
                 )
-                # exp._init_input_image(resampled, image_kind+'_resamp')
                 gal_img_tmp = galsim.Image(
                     resampled,
                     wcs=copy.deepcopy(self.coadd_wcs),

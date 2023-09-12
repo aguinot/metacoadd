@@ -19,7 +19,6 @@ def get_rho4_ngmix(pixels, xx, yy, xy, det):
     inv_yy = xx / det
     inv_xy = -xy / det
     two_inv_xy = inv_xy * 2
-    # inv_2_inv_xx = 0.5/inv_xx
 
     n_pixels = pixels.size
 
@@ -91,7 +90,6 @@ def get_corrected_mom(xx, yy, xy, R):
 
 def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
     res_psf = fitter.go(obs.psf, guess_fwhm)
-    # xx_psf, yy_psf, xy_psf = get_admom(res_psf["pars"])
     xx_psf, xy_psf, yy_psf = res_psf["pars"][2:5]
     T_psf = xx_psf + yy_psf
 
@@ -126,7 +124,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=1.2):
 
     # Gal
     res_gal = fitter.go(obs, guess_fwhm)
-    # xx_gal, yy_gal, xy_gal = get_admom(res_gal["pars"]/res_gal["wsum"])
     xx_gal, xy_gal, yy_gal = res_gal["pars"][2:5]
     det_gal = xx_gal * yy_gal - xy_gal * xy_gal
 
@@ -146,9 +143,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=1.2):
     )
 
     T_gal = (xx_gal - xx_psf) + (yy_gal - yy_psf)
-
-    # e1_final = e1_gal/R_bj
-    # e2_final = e2_gal/R_bj
 
     Res = T_gal / T_psf
 

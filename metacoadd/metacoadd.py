@@ -323,10 +323,8 @@ class MetaCoadd(SimpleCoadd):
 
         self.psf_coaddimage = psfs
 
-        # self._process_psf(psfs)
         self.step = step
         self.types = types
-        # self._get_reconv_psf(self.psf_coaddimage.explist)
 
         self._do_border = True
 
@@ -434,14 +432,11 @@ class MetaCoadd(SimpleCoadd):
                     self.coaddimage.image[type].array,
                     dtype=np.int32,
                 ),
-                # bmask=all_stamp["border"].array.astype(np.int32),
                 ormask=np.zeros_like(
                     self.coaddimage.image[type].array,
                     dtype=np.int32,
                 ),
-                # ormask=all_stamp["border"].array.astype(np.int32),
                 noise=self.coaddimage.noise[type].array,
-                # noise=self.coaddimage.explist[0].noise.array,
                 jacobian=img_jac,
                 psf=psf_obs,
             )
@@ -467,8 +462,7 @@ class MetaCoadd(SimpleCoadd):
             step=self.step,
             types=self.types,
             use_noise_image=True,
-            # psf='gauss',
-            psf=galsim.Gaussian(sigma=0.6, flux=1.0),
+            psf="gauss",
             rng=rng,
         )
 
@@ -694,9 +688,6 @@ class MetaCoadd(SimpleCoadd):
         """
 
         medsifier = self._do_detect(mbobs)
-        # if self._show:
-        #     import descwl_coadd.vis
-        #     descwl_coadd.vis.show_image(medsifier.seg)
         mbm = medsifier.get_multiband_meds()
         mbobs_list = mbm.get_mbobs_list()
 
@@ -717,7 +708,6 @@ class MetaCoadd(SimpleCoadd):
         res = fit_mbobs_list_wavg(
             mbobs_list=mbobs_list,
             fitter=self._fitter,
-            # nonshear_mbobs_list=nonshear_mbobs_list,
             bmask_flags=TEST_METADETECT_CONFIG.get("bmask_flags", 0),
         )
 
@@ -818,12 +808,6 @@ class MetaCoadd(SimpleCoadd):
                 bmask_region = TEST_METADETECT_CONFIG["mask_region"]
             else:
                 bmask_region = 1
-
-            # logger.debug(
-            #     'ormask|bmask region: %s|%s',
-            #     ormask_region,
-            #     bmask_region,
-            # )
 
             newres["ormask"] = _fill_in_mask_col(
                 mask_region=ormask_region,

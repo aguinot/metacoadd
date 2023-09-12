@@ -272,7 +272,6 @@ def get_result(ares, jac_area, wgt_norm):
             # the wgt_norm and wsum compute the weighted flux and normalize
             # the weight kernel to peak at 1
             fnorm = jac_area * wgt_norm * res["wsum"]
-            # res['flux'] = res['sums'][5] / fnorm
             res["flux"] = res["pars"][5] * res["pars"][6] / fnorm
 
             if res["sums_cov"][5, 5] > 0:
