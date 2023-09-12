@@ -1,15 +1,13 @@
-import galsim
-from astropy.io import fits
-
-import numpy as np
 from math import ceil
-
 from time import time
+
+import galsim
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.io import fits
 from tqdm import tqdm
 
-import matplotlib.pyplot as plt
-
-from metacoadd.exposure import Exposure, ExpList, CoaddImage
+from metacoadd.exposure import CoaddImage, ExpList, Exposure
 from metacoadd.metacoadd import SimpleCoadd
 
 # Defaults
