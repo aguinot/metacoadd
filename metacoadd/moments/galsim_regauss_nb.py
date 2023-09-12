@@ -20,9 +20,15 @@ def _check_exp(pixels, w_data):
 @njit(fastmath=True, cache=False)
 def shearmult(e1_a, e2_a, e1_b, e2_b):
     dotp = e1_a * e1_b + e2_a * e2_b
-    factor = (1.0 - sqrt(1 - e1_b * e1_b - e2_b * e2_b)) / (e1_b * e1_b + e2_b * e2_b)
-    e1_out = (e1_a + e1_b + e2_b * factor * (e2_a * e1_b - e1_a * e2_b)) / (1 + dotp)
-    e2_out = (e2_a + e2_b + e1_b * factor * (e1_a * e2_b - e2_a * e1_b)) / (1 + dotp)
+    factor = (1.0 - sqrt(1 - e1_b * e1_b - e2_b * e2_b)) / (
+        e1_b * e1_b + e2_b * e2_b
+    )
+    e1_out = (e1_a + e1_b + e2_b * factor * (e2_a * e1_b - e1_a * e2_b)) / (
+        1 + dotp
+    )
+    e2_out = (e2_a + e2_b + e1_b * factor * (e1_a * e2_b - e2_a * e1_b)) / (
+        1 + dotp
+    )
 
     return e1_out, e2_out
 
@@ -74,7 +80,9 @@ def goodFFTSize(N):
 
 
 @njit(fastmath=True, cache=False)
-def fast_convolve_image1(image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)):
+def fast_convolve_image1(
+    image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)
+):
     # Input
     N1 = int(max(image1.shape) * 4 / 3)
     N2 = int(max(image2.shape) * 4 / 3)
@@ -85,7 +93,12 @@ def fast_convolve_image1(image1, image2, image_out, orig_img1=(0, 0), orig_img2=
     # Make NxN image
     xim = np.zeros((N, N))
     offset = int(N / 4)
-    b1 = [offset, image1.shape[0] + offset - 1, offset, image1.shape[1] + offset - 1]
+    b1 = [
+        offset,
+        image1.shape[0] + offset - 1,
+        offset,
+        image1.shape[1] + offset - 1,
+    ]
     xim[b1[0] : b1[1] + 1, b1[2] : b1[3] + 1] = image1
 
     # Do fft img1
@@ -98,7 +111,12 @@ def fast_convolve_image1(image1, image2, image_out, orig_img1=(0, 0), orig_img2=
 
     # Do fft img2
     xim.fill(0)
-    b2 = [offset, image2.shape[0] + offset - 1, offset, image2.shape[1] + offset - 1]
+    b2 = [
+        offset,
+        image2.shape[0] + offset - 1,
+        offset,
+        image2.shape[1] + offset - 1,
+    ]
     xim[b2[0] : b2[1] + 1, b2[2] : b2[3] + 1] = image2
     with objmode(kim2="complex128[:,:]"):
         xim_pyfft = pyfftw.empty_aligned(xim.shape, dtype="float64")
@@ -182,7 +200,9 @@ def get_resi_img(
     f_col0 = f_dim_y / 2
     f_dim_x += 1
     f_dim_y += 1
-    f_jac = ngmix.Jacobian(row=f_row0, col=f_col0, wcs=obs.jacobian.get_galsim_wcs())
+    f_jac = ngmix.Jacobian(
+        row=f_row0, col=f_col0, wcs=obs.jacobian.get_galsim_wcs()
+    )
 
     # Get PSF bounds
     p_xmin = int(
@@ -247,10 +267,14 @@ def get_resi_img(
     pars_psf[5] = flux_psf
     gmix_psf = ngmix.GMixModel(pars_psf, "gauss")
 
-    fgauss_img = gmix_fgauss.make_image((f_dim_x, f_dim_y), f_jac, fast_exp=True)
+    fgauss_img = gmix_fgauss.make_image(
+        (f_dim_x, f_dim_y), f_jac, fast_exp=True
+    )
     fpsf_img = gmix_psf.make_image((p_dim_x, p_dim_y), p_jac, fast_exp=True)
 
-    PSF_resid_img = -obs.psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
+    PSF_resid_img = (
+        -obs.psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
+    )
 
     fgauss_img *= flux_gal / np.sum(fgauss_img)
 

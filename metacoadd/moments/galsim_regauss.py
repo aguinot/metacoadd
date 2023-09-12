@@ -70,7 +70,11 @@ def ME_regauss(obslist, guess_fwhm=0.6, seed=1234, safe_check=0.99):
         if i in bad_check_sum:
             continue
         flux_tmp, T_tmp, Res_tmp, xx_tmp, yy_tmp, xy_tmp, w_sum_tmp = regauss(
-            obs, psf_res_list[i], fitter=fitter, guess_fwhm=guess_fwhm, do_fit=True
+            obs,
+            psf_res_list[i],
+            fitter=fitter,
+            guess_fwhm=guess_fwhm,
+            do_fit=True,
         )
         xx += xx_tmp * w_sum_tmp
         yy += yy_tmp * w_sum_tmp

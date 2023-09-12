@@ -81,8 +81,10 @@ def admom(confarray, wt, pixels, resarray):
         e1 = (Icc - Irr) / T
         e2 = 2 * Irc / T
 
-        # convergence_factor = get_converg(convergence_factor, Icc, Irc, Irr,
-        #                                  wt['icc'][0], wt['irc'][0], wt['irr'][0])
+        # convergence_factor = get_converg(convergence_factor,
+        #                                  Icc, Irc, Irr,
+        #                                  wt['icc'][0], wt['irc'][0],
+        #                                  wt['irr'][0])
 
         if (
             (abs(e1 - e1old) < conf["etol"])
@@ -235,7 +237,9 @@ def get_converg(conv0, xx, xy, yy, Wxx, Wxy, Wyy):
     """ """
 
     two_psi = np.arctan2(2 * xy, xx - yy)
-    semi_a2 = 0.5 * ((xx + yy) + (xx - yy) * np.cos(two_psi)) + xy * np.sin(two_psi)
+    semi_a2 = 0.5 * ((xx + yy) + (xx - yy) * np.cos(two_psi)) + xy * np.sin(
+        two_psi
+    )
     semi_b2 = xx + yy - semi_a2
 
     dxx = np.abs(4 * (xx - 0.5 * Wxx) / semi_b2)
@@ -263,7 +267,9 @@ def clear_result(res):
 
 
 @njit
-def get_mom_var(X, Y, Z, var_X, var_Y, var_Z, var_XY, var_XZ, var_YZ, kind="e1"):
+def get_mom_var(
+    X, Y, Z, var_X, var_Y, var_Z, var_XY, var_XZ, var_YZ, kind="e1"
+):
     dfdx = dfdy = dfdz = 0
     T = X + Y
     if kind == "e1":

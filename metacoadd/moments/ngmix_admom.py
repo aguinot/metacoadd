@@ -200,7 +200,9 @@ class AdmomFitter:
 
         scale = obs.jacobian.get_scale()
         pars = np.zeros(6)
-        pars[0 : 0 + 2] = rng.uniform(low=-0.5 * scale, high=0.5 * scale, size=2)
+        pars[0 : 0 + 2] = rng.uniform(
+            low=-0.5 * scale, high=0.5 * scale, size=2
+        )
         pars[2 : 2 + 2] = rng.uniform(low=-0.3, high=0.3, size=2)
         pars[4] = Tguess * (1.0 + rng.uniform(low=-0.1, high=0.1))
         pars[5] = 1.0
@@ -346,7 +348,9 @@ def get_result(ares, jac_area, wgt_norm):
                     )
                 )
 
-                if not np.isfinite(res["e1err"]) or not np.isfinite(res["e2err"]):
+                if not np.isfinite(res["e1err"]) or not np.isfinite(
+                    res["e2err"]
+                ):
                     res["e1err"] = np.nan
                     res["e2err"] = np.nan
                     res["e_err"] = np.array([np.nan, np.nan])

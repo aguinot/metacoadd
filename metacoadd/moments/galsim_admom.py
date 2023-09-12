@@ -203,7 +203,9 @@ class GAdmomFitter:
         scale = obs.jacobian.get_scale()
         pars = np.zeros(6)
         fwhm2 = guess_fwhm * guess_fwhm
-        pars[0 : 0 + 2] = rng.uniform(low=-0.5 * scale, high=0.5 * scale, size=2)
+        pars[0 : 0 + 2] = rng.uniform(
+            low=-0.5 * scale, high=0.5 * scale, size=2
+        )
         pars[2] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
         pars[3] = rng.uniform(low=-1e-3, high=1e-3)
         pars[4] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
@@ -279,7 +281,10 @@ def get_result(ares, jac_area, wgt_norm):
                     * np.sqrt(
                         res["sums_cov"][5, 5] / res["sums"][5] ** 2
                         + res["sums_cov"][6, 6] / res["sums"][6] ** 2
-                        + 2 * res["sums_cov"][6, 5] / res["sums"][6] / res["sums"][5]
+                        + 2
+                        * res["sums_cov"][6, 5]
+                        / res["sums"][6]
+                        / res["sums"][5]
                     )
                     / fnorm
                 )
@@ -373,7 +378,9 @@ def get_result(ares, jac_area, wgt_norm):
                     )
                 )
 
-                if not np.isfinite(res["e1err"]) or not np.isfinite(res["e2err"]):
+                if not np.isfinite(res["e1err"]) or not np.isfinite(
+                    res["e2err"]
+                ):
                     res["e1err"] = np.nan
                     res["e2err"] = np.nan
                     res["e_err"] = np.array([np.nan, np.nan])
