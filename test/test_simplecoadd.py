@@ -1,10 +1,10 @@
-from metacoadd.simu import make_sim, run_metacoadd, run_metadetect
-
-import numpy as np
-
-import tqdm
 import time
+
 import joblib
+import numpy as np
+import tqdm
+
+from metacoadd.simu import make_sim, run_metacoadd, run_metadetect
 
 # input_headers_dir = '../data/pre_selection_1/'
 # input_headers_dir = '../data/input_headers/'
@@ -20,29 +20,29 @@ import joblib
 # ra_center = 110.7181643         # Deg
 # dec_center = 53.2210355         # Deg
 
-input_headers_dir = '../data/pre_selection_3/'
+input_headers_dir = "../data/pre_selection_3/"
 ra_center = 110.1844991
 dec_center = 52.8002126
-scale = 0.185768447408928       # Arcsec
-cell_size = 1./60.              # Arcmin
+scale = 0.185768447408928  # Arcsec
+cell_size = 1.0 / 60.0  # Arcmin
 
 noise = 1e-3
 
 params_obj = {
-    'n_obj': 25,                   # ignored if 'grid' is used
-    'hlr': 0.7,
-    'flux': 100,
-    'g1': 0.01,
-    'g2': 0.,
+    "n_obj": 25,  # ignored if 'grid' is used
+    "hlr": 0.7,
+    "flux": 100,
+    "g1": 0.01,
+    "g2": 0.0,
 }
 
 params_single = {
-    'n_obj': 25,                   # ignored if 'grid' is used
-    'psf_fwhm': 0.7,
-    'psf_fwhm_std': 0.0,
-    'psf_g1': 0.,
-    'psf_g2': 0.,
-    'noise': noise,
+    "n_obj": 25,  # ignored if 'grid' is used
+    "psf_fwhm": 0.7,
+    "psf_fwhm_std": 0.0,
+    "psf_g1": 0.0,
+    "psf_g2": 0.0,
+    "noise": noise,
 }
 
 
@@ -56,9 +56,8 @@ def run_sim(
     seed,
     mdet_seed,
 ):
-
     params_obj_p = params_obj.copy()
-    params_obj_p['g1'] = 0.02
+    params_obj_p["g1"] = 0.02
     explist_p, explist_psf_p = make_sim(
         input_headers_dir,
         coadd_ra,
@@ -70,7 +69,10 @@ def run_sim(
         seed=seed,
         get_obj_dict=False,
     )
-    simplecoadd_p, simplecoadd_psf_p, = run_metacoadd(
+    (
+        simplecoadd_p,
+        simplecoadd_psf_p,
+    ) = run_metacoadd(
         explist_p,
         coadd_ra,
         coadd_dec,
@@ -87,7 +89,7 @@ def run_sim(
         return None
 
     params_obj_m = params_obj.copy()
-    params_obj_m['g1'] = -0.02
+    params_obj_m["g1"] = -0.02
     explist_m, explist_psf_m = make_sim(
         input_headers_dir,
         coadd_ra,
@@ -115,8 +117,7 @@ def run_sim(
     if _mres is None:
         return None
 
-    return (_meas_shear_data(_pres, "wmom"),
-            _meas_shear_data(_mres, "wmom"))
+    return (_meas_shear_data(_pres, "wmom"), _meas_shear_data(_mres, "wmom"))
 
 
 # From https://github.com/esheldon/metadetect/blob/master/shear_meas_test/test_shear_meas.py
@@ -126,35 +127,31 @@ def _shear_cuts(arr, model):
     else:
         tmin = 0.5
     msk = (
-        (arr['flags'] == 0)
-        & (arr[f'{model}_s2n'] > 10)
-        & (arr[f'{model}_T_ratio'] > tmin)
+        (arr["flags"] == 0)
+        & (arr[f"{model}_s2n"] > 10)
+        & (arr[f"{model}_T_ratio"] > tmin)
     )
     return msk
 
 
 def _meas_shear_data(res, model):
-    msk = _shear_cuts(res['noshear'], model)
-    g1 = np.mean(res['noshear'][f'{model}_g'][msk, 0])
-    g2 = np.mean(res['noshear'][f'{model}_g'][msk, 1])
+    msk = _shear_cuts(res["noshear"], model)
+    g1 = np.mean(res["noshear"][f"{model}_g"][msk, 0])
+    g2 = np.mean(res["noshear"][f"{model}_g"][msk, 1])
 
-    msk = _shear_cuts(res['1p'], model)
-    g1_1p = np.mean(res['1p'][f'{model}_g'][msk, 0])
-    msk = _shear_cuts(res['1m'], model)
-    g1_1m = np.mean(res['1m'][f'{model}_g'][msk, 0])
+    msk = _shear_cuts(res["1p"], model)
+    g1_1p = np.mean(res["1p"][f"{model}_g"][msk, 0])
+    msk = _shear_cuts(res["1m"], model)
+    g1_1m = np.mean(res["1m"][f"{model}_g"][msk, 0])
     R11 = (g1_1p - g1_1m) / 0.02
 
-    msk = _shear_cuts(res['2p'], model)
-    g2_2p = np.mean(res['2p'][f'{model}_g'][msk, 1])
-    msk = _shear_cuts(res['2m'], model)
-    g2_2m = np.mean(res['2m'][f'{model}_g'][msk, 1])
+    msk = _shear_cuts(res["2p"], model)
+    g2_2p = np.mean(res["2p"][f"{model}_g"][msk, 1])
+    msk = _shear_cuts(res["2m"], model)
+    g2_2m = np.mean(res["2m"][f"{model}_g"][msk, 1])
     R22 = (g2_2p - g2_2m) / 0.02
 
-    dt = [
-        ('g1', 'f8'),
-        ('g2', 'f8'),
-        ('R11', 'f8'),
-        ('R22', 'f8')]
+    dt = [("g1", "f8"), ("g2", "f8"), ("R11", "f8"), ("R22", "f8")]
     return np.array([(g1, g2, R11, R22)], dtype=dt)
 
 
@@ -166,13 +163,13 @@ def boostrap_m_c(pres, mres):
 
 
 def meas_m_c_cancel(pres, mres):
-    x = np.mean(pres['g1'] - mres['g1'])/2
-    y = np.mean(pres['R11'] + mres['R11'])/2
-    m = x/y/0.02 - 1
+    x = np.mean(pres["g1"] - mres["g1"]) / 2
+    y = np.mean(pres["R11"] + mres["R11"]) / 2
+    m = x / y / 0.02 - 1
 
-    x = np.mean(pres['g2'] + mres['g2'])/2
-    y = np.mean(pres['R22'] + mres['R22'])/2
-    c = x/y
+    x = np.mean(pres["g2"] + mres["g2"]) / 2
+    y = np.mean(pres["R22"] + mres["R22"]) / 2
+    c = x / y
 
     return m, c
 
@@ -198,7 +195,6 @@ def test_shear_meas(
     ntrial=50,
     njob=-1,
 ):
-
     nsub = max(ntrial // 100, 50)
     # nsub = ntrial
     nitr = ntrial // nsub
@@ -223,8 +219,8 @@ def test_shear_meas(
                 coadd_size,
                 params_obj,
                 params_single,
-                seeds[loc+i],
-                mdet_seeds[loc+i],
+                seeds[loc + i],
+                mdet_seeds[loc + i],
             )
             for i in range(nsub)
         ]
@@ -232,7 +228,7 @@ def test_shear_meas(
         outputs = joblib.Parallel(
             n_jobs=njob,
             verbose=100,
-            backend='loky',
+            backend="loky",
         )(jobs)
 
         for out in outputs:
@@ -253,32 +249,30 @@ def test_shear_meas(
                 "m [1e-3, 3sigma]: %s +/- %s\n"
                 "c [1e-5, 3sigma]: %s +/- %s\n"
                 "\n"
-            ) % (
+            )
+            % (
                 len(pres),
-                m/1e-3,
-                3*merr/1e-3,
-                c/1e-5,
-                3*cerr/1e-5,
+                m / 1e-3,
+                3 * merr / 1e-3,
+                c / 1e-5,
+                3 * cerr / 1e-5,
             ),
             flush=True,
         )
 
-    total_time = time.time()-tm0
-    print("time per:", total_time/ntrial, flush=True)
+    total_time = time.time() - tm0
+    print("time per:", total_time / ntrial, flush=True)
 
     pres = np.concatenate(pres)
     mres = np.concatenate(mres)
     m, merr, c, cerr = boostrap_m_c(pres, mres)
 
     print(
-        (
-            "\n\nm [1e-3, 3sigma]: %s +/- %s"
-            "\nc [1e-5, 3sigma]: %s +/- %s"
-        ) % (
-            m/1e-3,
-            3*merr/1e-3,
-            c/1e-5,
-            3*cerr/1e-5,
+        ("\n\nm [1e-3, 3sigma]: {} +/- {}" "\nc [1e-5, 3sigma]: {} +/- {}").format(
+            m / 1e-3,
+            3 * merr / 1e-3,
+            c / 1e-5,
+            3 * cerr / 1e-5,
         ),
         flush=True,
     )
@@ -286,22 +280,23 @@ def test_shear_meas(
 
 def get_args():
     import argparse
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '--seed',
+        "--seed",
         type=int,
         default=1234,
-        help='seed for rng',
+        help="seed for rng",
     )
     parser.add_argument(
-        '--ntrial',
+        "--ntrial",
         type=int,
         default=50,
-        help='number of trials',
+        help="number of trials",
     )
     parser.add_argument(
-        '--njob',
+        "--njob",
         type=int,
         default=-1,
         help="number of jobs. '-1' for all. '-2' for all-1",
@@ -311,13 +306,12 @@ def get_args():
 
 
 def main():
-    """
-    """
+    """ """
 
     args = get_args()
-    print(f'seed: {args.seed}')
-    print(f'ntrial: {args.ntrial}')
-    print(f'njob: {args.njob}')
+    print(f"seed: {args.seed}")
+    print(f"ntrial: {args.ntrial}")
+    print(f"njob: {args.njob}")
 
     test_shear_meas(
         ra_center,
@@ -332,5 +326,5 @@ def main():
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

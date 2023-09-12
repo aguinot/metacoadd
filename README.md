@@ -2,7 +2,7 @@
 
 ## Idea
 
-Creates the coadd image at the same time as we create sheared images for the 
+Creates the coadd image at the same time as we create sheared images for the
 MetaDetection.
 
 Steps:
@@ -34,10 +34,8 @@ Question:
 
 ### II - Interpolation
 
-We would like to use `lanczosX` interpolation to get as close as possible to 
+We would like to use `lanczosX` interpolation to get as close as possible to
 standar techniques used in UNIONS (through SWARP) (found a good value for `X`).
 
 
 ### III - Deconvolve from PSF
-
-
