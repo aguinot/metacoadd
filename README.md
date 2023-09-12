@@ -1,9 +1,16 @@
-# Test coadd
+# Metacoadd
 
-## Idea
+Create a coadd image at the same time as we create sheared images for the [metadetection][metadetect].
 
-Creates the coadd image at the same time as we create sheared images for the
-MetaDetection.
+[metadetect]: https://github.com/esheldon/metadetect
+
+## Installation
+
+```python
+python -m pip install git+https://github.com/aguinot/metacoadd
+```
+
+## Details
 
 Steps:
 
@@ -19,7 +26,7 @@ Steps:
 - [ ] Run shape measurement
 
 
-#### I - Create subfield
+### I - Create subfield
 
 The coadd size is not yet defined use 1 arcmin for testing.
 
@@ -39,3 +46,7 @@ standar techniques used in UNIONS (through SWARP) (found a good value for `X`).
 
 
 ### III - Deconvolve from PSF
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
