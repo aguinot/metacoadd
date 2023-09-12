@@ -9,7 +9,6 @@ import ngmix
 from metadetect import detect, shearpos, procflags
 from metadetect.fitting import fit_mbobs_list_wavg
 from metadetect.mfrac import measure_mfrac
-import sep
 import esutil as eu
 
 
@@ -288,7 +287,7 @@ class MetaCoadd(SimpleCoadd):
         # self._process_psf(psfs)
         self.step = step
         self.types = types
-        # self._get_reconv_psf(self.psf_coaddimage.explist)
+        #self._get_reconv_psf(self.psf_coaddimage.explist)
 
         self._do_border = True
 
@@ -308,9 +307,7 @@ class MetaCoadd(SimpleCoadd):
         for n, exp in enumerate(self.coaddimage.explist):
             print(n)
             # all_stamp = self._process_one_exp(exp, self._inv_psflist[n])
-            all_stamp = self._process_one_exp(
-                exp, self.psf_coaddimage.explist[n]
-            )
+            all_stamp = self._process_one_exp(exp, self.psf_coaddimage.explist[n])
 
             # Check bounds, it should always pass. Just for safety.
             # We check only 'image' because it we always be there and the
@@ -470,9 +467,7 @@ class MetaCoadd(SimpleCoadd):
                             galsim.Image(img)
                         )
                     )
-                    wcs = getattr(
-                        mcal_obs[type], key
-                    ).jacobian.get_galsim_wcs()
+                    wcs = getattr(mcal_obs[type], key).jacobian.get_galsim_wcs()
                 else:
                     img = getattr(mcal_obs[type], key)
                     wcs = mcal_obs[type].jacobian.get_galsim_wcs()
@@ -673,7 +668,7 @@ class MetaCoadd(SimpleCoadd):
         res = fit_mbobs_list_wavg(
             mbobs_list=mbobs_list,
             fitter=self._fitter,
-            # nonshear_mbobs_list=nonshear_mbobs_list,
+            nonshear_mbobs_list=nonshear_mbobs_list,
             bmask_flags=TEST_METADETECT_CONFIG.get("bmask_flags", 0),
         )
 

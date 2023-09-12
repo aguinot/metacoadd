@@ -1,8 +1,11 @@
-
+from .utils import shift_wcs
 
 import numpy as np
 import galsim
 from astropy.io import fits
+from astropy.wcs import WCS
+
+from reproject import reproject_interp
 
 import copy
 
@@ -12,16 +15,25 @@ DEFAULT_INTERP_CONFIG = {
         'pad_factor': 4,
         'x_interpolant': 'quintic',
         'k_interpolant': 'quintic',
-        'calculate_maxk': True,
-        'calculate_stepk': True,
+        'calculate_maxk': False,
+        'calculate_stepk': False,
     },
     'nearest': {
         'pad_factor': 4,
         'x_interpolant': 'nearest',
         'k_interpolant': 'nearest',
-        'calculate_maxk': True,
-        'calculate_stepk': True,
+        'calculate_maxk': False,
+        'calculate_stepk': False,
     },
+}
+
+DEFAULT_RESAMP_CONFIG = {
+    'classic': {
+        'order': 5,
+    },
+    'nearest': {
+        'order': 0,
+    }
 }
 
 DEFAULT_GSPARAMS = galsim.GSParams(maximum_fft_size=8192)
@@ -40,8 +52,8 @@ class Exposure():
         header (astropy.io.fits.header.Header): Image header containing all
             the WCS information. Either header or wcs has to be provided, not
             both.
-        wcs (galsim.BaseWCS): wcs corresponding to the images. Either header or
-            wcs has to be provided, not both.
+        wcs (galsim.BaseWCS or astropy.wcs.wcs.WCS): wcs corresponding to the
+            images. Either header or wcs has to be provided, not both.
         weight (numpy.ndarray or galsim.Image, optional): Weight image.
             Defaults to None.
         flag (numpy.ndarray or galsim.Image, optional): Flag image. Defaults to
@@ -76,16 +88,20 @@ class Exposure():
                 self.header = header
                 # Set WCS
                 # We do that first because we need it for consistency checks.
-                self._set_wcs()
+                self._set_wcs(header=header)
             else:
                 raise TypeError(
                     'header must be an astropy.io.fits.header.Header.'
                     )
         elif wcs is not None:
             if isinstance(wcs, galsim.BaseWCS):
-                self.wcs = wcs
+                self._set_wcs(galsim_wcs=wcs)
+            elif isinstance(wcs, WCS):
+                self._set_wcs(astropy_wcs=wcs)
             else:
-                raise TypeError('wcs must be a galsim.BaseWCS.')
+                raise TypeError(
+                    f'wcs must be a galsim.BaseWCS or {type(WCS)}.'
+                )
         else:
             raise ValueError(
                 'Either header or wcs has to be provided'
@@ -105,6 +121,7 @@ class Exposure():
     def __getitem__(self, bounds):
         """
         Return a new Exposure instance with the corresponding subimages.
+        Also handle the WCS.
 
         Args:
             bounds (galsim.BoundsI): New bounds for the images.
@@ -116,23 +133,62 @@ class Exposure():
             raise TypeError('bounds must be a galsim.BoundsI.')
         new_exp_dict = {}
         for image_kind in self._exposure_images:
-            new_exp_dict[image_kind] = getattr(self, image_kind)[bounds]
-        # Here it is safe to request 'image' since it is a requiered input.
-        new_exp_dict['wcs'] = new_exp_dict['image'].wcs
+            new_exp_dict[image_kind] = copy.deepcopy(
+                getattr(self, image_kind)
+            )[bounds]
+
+        # We need to update the WCS to match new origin
+        # WARNING: only if the origin changes
+        orig_wcs = copy.deepcopy(self.wcs)
+        if self._meta['image_bounds'] != bounds:
+            offset_wcs = galsim.PositionI(bounds.xmin, bounds.ymin)
+            new_exp_dict['wcs'] = shift_wcs(orig_wcs, offset_wcs)
+            for image_kind in self._exposure_images:
+                new_exp_dict[image_kind].wcs = new_exp_dict['wcs']
+        else:
+            # If same bounds we still run the shift but we set the shift to
+            # the fits origin.
+            new_exp_dict['wcs'] = shift_wcs(orig_wcs, galsim.PositionI(1, 1))
+            for image_kind in self._exposure_images:
+                new_exp_dict[image_kind].wcs = new_exp_dict['wcs']
 
         new_exposure = Exposure(set_meta=False, **new_exp_dict)
         new_exposure._meta = copy.deepcopy(self._meta)
 
         return new_exposure
 
-    def _set_wcs(self):
+    def _set_wcs(self, header=None, galsim_wcs=None, astropy_wcs=None):
         """Set WCS
 
-        Set the WCS in galsim format. The WCS are initialize from an
-        astropy.io.fits.header.Header.
+        Set the WCS in galsim and astropy format. The WCS are initialize from
+        an astropy.io.fits.header.Header or astropy.wcs.wcs.WCS.
+        """
+        if not isinstance(header, type(None)):
+            astropy_wcs = WCS(header)
+            self.wcs = galsim.AstropyWCS(header=astropy_wcs)
+            self.wcs.astropy = astropy_wcs
+        elif not isinstance(galsim_wcs, type(None)):
+            self.wcs = galsim_wcs
+        elif not isinstance(astropy_wcs, type(None)):
+            self.wcs = galsim.AstropyWCS(wcs=astropy_wcs)
+            self.wcs.astropy = astropy_wcs
+
+    def _set_astropy_wcs(self, galsim_image):
+        """Set astropy WCS
+
+        Convert galsim WCS to astropy. This can only be done once we have a
+        galsim image.
+
+        Args:
+            galsim_image (galsim.Image): a galsim image.
         """
 
-        self.wcs = galsim.AstropyWCS(header=self.header)
+        h_tmp = fits.ImageHDU(galsim_image.array).header
+        # h_tmp is directly updated
+        galsim_image.wcs.writeToFitsHeader(h_tmp, galsim_image.bounds)
+        astropy_wcs = WCS(h_tmp)
+        self.wcs.astropy = astropy_wcs
+        galsim_image.wcs.astropy = astropy_wcs
 
     def _set_galsim_image(self, image):
         """Set GalSim image
@@ -149,8 +205,8 @@ class Exposure():
 
         galsim_image = galsim.Image(
             image,
-            xmin=0,
-            ymin=0,
+            xmin=1,
+            ymin=1,
             wcs=self.wcs,
             copy=True,
         )
@@ -188,6 +244,12 @@ class Exposure():
             )
         self._exposure_images.append(image_kind)
         setattr(self, image_kind, galsim_image)
+
+        # In case galsim WCS where provided as input we set now the astropy one
+        # We need infromation that become available only once we have set the
+        # galsim image
+        if not hasattr(self.wcs, 'astropy'):
+            self._set_astropy_wcs(galsim_image)
 
     def _set_meta(self):
         """
@@ -261,6 +323,8 @@ class CoaddImage():
         interp_config (dict, optional): Set of parameters for the
             interpolation. If `None` use the default configuration. Defaults to
             None.
+        resamp_config (dict, optional): Set of parameters for the resampling.
+            If `None` use the default configuration. Defaults to None.
         resize_exposure (bool, optional): Whether to resize the exposures
             before doing the interpolation. It is recommanded to leave this to
             `True` since it will save computing time and memory. We use a
@@ -286,6 +350,7 @@ class CoaddImage():
         image_coadd_size=None,
         world_coadd_size=None,
         interp_config=None,
+        resamp_config=None,
         resize_exposure=True,
         relax_resize=0.10,
         gsparams=None,
@@ -383,6 +448,14 @@ class CoaddImage():
             else:
                 raise TypeError('interp_config must be a dict.')
 
+        if resamp_config is None:
+            self.resamp_config = DEFAULT_RESAMP_CONFIG
+        else:
+            if isinstance(resamp_config, dict):
+                self.resamp_config = resamp_config
+            else:
+                raise TypeError('resamp_config must be a dict.')
+
         if gsparams is None:
             self._gsparams = DEFAULT_GSPARAMS
         else:
@@ -415,10 +488,10 @@ class CoaddImage():
         """
 
         self.coadd_bounds = galsim.BoundsI(
-            xmin=0,
-            xmax=self.image_coadd_size[0]-1,
-            ymin=0,
-            ymax=self.image_coadd_size[1]-1,
+            xmin=1,
+            xmax=self.image_coadd_size[0],
+            ymin=1,
+            ymax=self.image_coadd_size[1],
         )
 
     def _set_image_coadd_center(self):
@@ -426,7 +499,7 @@ class CoaddImage():
         Set coadd center in pixel.
         """
 
-        self.image_coadd_center = self.coadd_bounds.center
+        self.image_coadd_center = self.coadd_bounds.true_center
 
     def _set_coadd_wcs(self, scale):
         """Set coadd wcs
@@ -437,9 +510,12 @@ class CoaddImage():
             scale (float): Coadd pixel scale.
         """
 
+        a = 0
+
+        # Here we shift the center to match conventions
         affine_transform = galsim.AffineTransform(
             scale, 0., 0., scale,
-            origin=self.image_coadd_center,
+            origin=self.image_coadd_center,  # -galsim.PositionD(1., 1.),
         )
 
         self.coadd_wcs = galsim.TanWCS(
@@ -447,7 +523,24 @@ class CoaddImage():
             world_origin=self.world_coadd_center,
             units=galsim.arcsec,
         )
+        self._set_astropy_wcs()
         self.coadd_pixel_scale = scale
+
+    def _set_astropy_wcs(self):
+        """Set astropy WCS
+
+        Convert galsim WCS to astropy. This can only be done once we have a
+        galsim image.
+
+        Args:
+            galsim_image (galsim.Image): a galsim image.
+        """
+
+        h_tmp = fits.ImageHDU(np.zeros(self.image_coadd_size)).header
+        # h_tmp is directly updated
+        self.coadd_wcs.writeToFitsHeader(h_tmp, self.coadd_bounds)
+        astropy_wcs = WCS(h_tmp)
+        self.coadd_wcs.astropy = astropy_wcs
 
     def resize_explist(self, relax_resize):
         """Resize exposure list
@@ -464,6 +557,7 @@ class CoaddImage():
                 # automatically and we will need this parameter later.
                 # NOTE: Maybe find a better way to do this..
                 resized_exp._interp = False
+                resized_exp._resamp = False
                 resized_explist.append(resized_exp)
 
         if len(resized_explist) == 0:
@@ -495,7 +589,7 @@ class CoaddImage():
         try:
             image_coadd_center_on_exp = exp.image.wcs.toImage(
                 self.world_coadd_center
-            ).round()
+            )
         except TypeError:
             world_pos = galsim.PositionD(
                 self.world_coadd_center.ra.deg,
@@ -503,19 +597,19 @@ class CoaddImage():
                 )
             image_coadd_center_on_exp = exp.image.wcs.toImage(
                 world_pos
-            ).round()
+            )
 
         # Make raw bounds
         new_bounds = galsim.BoundsI(
-            xmin=0,
+            xmin=1,
             xmax=int(self.coadd_bounds.xmax*(1.+relax_resize)),
-            ymin=0,
+            ymin=1,
             ymax=int(self.coadd_bounds.ymax*(1.+relax_resize)),
         )
 
         # Shift the bounds to the correct position
         new_bounds = new_bounds.shift(
-            image_coadd_center_on_exp-new_bounds.center
+            image_coadd_center_on_exp.round()-new_bounds.center
         )
 
         # First check if there is an overlap between the coadd footprint and
@@ -528,15 +622,76 @@ class CoaddImage():
             return exp[new_bounds]
         # if not, we cut the coadd footprint at the exposure edges
         else:
-            if new_bounds.xmin < exp_bounds.xmin:
-                new_bounds.xmin = exp_bounds.xmin
-            if new_bounds.xmax > exp_bounds.xmax:
-                new_bounds.xmax = exp_bounds.xmax
-            if new_bounds.ymin < exp_bounds.ymin:
-                new_bounds.ymin = exp_bounds.ymin
-            if new_bounds.ymax > exp_bounds.ymax:
-                new_bounds.ymax = exp_bounds.ymax
+            new_bounds = new_bounds & exp.image.bounds
             return exp[new_bounds]
+
+    def get_all_resamp_images(
+        self,
+        **kwargs,
+    ):
+        """
+        Get all resampeled images.
+
+        Args:
+            kwargs: Any additionnal keywords arguments for
+                reproject.reproject_interp.
+        """
+
+        for exp in self.explist:
+            for image_kind in exp._exposure_images:
+                # We skip if an image is already resampled
+                if '_resamp' in image_kind:
+                    continue
+
+                if image_kind == 'weight' or image_kind == 'flag':
+                    resamp_method = 'nearest'
+                else:
+                    resamp_method = 'classic'
+
+                # NOTE: Add verbose option
+                # print(f"Interpolate {image_kind}...")
+                input_reproj = (
+                    getattr(exp, image_kind).array,
+                    exp.wcs.astropy
+                )
+                resampled, footprint = self._do_resamp(
+                    input_reproj,
+                    resamp_method,
+                    **kwargs,
+                    )
+                # exp._init_input_image(resampled, image_kind+'_resamp')
+                gal_img_tmp = galsim.Image(
+                    resampled,
+                    wcs=copy.deepcopy(self.coadd_wcs),
+                )
+                print(image_kind)
+                try:
+                    print(gal_img_tmp.FindAdaptiveMom())
+                except:
+                    print("Mom failed")
+                setattr(exp, image_kind+'_resamp', gal_img_tmp)
+            exp.wcs_resamp = copy.deepcopy(self.coadd_wcs)
+
+            exp._resamp = True
+
+    def _do_resamp(self, input, resamp_method, **kwargs):
+
+        resamp_config = self.resamp_config[resamp_method]
+        resamp_config.update(kwargs)
+
+        print(input[1])
+        print(self.coadd_wcs.astropy)
+
+        resamp_img, footprint = reproject_interp(
+            input,
+            output_projection=self.coadd_wcs.astropy,
+            shape_out=self.image_coadd_size,
+            **resamp_config,
+            )
+
+        resamp_img[np.isnan(resamp_img)] = 0
+
+        return resamp_img, footprint
 
     def get_all_interp_images(
         self,
@@ -551,7 +706,7 @@ class CoaddImage():
         """
 
         for exp in self.explist:
-            # ggalsim.InterpolatedImage works with local WCS so we force it to
+            # galsim.InterpolatedImage works with local WCS so we force it to
             # take the one at the center of the coadd for better accuracy.
             # This probably do not make a difference but it is more
             # "elegant" to do it :)
@@ -635,3 +790,37 @@ class CoaddImage():
             wcs=self.coadd_wcs,
         )
         self.weight.fill(0)
+
+    def setup_coadd_metacal(self, types):
+        """
+        Setup the coadd image and weight.
+
+        Args:
+            types (list): Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
+        """
+
+        self.image = {}
+        self.noise = {}
+        self.weight = {}
+        for type in types:
+            self.image[type] = galsim.Image(
+                bounds=self.coadd_bounds,
+                wcs=self.coadd_wcs,
+            )
+            # Initially the image is fill with zeros to avoid issues in case
+            # the exposures does not fill the entire footprint.
+            self.image[type].fill(0)
+
+            self.noise[type] = galsim.Image(
+                bounds=self.coadd_bounds,
+                wcs=self.coadd_wcs,
+            )
+            # Initially the noise is fill with zeros to avoid issues in case
+            # the exposures does not fill the entire footprint.
+            self.noise[type].fill(0)
+
+            self.weight[type] = galsim.Image(
+                bounds=self.coadd_bounds,
+                wcs=self.coadd_wcs,
+            )
+            self.weight[type].fill(0)
