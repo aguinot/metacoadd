@@ -157,7 +157,9 @@ def run_simplecoadd(
         exp = mtc.Exposure(
             image=sim_data["band_data"]["i"][i].image.array,
             weight=1 / sim_data["band_data"]["i"][i].variance.array,
-            noise=rng.normal(size=sim_data["band_data"]["i"][i].image.array.shape)
+            noise=rng.normal(
+                size=sim_data["band_data"]["i"][i].image.array.shape
+            )
             * np.sqrt(sim_data["band_data"]["i"][i].variance.array),
             wcs=copy.deepcopy(sim_data["band_data"]["i"][i].wcs),
         )
@@ -183,7 +185,9 @@ def run_simplecoadd(
         coadd_center_on_exp = sim_data["band_data"]["i"][i].wcs.toImage(
             sim_data["coadd_wcs"].center
         )
-        gs_img = sim_data["band_data"]["i"][i].psf._get_gspsf(coadd_center_on_exp)
+        gs_img = sim_data["band_data"]["i"][i].psf._get_gspsf(
+            coadd_center_on_exp
+        )
         psf_img_local = gs_img.drawImage(
             center=coadd_center_on_exp,
             nx=sim_data["psf_dims"][0],
@@ -304,7 +308,9 @@ def run_metadetect(
         weight=simplecoadd.coaddimage.weight.array,
         noise=simplecoadd.coaddimage.noise.array,
         jacobian=coadd_jac,
-        ormask=np.zeros_like(simplecoadd.coaddimage.image.array, dtype=np.int32),
+        ormask=np.zeros_like(
+            simplecoadd.coaddimage.image.array, dtype=np.int32
+        ),
         bmask=np.zeros_like(simplecoadd.coaddimage.image.array, dtype=np.int32),
         psf=ngmix.Observation(
             image=simplecoadd_psf.coaddimage.image.array, jacobian=psf_jac
