@@ -11,11 +11,12 @@ from ngmix.gmix.gmix_nb import GMIX_LOW_DETVAL
 from ngmix.shape import e1e2_to_g1g2
 from ngmix.observation import Observation
 from ngmix.gexceptions import GMixRangeError
+from ngmix.util import get_ratio_error
 import ngmix.flags
 
 from .ngmix_admom_nb import get_mom_var
 
-DEFAULT_MAXITER = 20
+DEFAULT_MAXITER = 200
 DEFAULT_SHIFTMAX = 5.0  # pixels
 DEFAULT_TOL = 1.0e-6
 DEFAULT_MAX_MOMENT_NSIG2 = 25
@@ -260,7 +261,7 @@ def get_result(ares, jac_area, wgt_norm):
         res['T'] = res['pars'][2] + res['pars'][4]
         flux_sum = res['sums'][5]
         res['flux_mean'] = flux_sum/res['wsum']
-        # res['pars'][5] = res['flux_mean']
+        res['pars'][5] = res['flux_mean']
 
     # handle flux-only flags
     if res['flags'] == 0:
@@ -270,10 +271,15 @@ def get_result(ares, jac_area, wgt_norm):
             # the wgt_norm and wsum compute the weighted flux and normalize
             # the weight kernel to peak at 1
             fnorm = jac_area * wgt_norm * res["wsum"]
-            res['flux'] = res['sums'][5]  # / fnorm
+            #res['flux'] = res['sums'][5] / fnorm
+            res['flux'] = res['pars'][5] * res['pars'][6] / fnorm
 
             if res['sums_cov'][5, 5] > 0:
-                res["flux_err"] = np.sqrt(res['sums_cov'][5, 5]) / fnorm
+                res["flux_err"] = res["pars"][5]*np.sqrt(
+                    res["sums_cov"][5, 5]/res["sums"][5]**2 
+                    + res["sums_cov"][6, 6]/res["sums"][6]**2 
+                    + 2*res["sums_cov"][6, 5]/res["sums"][6]/res["sums"][5]
+                ) / fnorm
                 res["s2n"] = res["flux"] / res["flux_err"]
             else:
                 res["flux_flags"] |= ngmix.flags.NONPOS_VAR
@@ -311,8 +317,14 @@ def get_result(ares, jac_area, wgt_norm):
     # handle rho4
     if res['flags'] == 0:
         res['rho4'] = res['pars'][6]
-        if res['sums_cov'][6, 6] > 0:
-            res['rho4_err'] = np.sqrt(res['sums_cov'][6, 6])
+        if res['sums_cov'][6, 6] > 0 and res['sums_cov'][5, 5]:
+            res['rho4_err'] = 4*get_ratio_error(
+                    res['sums'][6],
+                    res['sums'][5],
+                    res['sums_cov'][6, 6],
+                    res['sums_cov'][5, 5],
+                    res['sums_cov'][6, 5],
+                )
 
     # now handle full flags
     if not np.all(np.diagonal(res['sums_cov'][2:, 2:]) > 0):

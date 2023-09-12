@@ -4,7 +4,7 @@ from math import sqrt, atan2, sin, cos, exp
 import ngmix
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True)
 def find_ellipmom1(
     pixels,
     x0, y0,
@@ -13,22 +13,6 @@ def find_ellipmom1(
     conf,
     do_cov=False
 ):
-    """Find elliptic moments
-
-    Compute gaussian weighted moments.
-
-    Args:
-        pixels (np.ndarray): Pixel array as compute by ngmix. See 
-            ngmix.Observation.pixels.
-        x0 (flot): _description_
-        y0 (flot): _description_
-        Mxx (_type_): _description_
-        Mxy (_type_): _description_
-        Myy (_type_): _description_
-        res (_type_): _description_
-        conf (_type_): _description_
-        do_cov (bool, optional): _description_. Defaults to False.
-    """
 
     F = res['F']
 
@@ -59,7 +43,7 @@ def find_ellipmom1(
         if rho2 < conf['max_moment_nsig2']:
             weight = exp(-0.5*rho2)*res['wnorm']*pixel["area"]
             intensity = weight * pixel['val']
-
+            
             res['wsum'] += weight
 
             if not do_cov:
@@ -70,7 +54,7 @@ def find_ellipmom1(
                 res['sums'][4] += vmod*vmod*intensity
                 res['sums'][5] += 1.*intensity
                 res['sums'][6] += rho2*rho2*intensity
-
+            
             else:
                 w2 = weight*weight
                 var = 1./(pixel['ierr']*pixel['ierr'])
@@ -87,7 +71,7 @@ def find_ellipmom1(
                         res['sums_cov'][i, j] += w2*var*F[i]*F[j]
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True)
 def find_ellipmom2(
     pixels,
     guess,
@@ -108,7 +92,7 @@ def find_ellipmom2(
     y00 = y0
     do_cov = False
     for i in range(conf['maxiter']):
-
+        
         clear_result(res)
         find_ellipmom1(pixels, x0, y0, Mxx, Mxy, Myy, res, conf, do_cov)
         Bx, By, Cxx, Cxy, Cyy, Amp, rho4 = res["sums"]
