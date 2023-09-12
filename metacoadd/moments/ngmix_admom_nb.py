@@ -32,6 +32,7 @@ def admom(confarray, wt, pixels, resarray):
     colorig = wt['col'][0]
 
     e1old = e2old = Told = np.nan
+    convergence_factor = 1e30
     for i in range(conf['maxiter']):
 
         if wt['det'][0] < GMIX_LOW_DETVAL:
@@ -57,6 +58,7 @@ def admom(confarray, wt, pixels, resarray):
             break
 
         clear_result(res)
+        
         admom_momsums(wt, pixels, res)
 
         if res['sums'][5] <= 0.0:
@@ -80,10 +82,13 @@ def admom(confarray, wt, pixels, resarray):
 
         e1 = (Icc - Irr)/T
         e2 = 2*Irc/T
+        
+        #convergence_factor = get_converg(convergence_factor, Icc, Irc, Irr, wt['icc'][0], wt['irc'][0], wt['irr'][0])
 
         if ((abs(e1-e1old) < conf['etol'])
                 and (abs(e2-e2old) < conf['etol'])
                 and (abs(T/Told-1.) < conf['Ttol'])):
+        #if convergence_factor < conf["etol"]:
 
             # res['pars'][0] = wt['row'][0]
             # res['pars'][1] = wt['col'][0]
@@ -226,6 +231,27 @@ def deweight_moments(wt, Irr, Irc, Icc, res):
     wt['det'][0] = (
         wt['irr'][0]*wt['icc'][0] - wt['irc'][0]*wt['irc'][0]
     )
+    
+    
+@njit
+def get_converg(conv0, xx, xy, yy, Wxx, Wxy, Wyy):
+    """
+    """
+    
+    two_psi = np.arctan2(2*xy, xx-yy)
+    semi_a2 = 0.5 * ((xx+yy) + (xx-yy)*np.cos(two_psi)) + xy*np.sin(two_psi)
+    semi_b2 = xx + yy - semi_a2
+    
+    dxx = np.abs(4 * (xx - 0.5*Wxx) / semi_b2)
+    dxy = np.abs(4 * (xy - 0.5*Wxy) / semi_b2)
+    dyy = np.abs(4 * (yy - 0.5*Wyy) / semi_b2)
+    
+    conv = conv0
+    dmax = np.max(np.array([dxx,dxy,dyy]))
+    if dmax < conv:
+        conv = dmax
+    
+    return conv
 
 
 @njit
