@@ -27,7 +27,9 @@ def find_ellipmom1(pixels, x0, y0, Mxx, Mxy, Myy, res, conf, do_cov=False):
         TwoMinv_xy__y_y0__x_x0 = TwoMinv_xy * vmod * umod
         Minv_yy__y_y0__y_y0 = Minv_yy * vmod * vmod
 
-        rho2 = Minv_yy__y_y0__y_y0 + TwoMinv_xy__y_y0__x_x0 + Minv_xx__x_x0__x_x0
+        rho2 = (
+            Minv_yy__y_y0__y_y0 + TwoMinv_xy__y_y0__x_x0 + Minv_xx__x_x0__x_x0
+        )
 
         res["npix"] += 1
         if rho2 < conf["max_moment_nsig2"]:
@@ -89,7 +91,9 @@ def find_ellipmom2(
             res["flags"] = ngmix.flags.NONPOS_FLUX
 
         two_psi = atan2(2 * Mxy, Mxx - Myy)
-        semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + Mxy * sin(two_psi)
+        semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + Mxy * sin(
+            two_psi
+        )
         semi_b2 = Mxx + Myy - semi_a2
 
         if semi_b2 <= 0:
@@ -149,7 +153,9 @@ def find_ellipmom2(
         Mxy += dxy * semi_b2
         Myy += dyy * semi_b2
 
-        if (abs(x0 - x00) > conf["shiftmax"]) | (abs(y0 - y00) > conf["shiftmax"]):
+        if (abs(x0 - x00) > conf["shiftmax"]) | (
+            abs(y0 - y00) > conf["shiftmax"]
+        ):
             res["flags"] = ngmix.flags.CEN_SHIFT
 
         res["numiter"] = i + 1

@@ -14,7 +14,9 @@ def shift_wcs(wcs, offset):
     elif hasattr(wcs_orig, "wcs"):
         ap_wcs = wcs_orig.wcs
     else:
-        raise ValueError("wcs must have an astropy component. Either .astropy or .wcs")
+        raise ValueError(
+            "wcs must have an astropy component. Either .astropy or .wcs"
+        )
 
     # Get header
     h = ap_wcs.to_header(relax=True)

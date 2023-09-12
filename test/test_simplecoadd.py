@@ -268,7 +268,9 @@ def test_shear_meas(
     m, merr, c, cerr = boostrap_m_c(pres, mres)
 
     print(
-        ("\n\nm [1e-3, 3sigma]: {} +/- {}" "\nc [1e-5, 3sigma]: {} +/- {}").format(
+        (
+            "\n\nm [1e-3, 3sigma]: {} +/- {}" "\nc [1e-5, 3sigma]: {} +/- {}"
+        ).format(
             m / 1e-3,
             3 * merr / 1e-3,
             c / 1e-5,

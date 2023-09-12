@@ -31,7 +31,9 @@ def get_rho4_ngmix(pixels, xx, yy, xy, det):
         two_inv_xy_y_y0 = two_inv_xy * pixel["v"]
         inv_yy_y_y0_y_y0 = inv_yy * pixel["v"] * pixel["v"]
 
-        rho2 = inv_yy_y_y0_y_y0 + two_inv_xy_y_y0 * pixel["u"] + inv_xx_x_x0_x_x0
+        rho2 = (
+            inv_yy_y_y0_y_y0 + two_inv_xy_y_y0 * pixel["u"] + inv_xx_x_x0_x_x0
+        )
 
         intensity = np.exp(-0.5 * rho2) * pixel["val"]
 
@@ -131,7 +133,9 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=1.2):
     T_gal = xx_gal + yy_gal
     e1_gal = (xx_gal - yy_gal) / T_gal
     e2_gal = (2 * xy_gal) / T_gal
-    rho4gal, flux_gal = get_rho4_ngmix(obs.pixels, xx_gal, yy_gal, xy_gal, det_gal)
+    rho4gal, flux_gal = get_rho4_ngmix(
+        obs.pixels, xx_gal, yy_gal, xy_gal, det_gal
+    )
 
     R_bj = bj_nullPSF(T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1)
     xx_final, yy_final, xy_final = get_corrected_mom(

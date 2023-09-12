@@ -155,7 +155,9 @@ class SimpleCoadd:
             if coadd_method in _available_method:
                 self._coadd_method = coadd_method
             else:
-                raise ValueError(f"coadd_method must be in {_available_method}.")
+                raise ValueError(
+                    f"coadd_method must be in {_available_method}."
+                )
         else:
             raise TypeError("coadd_method must be of type str.")
 
@@ -189,7 +191,9 @@ class SimpleCoadd:
                     # NOTE: check for the presence of a 'weight' for the
                     # weighted average coadding
                     self.coaddimage.image[b] += (
-                        all_stamp["image"] * all_stamp["weight"] * all_stamp["border"]
+                        all_stamp["image"]
+                        * all_stamp["weight"]
+                        * all_stamp["border"]
                     )
                     if "noise" in list(all_stamp.keys()):
                         self.coaddimage.noise[b] += (
@@ -197,13 +201,15 @@ class SimpleCoadd:
                             * all_stamp["weight"]
                             * all_stamp["border"]
                         )
-                    self.coaddimage.weight += all_stamp["weight"] * all_stamp["border"]
+                    self.coaddimage.weight += (
+                        all_stamp["weight"] * all_stamp["border"]
+                    )
             stamps.append(all_stamp)
         self.stamps = stamps
         non_zero_weights = np.where(self.coaddimage.weight.array != 0)
-        self.coaddimage.image.array[non_zero_weights] /= self.coaddimage.weight.array[
+        self.coaddimage.image.array[
             non_zero_weights
-        ]
+        ] /= self.coaddimage.weight.array[non_zero_weights]
         if "noise" in list(all_stamp.keys()):
             self.coaddimage.noise.array[
                 non_zero_weights
@@ -342,13 +348,18 @@ class MetaCoadd(SimpleCoadd):
         for n, exp in enumerate(self.coaddimage.explist):
             print(n)
             # all_stamp = self._process_one_exp(exp, self._inv_psflist[n])
-            all_stamp = self._process_one_exp(exp, self.psf_coaddimage.explist[n])
+            all_stamp = self._process_one_exp(
+                exp, self.psf_coaddimage.explist[n]
+            )
 
             # Check bounds, it should always pass. Just for safety.
             # We check only 'image' because it we always be there and the
             # property are shared with the other kind.
             for type in self.types:
-                b = all_stamp["image"][type].bounds & self.coaddimage.image[type].bounds
+                b = (
+                    all_stamp["image"][type].bounds
+                    & self.coaddimage.image[type].bounds
+                )
                 if b.isDefined():
                     if self._coadd_method == "weighted":
                         # NOTE: check for the presence of a 'weight' for the
@@ -479,7 +490,9 @@ class MetaCoadd(SimpleCoadd):
         mcal_obs = self._run_metacal(exp, psf_exp, use_resamp=True)
 
         print("before")
-        print(galsim.hsm.FindAdaptiveMom(galsim.Image(psf_exp.image_resamp.array)))
+        print(
+            galsim.hsm.FindAdaptiveMom(galsim.Image(psf_exp.image_resamp.array))
+        )
 
         stamp_dict = {"image": {}, "psf": {}, "border": {}}
         if hasattr(exp, "noise"):
@@ -523,7 +536,9 @@ class MetaCoadd(SimpleCoadd):
         elif type == "noshear":
             return 0.0, 0.0
         else:
-            raise ValueError('type must be in ["1m", "1p", "2m", "2p", "noshear"].')
+            raise ValueError(
+                'type must be in ["1m", "1p", "2m", "2p", "noshear"].'
+            )
 
     def _process_psf(self, psfs):
         if isinstance(psfs, list):
@@ -544,14 +559,18 @@ class MetaCoadd(SimpleCoadd):
                     "psf should be a list of numpy.ndarray or galsim.Image."
                 )
         else:
-            raise TypeError("psf should be a list of numpy.ndarray or galsim.Image.")
+            raise TypeError(
+                "psf should be a list of numpy.ndarray or galsim.Image."
+            )
 
     def _init_invpsf_nparray(self, psfs):
         inv_psflist = []
         sigma_psflist = []
         flux_psflist = []
         for n, psf in enumerate(psfs):
-            local_wcs = self._get_exposures_local_wcs(self.coaddimage.explist[n])
+            local_wcs = self._get_exposures_local_wcs(
+                self.coaddimage.explist[n]
+            )
             psf_img = galsim.Image(
                 psf,
                 wcs=local_wcs,
@@ -578,7 +597,9 @@ class MetaCoadd(SimpleCoadd):
         sigma_psflist = []
         flux_psflist = []
         for n, psf in enumerate(psfs):
-            local_wcs = self._get_exposures_local_wcs(self.coaddimage.explist[n])
+            local_wcs = self._get_exposures_local_wcs(
+                self.coaddimage.explist[n]
+            )
             if hasattr(psf, "wcs"):
                 if psf.wcs != local_wcs:
                     raise ValueError(
@@ -637,7 +658,9 @@ class MetaCoadd(SimpleCoadd):
         karr_r = kim.real.array
         # Find the smallest r where the kval < small_kval
         nk = karr_r.shape[0]
-        kx, ky = np.meshgrid(np.arange(-nk / 2, nk / 2), np.arange(-nk / 2, nk / 2))
+        kx, ky = np.meshgrid(
+            np.arange(-nk / 2, nk / 2), np.arange(-nk / 2, nk / 2)
+        )
         ksq = (kx**2 + ky**2) * dk**2
         ksq_max = np.min(ksq[karr_r < small_kval * psf.flux])
 
@@ -699,7 +722,9 @@ class MetaCoadd(SimpleCoadd):
         )
 
         if res is not None:
-            res = self._add_positions_and_psf(mbobs, medsifier.cat, res, shear_str)
+            res = self._add_positions_and_psf(
+                mbobs, medsifier.cat, res, shear_str
+            )
 
         return res
 
