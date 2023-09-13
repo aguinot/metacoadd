@@ -6,7 +6,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
 
-from .utils import shift_wcs
+from metacoadd.utils import shift_wcs
 
 DEFAULT_INTERP_CONFIG = {
     "classic": {
