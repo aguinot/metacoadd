@@ -33,6 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pre-commit", "black", "ruff"]
+test = ["pytest", "pytest-cov", "pytest-mock", "joblib", "tqdm", "astropy", "matplotlib"]
 
 [tool.setuptools]
 packages = ["metacoadd", "metacoadd.moments", "metacoadd.simu"]
