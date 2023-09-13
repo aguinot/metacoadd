@@ -1,0 +1,10 @@
+numpy
+scipy
+numba>0.54
+galsim>=2.4
+reproject
+metadetect
+ngmix
+esutil
+pyfftw
+meds
