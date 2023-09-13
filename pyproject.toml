@@ -23,7 +23,7 @@ dependencies = [
     "reproject>=0.12",
     "metadetect @ git+https://github.com/esheldon/metadetect.git",
     "ngmix @ git+https://github.com/esheldon/ngmix.git",
-    "esutil>=0.6",
+    "esutil @ git+https://github.com/esheldon/esutil.git",
     "pyfftw>=0.12"
 ]
 
