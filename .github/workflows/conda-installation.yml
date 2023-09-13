@@ -36,11 +36,12 @@ jobs:
           pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
           pip install --no-deps git+https://github.com/LSSTDESC/descwl_coadd.git
 
-          python -m pip install -e '.[test]'
-
           mamba uninstall ngmix --force -y
           python -m pip install git+https://github.com/esheldon/ngmix.git
+          mamba uninstall metadetect --force -y
+          python -m pip install git+https://github.com/esheldon/metadetect.git
 
+          python -m pip install -e '.[test]'
       - name: test
         shell: bash -l {0}
         run: |
