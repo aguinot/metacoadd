@@ -35,7 +35,7 @@ params_single = {
 
 
 # Input data
-input_headers_dir = "../data/pre_selection_3/"
+input_headers_dir = "data/pre_selection_3/"
 
 
 # Make simu
