@@ -38,7 +38,6 @@ jobs:
 
           mamba uninstall ngmix --force -y
           python -m pip install git+https://github.com/esheldon/ngmix.git
-          mamba uninstall metadetect --force -y
           python -m pip install git+https://github.com/esheldon/metadetect.git
 
           python -m pip install -e '.[test]'
