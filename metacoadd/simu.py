@@ -3,15 +3,10 @@ from math import ceil
 
 import galsim
 import metadetect as mdet
-
-# from astropy.io.fits import Header
 import ngmix
 import numpy as np
 
 import metacoadd as mtc
-
-# import os
-
 
 TEST_METADETECT_CONFIG = {
     "model": "wmom",

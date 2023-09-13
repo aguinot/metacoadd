@@ -6,8 +6,8 @@ from metadetect import detect, procflags, shearpos
 from metadetect.fitting import fit_mbobs_list_wavg
 from metadetect.mfrac import measure_mfrac
 
-from .exposure import CoaddImage, Exposure
-from .utils import exp2obs
+from metacoadd.exposure import CoaddImage, Exposure
+from metacoadd.utils import exp2obs
 
 TEST_METADETECT_CONFIG = {
     "model": "wmom",

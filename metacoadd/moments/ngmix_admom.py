@@ -12,7 +12,7 @@ from ngmix.observation import Observation
 from ngmix.shape import e1e2_to_g1g2
 from numpy import diag
 
-from .ngmix_admom_nb import get_mom_var
+from metacoadd.moments.ngmix_admom_nb import get_mom_var
 
 DEFAULT_MAXITER = 200
 DEFAULT_SHIFTMAX = 5.0  # pixels

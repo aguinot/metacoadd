@@ -1,8 +1,12 @@
 import ngmix
 import numpy as np
 
-from .galsim_admom import GAdmomFitter
-from .galsim_regauss_nb import _check_exp, find_ellipmom2, regauss
+from metacoadd.moments.galsim_admom import GAdmomFitter
+from metacoadd.moments.galsim_regauss_nb import (
+    _check_exp,
+    find_ellipmom2,
+    regauss,
+)
 
 
 def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
