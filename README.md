@@ -1,5 +1,7 @@
 # Metacoadd
 
+[![pytest](https://github.com/aguinot/metacoadd/actions/workflows/conda-installation.yml/badge.svg?branch=main)](https://github.com/aguinot/metacoadd/actions/workflows/conda-installation.yml)
+
 Create a coadd image at the same time as we create sheared images for the [metadetection][metadetect].
 
 [metadetect]: https://github.com/esheldon/metadetect
