@@ -2,8 +2,8 @@ numpy
 scipy
 numba>0.54
 galsim>=2.4
-reproject>=0.12
-metadetect @ git+https://github.com/esheldon/metadetect.git
-ngmix @ git+https://github.com/esheldon/ngmix.git
-esutil>=0.6
-pyfftw>=0.12
+reproject
+metadetect @ https://github.com/esheldon/metadetect/archive/refs/tags/0.12.0.zip
+ngmix @ https://github.com/esheldon/ngmix/archive/refs/tags/v2.3.0.zip
+esutil
+pyfftw
