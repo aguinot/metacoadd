@@ -1,0 +1,9 @@
+numpy
+scipy
+numba>0.54
+galsim>=2.4
+reproject>=0.12
+metadetect @ git+https://github.com/esheldon/metadetect.git
+ngmix @ git+https://github.com/esheldon/ngmix.git
+esutil>=0.6
+pyfftw>=0.12

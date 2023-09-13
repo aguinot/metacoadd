@@ -1,0 +1,47 @@
+name: conda-installation
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  conda-installation:
+    name: conda-installation
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: install mamba
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          channels: conda-forge,defaults
+          channel-priority: strict
+          show-channel-urls: true
+          miniforge-version: latest
+          miniforge-variant: Mambaforge
+
+      - name: configure conda and install code
+        shell: bash -l {0}
+        run: |
+          conda config --set always_yes yes
+          mamba install --quiet --yes --file requirements.txt
+
+          pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
+          pip install --no-deps git+https://github.com/LSSTDESC/descwl_coadd.git
+
+          python -m pip install -e '.[test]'
+
+          mamba uninstall ngmix --force -y
+          python -m pip install git+https://github.com/esheldon/ngmix.git
+
+      - name: test
+        shell: bash -l {0}
+        run: |
+          pytest -v test/basic_tests.py
