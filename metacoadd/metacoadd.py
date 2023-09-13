@@ -344,7 +344,7 @@ class MetaCoadd(SimpleCoadd):
         self.psf_coaddimage.setup_coadd_metacal(self.types)
         stamps = []
         for n, exp in enumerate(self.coaddimage.explist):
-            print(n)
+            # print(n)
             # all_stamp = self._process_one_exp(exp, self._inv_psflist[n])
             all_stamp = self._process_one_exp(
                 exp, self.psf_coaddimage.explist[n]
@@ -462,7 +462,8 @@ class MetaCoadd(SimpleCoadd):
             step=self.step,
             types=self.types,
             use_noise_image=True,
-            psf="gauss",
+            # psf="gauss",
+            psf=galsim.Gaussian(sigma=0.6, flux=1.0),
             rng=rng,
         )
 
@@ -483,11 +484,6 @@ class MetaCoadd(SimpleCoadd):
 
         mcal_obs = self._run_metacal(exp, psf_exp, use_resamp=True)
 
-        print("before")
-        print(
-            galsim.hsm.FindAdaptiveMom(galsim.Image(psf_exp.image_resamp.array))
-        )
-
         stamp_dict = {"image": {}, "psf": {}, "border": {}}
         if hasattr(exp, "noise"):
             stamp_dict["noise"] = {}
@@ -501,8 +497,8 @@ class MetaCoadd(SimpleCoadd):
             for type in self.types:
                 if key == "psf":
                     img = getattr(mcal_obs[type], key).image
-                    print("after")
-                    print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
+                    # print("after")
+                    # print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
                     wcs = getattr(mcal_obs[type], key).jacobian.get_galsim_wcs()
                 else:
                     img = getattr(mcal_obs[type], key)
