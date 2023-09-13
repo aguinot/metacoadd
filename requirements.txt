@@ -7,4 +7,8 @@ metadetect
 ngmix
 esutil
 pyfftw
+
+# Needed by metadetect
 meds
+des-sxdes
+sep

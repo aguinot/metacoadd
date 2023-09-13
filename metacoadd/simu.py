@@ -1,12 +1,18 @@
 import copy
+import os
 from math import ceil
 
 import galsim
 import metadetect as mdet
 import ngmix
 import numpy as np
+from astropy.io.fits import Header
 
-import metacoadd as mtc
+from metacoadd import utils
+
+# import metacoadd as mtc
+from metacoadd.exposure import CoaddImage, ExpList, Exposure
+from metacoadd.metacoadd import MetaCoadd, SimpleCoadd
 
 TEST_METADETECT_CONFIG = {
     "model": "wmom",
@@ -122,6 +128,497 @@ TEST_METADETECT_CONFIG = {
 }
 
 
+def make_sim(
+    headers_dir,
+    coadd_ra,
+    coadd_dec,
+    coadd_scale,
+    coadd_size,
+    params_obj,
+    params_single,
+    seed,
+    grid=True,
+    sep_size=50,
+    get_psf=True,
+    get_obj_dict=True,
+):
+    """Make simu
+
+    Build a set of single exposures to test metacoadd.
+
+    Args:
+        headers_dir (str): Path to the directory with the header from which the
+            WCS arederived.
+        coadd_ra (float): RA position of the coadd center.
+        coadd_dec (float): DEC position of the coadd center.
+        coadd_scale (float): Pixel scale to use for the coadd.
+        coadd_size (float): Size of the coadd (in arcmin).
+        params_obj (dict): Dictionnary with the information to build the object
+            catalog.
+        params_single (dict): Dictionnary with the general informations to
+            build the single exposures.
+        seed (int): RNG seed.
+        grid (bool, optional): If `True`, will place objects on a grid.
+            Randomly distributed otherwise. Defaults to True.
+        sep_size (int, optional): Separetion to use for between objects. Only
+            used for the grid. Defaults to 50.
+        get_psf (bool, optional): If `True`, will return a `metacoadd.Exposure`
+            instance with the PSF information. Defaults to True.
+        get_obj_dict (bool, optional): If `True`, will return a the object
+            catalog as a `dict`. Defaults to True.
+
+    Returns:
+        metacoadd.ExpList or tuple: Returns the created exposure list or a
+            tuple with optionaly the PSF and/or the object catalog.
+    """
+
+    np_rng = np.random.default_rng(seed=seed)
+
+    headers_list = os.listdir(headers_dir)
+    coadd_size_image = ceil(coadd_size * 3600 / coadd_scale)
+
+    # Create object catalog
+    # print("Build object catalog..")
+    obj_dict = make_obj_dict(
+        coadd_size_image,
+        coadd_ra,
+        coadd_dec,
+        coadd_scale,
+        params_obj,
+        grid=grid,
+        sep_size=sep_size,
+    )
+
+    # Create exposures
+    # print("Build all exposures..")
+    explist = ExpList()
+    if get_psf:
+        explist_psf = ExpList()
+    for header_path in headers_list:
+        params_single_tmp = params_single.copy()
+        params_single_tmp["seed"] = np_rng.integers(low=1, high=2**30)
+
+        exp_dict = make_single_exp(
+            params_single_tmp,
+            headers_dir + header_path,
+            obj_dict,
+        )
+        if exp_dict is None:
+            # print(f'{header_path} skipped.')
+            continue
+
+        coadd_center_on_exp = exp_dict["wcs"].toImage(
+            galsim.CelestialCoord(
+                ra=coadd_ra * galsim.degrees,
+                dec=coadd_dec * galsim.degrees,
+            )
+        )
+        psf_tmp_img = galsim.Image(51, 51)
+        psf_tmp_img.setCenter(coadd_center_on_exp.round())
+        offset_wcs_psf = galsim.PositionI(
+            psf_tmp_img.bounds.xmin, psf_tmp_img.bounds.ymin
+        )
+        try:
+            correct_offset = coadd_center_on_exp - coadd_center_on_exp.round()
+            psf_wcs = utils.shift_wcs(exp_dict["wcs"], offset_wcs_psf)
+            psf_img_local = exp_dict["psf"].drawImage(
+                nx=51,
+                ny=51,
+                offset=correct_offset,
+                wcs=psf_wcs,
+            )
+        except ValueError:
+            psf_wcs = copy.deepcopy(exp_dict["wcs"])
+            psf_img_local = exp_dict["psf"].drawImage(
+                center=coadd_center_on_exp,
+                nx=51,
+                ny=51,
+                wcs=psf_wcs,
+            )
+
+        psf_weight = np.ones_like(psf_img_local.array) / 1e-5**2.0
+        psf_weight_galsim = galsim.Image(
+            psf_weight,
+            bounds=psf_img_local.bounds,
+        )
+
+        exp = Exposure(
+            image=exp_dict["image"],
+            noise=exp_dict["noise"],
+            weight=exp_dict["weight"],
+            wcs=copy.deepcopy(exp_dict["wcs"]),
+        )
+        explist.append(exp)
+
+        if get_psf:
+            exp_psf = Exposure(
+                image=psf_img_local,
+                weight=psf_weight_galsim,
+                wcs=psf_wcs,
+            )
+            explist_psf.append(exp_psf)
+
+    output = (explist,)
+    if get_psf:
+        output += (explist_psf,)
+    if get_obj_dict:
+        output += (obj_dict,)
+
+    return output
+
+
+def make_obj_dict(
+    img_size,
+    coadd_ra,
+    coadd_dec,
+    coadd_scale,
+    params_obj,
+    grid=True,
+    sep_size=50,
+):
+    """Make object dict
+
+    Create an object catalog.
+    NOTE: At the moment the objects are placed on a grid.
+
+    Args:
+        img_size (int): Size of the coadd in pixels
+        coadd_ra (float): RA position of the coadd center.
+        coadd_dec (float): DEC position of the coadd center.
+        coadd_scale (float): Pixel scale to use for the coadd.
+        params_obj (dict): Dictionnary with the information to build the object
+            catalog.
+        grid (bool, optional): If `True`, will place objects on a grid.
+            Randomly distributed otherwise. Defaults to True.
+        sep_size (int, optional): Separetion to use for between objects. Only
+            used for the grid. Defaults to 50.
+
+    Returns:
+        dict : Object catalog.
+    """
+
+    coadd_cen = (np.array([img_size] * 2) - 1) / 2
+    gal_coadd_cen = galsim.PositionD(x=coadd_cen[0], y=coadd_cen[1])
+
+    coadd_world_cen = galsim.CelestialCoord(
+        ra=coadd_ra * galsim.degrees,
+        dec=coadd_dec * galsim.degrees,
+    )
+
+    coadd_wcs = make_coadd_wcs(
+        scale=coadd_scale,
+        image_origin=gal_coadd_cen,
+        world_origin=coadd_world_cen,
+    )
+
+    if grid:
+        if "sep_size" in list(params_obj.keys()):
+            sep_size = params_obj["sep_size"]
+
+        n_obj_x = int(img_size / sep_size)
+        init_step_x = (img_size - n_obj_x * sep_size) // 2
+
+        n_obj_y = int(img_size / sep_size)
+        init_step_y = (img_size - n_obj_y * sep_size) // 2
+
+        img_pos_x = np.array(
+            [init_step_x + sep_size / 2 + i * sep_size for i in range(n_obj_x)]
+            * (n_obj_y)
+        )
+
+        img_pos_y = np.array(
+            [
+                [init_step_y + sep_size / 2 + i * sep_size] * (n_obj_x)
+                for i in range(n_obj_y)
+            ]
+        ).ravel()
+
+        n_obj = n_obj_x * n_obj_y
+
+    obj_dict = {
+        "coadd_pos": np.array([]),
+        "world_pos": np.array([]),
+        "gal_gs": np.array([]),
+    }
+    for i in range(n_obj):
+        obj_dict["coadd_pos"] = np.append(
+            obj_dict["coadd_pos"], galsim.PositionD(img_pos_x[i], img_pos_y[i])
+        )
+        obj_dict["world_pos"] = np.append(
+            obj_dict["world_pos"],
+            coadd_wcs.toWorld(obj_dict["coadd_pos"][-1]),
+        )
+
+        gal = galsim.Gaussian(half_light_radius=params_obj["hlr"]).withFlux(
+            params_obj["flux"]
+        )
+        gal = gal.shear(g1=params_obj["g1"], g2=params_obj["g2"])
+
+        obj_dict["gal_gs"] = np.append(obj_dict["gal_gs"], gal)
+
+    return obj_dict
+
+
+def make_coadd_wcs(*, scale, image_origin, world_origin):
+    """
+    make and return a wcs object
+    Parameters
+    ----------
+    scale: float
+        Pixel scale
+    image_origin: galsim.PositionD
+        Image origin position
+    world_origin: galsim.CelestialCoord
+        Origin on the sky
+    Returns
+    -------
+    A galsim wcs object, currently a TanWCS
+    """
+
+    mat = np.array(
+        [[scale, 0.0], [0.0, scale]],
+    )
+
+    return galsim.TanWCS(
+        affine=galsim.AffineTransform(
+            mat[0, 0],
+            mat[0, 1],
+            mat[1, 0],
+            mat[1, 1],
+            origin=image_origin,
+        ),
+        world_origin=world_origin,
+        units=galsim.arcsec,
+    )
+
+
+def make_single_exp(
+    params_single,
+    header_path,
+    obj_dict,
+):
+    """Make single exposure
+
+    Create a single exposure image.
+
+    Args:
+        params_single (dict): Dictionnary with the general informations to
+            build the single exposures.
+        headers_dir (str): Path to the directory with the header from which the
+            WCS arederived.
+        obj_dict (dict) : Object catalog.
+
+    Returns:
+        dict: `dict` containing the image, weight, noise, wcs and psf.
+    """
+
+    seed = params_single["seed"]
+    np_rng = np.random.default_rng(seed=seed)
+
+    # Get true WCS
+    img_header = Header.fromfile(header_path)
+    wcs = galsim.AstropyWCS(header=img_header)
+    nx = img_header["NAXIS1"]
+    ny = img_header["NAXIS2"]
+
+    # ######
+    # # TEST
+    # x_cen = (nx - 1)/2
+    # y_cen = (ny - 1)/2
+    # pos = galsim.PositionD(x_cen, y_cen)
+    # w_pos = wcs.toWorld(pos)
+
+    # affine_transform = galsim.AffineTransform(
+    #         0.185768447408928, 0., 0., 0.185768447408928,
+    #         origin=pos,
+    #         # origin=image_stamp.center-exp_offset,
+    #     )
+    # wcs = galsim.TanWCS(
+    #         affine=affine_transform,
+    #         world_origin=w_pos,
+    #         # world_origin=test_world,
+    #         units=galsim.arcsec,
+    #     )
+    # # TEST END
+    # ##########
+
+    # Make image
+    image = galsim.Image(
+        nx,
+        ny,
+        wcs=wcs,
+    )
+    weight_image = galsim.Image(
+        nx,
+        ny,
+        wcs=wcs,
+    )
+    # Used for the image
+    _np_noise = np_rng.normal(size=(nx, ny)).T * params_single["noise"]
+    _noise_image = galsim.Image(
+        _np_noise,
+        wcs=wcs,
+    )
+    # Independant noise for fixnoise
+    np_noise = np_rng.normal(size=(nx, ny)).T * params_single["noise"]
+    noise_image = galsim.Image(
+        np_noise,
+        wcs=wcs,
+    )
+
+    # Make PSF
+    psf_fwhm = params_single["psf_fwhm"]
+    if params_single["psf_fwhm_std"] != 0:
+        psf_fwhm = np_rng.normal() * params_single["psf_fwhm_std"]
+    psf = galsim.Gaussian(fwhm=psf_fwhm).withFlux(1)
+    psf = psf.shear(g1=params_single["psf_g1"], g2=params_single["psf_g2"])
+
+    # Add object to the image
+    obj_in = draw_obj(image, obj_dict, psf)
+    if obj_in == 0:
+        return None
+
+    # Add noise to final image
+    final_img = image + _noise_image
+
+    # Weight image
+    weight_image.fill(1 / params_single["noise"] ** 2.0)
+
+    exp_dict = {
+        "image": final_img.array,
+        "gal_img": final_img,
+        "weight": weight_image.array,
+        "noise": noise_image.array,
+        "wcs": wcs,
+        "psf": psf,
+    }
+
+    return exp_dict
+
+
+def draw_obj(image, obj_dict, psf):
+    """Draw obj
+
+    Draw all objects on a `galsim.Image`.
+
+    Args:
+        image (galsim.Image): Image on which we draw the objects.
+        obj_dict (dict) : Object catalog.
+        psf (galsim.GSObject): `galsim.GSObject` describing the PSF.
+
+    Returns:
+        int: Number of object that has been drawn on the image.
+    """
+
+    wcs = image.wcs
+
+    obj_in = 0
+    for world_pos, gal_gs in zip(obj_dict["world_pos"], obj_dict["gal_gs"]):
+        image_pos = wcs.toImage(world_pos)
+        local_wcs = wcs.local(world_pos=world_pos)
+
+        final_gal = galsim.Convolve((gal_gs, psf))
+        stamp = final_gal.drawImage(
+            center=image_pos,
+            wcs=local_wcs,
+        )
+
+        b = image.bounds & stamp.bounds
+        if b.isDefined():
+            image[b] += stamp[b]
+            obj_in += 1
+
+    return obj_in
+
+
+def make_perfect_coadd(
+    obj_dict,
+    coadd_ra,
+    coadd_dec,
+    coadd_scale,
+    coadd_size,
+    params_single,
+    seed=1234,
+):
+    """Make perfect coadd
+
+    Make a "perfect" coadd image.
+
+    Args:
+        obj_dict (dict) : Object catalog.
+        coadd_ra (float): RA position of the coadd center.
+        coadd_dec (float): DEC position of the coadd center.
+        coadd_scale (float): Pixel scale to use for the coadd.
+        coadd_size (float): Size of the coadd (in arcmin).
+        params_single (dict): Dictionnary with the general informations to
+            build the single exposures.
+        seed (int): RNG seed. Default to 1234.
+
+    Returns:
+        numpy.ndarray: Array with the perfect coadd.
+    """
+
+    coadd_size_image = ceil(coadd_size * 3600 / coadd_scale)
+
+    coadd_cen = (np.array([coadd_size_image] * 2) - 1) / 2
+    gal_coadd_cen = galsim.PositionD(x=coadd_cen[0], y=coadd_cen[1])
+
+    coadd_world_cen = galsim.CelestialCoord(
+        ra=coadd_ra * galsim.degrees,
+        dec=coadd_dec * galsim.degrees,
+    )
+
+    coadd_wcs = make_coadd_wcs(
+        scale=coadd_scale,
+        image_origin=gal_coadd_cen,
+        world_origin=coadd_world_cen,
+    )
+
+    coadd_image = galsim.Image(
+        coadd_size_image,
+        coadd_size_image,
+        wcs=coadd_wcs,
+    )
+
+    psf_fwhm = params_single["psf_fwhm"]
+    coadd_psf = galsim.Gaussian(fwhm=psf_fwhm).withFlux(1)
+    coadd_psf = coadd_psf.shear(
+        g1=params_single["psf_g1"],
+        g2=params_single["psf_g2"],
+    )
+
+    draw_obj(coadd_image, obj_dict, coadd_psf)
+
+    np_rng = np.random.default_rng(seed)
+    np_noise = np_rng.normal(size=(coadd_size_image, coadd_size_image)).T * 1e-5
+    noise_image = galsim.Image(
+        np_noise,
+        wcs=coadd_wcs,
+    )
+
+    np_weight = np.ones((coadd_size_image, coadd_size_image)) / (1e-5) ** 2
+    weight_image = galsim.Image(
+        np_weight,
+        wcs=coadd_wcs,
+    )
+
+    psf_image = coadd_psf.drawImage(
+        nx=51,
+        ny=51,
+        wcs=coadd_wcs,
+    )
+
+    final_image = coadd_image + noise_image
+
+    return (
+        final_image.array,
+        weight_image.array,
+        noise_image.array,
+        psf_image.array,
+        coadd_wcs,
+    )
+
+
 def run_simplecoadd(
     sim_data,
     seed,
@@ -146,10 +643,10 @@ def run_simplecoadd(
     n_epoch = len(sim_data["band_data"]["i"])
 
     # Process images
-    explist = mtc.ExpList()
+    explist = ExpList()
     rng = np.random.RandomState(seed)
     for i in range(n_epoch):
-        exp = mtc.Exposure(
+        exp = Exposure(
             image=sim_data["band_data"]["i"][i].image.array,
             weight=1 / sim_data["band_data"]["i"][i].variance.array,
             noise=rng.normal(
@@ -160,7 +657,7 @@ def run_simplecoadd(
         )
         explist.append(exp)
 
-    coaddimage = mtc.CoaddImage(
+    coaddimage = CoaddImage(
         explist,
         world_coadd_center=sim_data["coadd_wcs"].center,
         scale=np.abs(sim_data["coadd_wcs"].cd[0, 0] * 3600),
@@ -170,12 +667,12 @@ def run_simplecoadd(
     )
     coaddimage.get_all_resamp_images()
 
-    simplecoadd = mtc.SimpleCoadd(coaddimage)
+    simplecoadd = SimpleCoadd(coaddimage)
     simplecoadd.go()
     output = (simplecoadd,)
 
     # Process PSFs
-    explist_psf = mtc.ExpList()
+    explist_psf = ExpList()
     for i in range(n_epoch):
         coadd_center_on_exp = sim_data["band_data"]["i"][i].wcs.toImage(
             sim_data["coadd_wcs"].center
@@ -194,14 +691,14 @@ def run_simplecoadd(
             psf_weight,
             bounds=psf_img_local.bounds,
         )
-        exp_psf = mtc.Exposure(
+        exp_psf = Exposure(
             image=psf_img_local,
             weight=psf_weight_galsim,
             wcs=copy.deepcopy(sim_data["band_data"]["i"][i].wcs),
         )
         explist_psf.append(exp_psf)
 
-    coaddimage_psf = mtc.CoaddImage(
+    coaddimage_psf = CoaddImage(
         explist_psf,
         world_coadd_center=sim_data["coadd_wcs"].center,
         scale=np.abs(sim_data["coadd_wcs"].cd[0, 0] * 3600),
@@ -211,7 +708,7 @@ def run_simplecoadd(
     )
     coaddimage_psf.get_all_resamp_images()
 
-    simplecoadd_psf = mtc.SimpleCoadd(coaddimage_psf, do_border=False)
+    simplecoadd_psf = SimpleCoadd(coaddimage_psf, do_border=False)
     simplecoadd_psf.go()
     output += (simplecoadd_psf,)
 
@@ -244,7 +741,7 @@ def run_metacoadd(
     """
 
     # Process images
-    coaddimage = mtc.CoaddImage(
+    coaddimage = CoaddImage(
         explist=explist,
         world_coadd_center=galsim.CelestialCoord(
             ra=coadd_ra * galsim.degrees,
@@ -253,11 +750,25 @@ def run_metacoadd(
         scale=coadd_scale,
         image_coadd_size=ceil(coadd_size * 3600 / coadd_scale),
     )
-    coaddimage.get_all_interp_images()
+    # coaddimage.get_all_interp_images()
+    coaddimage.get_all_resamp_images()
 
-    psfs = [exp.image.array for exp in explist_psf]
+    # psfs = [exp.image.array for exp in explist_psf]
 
-    mc = mtc.MetaCoadd(coaddimage, psfs)
+    coaddimage_psf = CoaddImage(
+        explist_psf,
+        world_coadd_center=galsim.CelestialCoord(
+            ra=coadd_ra * galsim.degrees,
+            dec=coadd_dec * galsim.degrees,
+        ),
+        scale=coadd_scale,
+        image_coadd_size=ceil(coadd_size * 3600 / coadd_scale),
+        # resize_exposure=False,
+        # relax_resize=0.31,
+    )
+    coaddimage_psf.get_all_resamp_images()
+
+    mc = MetaCoadd(coaddimage, coaddimage_psf)
     mc.go()
 
     return mc
@@ -401,8 +912,8 @@ def _shear_cuts(arr, model):
     else:
         tmin = 0.5
     msk = (
-        (arr["flags"] == 0)
-        & (arr[f"{model}_s2n"] > 1000)
+        (arr[f"{model}_flags"] == 0)
+        & (arr[f"{model}_s2n"] > 10)
         & (arr[f"{model}_T_ratio"] > tmin)
     )
     return msk
