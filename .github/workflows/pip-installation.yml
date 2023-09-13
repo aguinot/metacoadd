@@ -30,6 +30,7 @@ jobs:
     - name: Install metacoadd and dependencies
       run: |
         python -m pip install '.[test]'
+        python -m pip install git+https://github.com/esheldon/meds.git
     - name: Test with pytest
       run: |
         pytest test/basic_tests.py
