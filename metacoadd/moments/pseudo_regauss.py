@@ -10,7 +10,7 @@ from ngmix.moments import get_Tround, mom2g
 from ngmix.shape import e1e2_to_g1g2
 from numba import jit, njit
 
-from .ngmix_admom import AdmomFitter
+from metacoadd.moments.ngmix_admom import AdmomFitter
 
 
 @jit

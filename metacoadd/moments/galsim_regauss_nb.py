@@ -5,7 +5,7 @@ import numpy as np
 import pyfftw
 from numba import njit, objmode
 
-from .galsim_admom_nb import find_ellipmom2
+from metacoadd.moments.galsim_admom_nb import find_ellipmom2
 
 
 @njit(fastmath=True, cache=False)

@@ -30,7 +30,7 @@ dependencies = [
 dev = ["pre-commit", "black", "ruff"]
 
 [tool.setuptools]
-packages = ["metacoadd", "metacoadd.moments", "metacoadd.simu"]
+packages = ["metacoadd", "metacoadd.moments"]
 
 [tool.ruff]
 select = ["E", "F", "UP", "I"]
