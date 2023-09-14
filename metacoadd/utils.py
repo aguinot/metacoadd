@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 import astropy.wcs
 import galsim
@@ -12,8 +12,8 @@ class WCSBundle:
 
     def __init__(
         self,
-        wcs: astropy.wcs.WCS | galsim.BaseWCS,
-        image: Optional[np.ndarray | galsim.Image] = None,
+        wcs: Union[astropy.wcs.WCS, galsim.BaseWCS],
+        image: Optional[Union[np.ndarray, galsim.Image]] = None,
     ):
         """Create a bundled wcs containing both astropy and galsim wcs.
 

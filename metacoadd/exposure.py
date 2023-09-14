@@ -1,5 +1,5 @@
 import copy
-from typing import Optional, Self
+from typing import Optional, Union
 
 import galsim
 import numpy as np
@@ -72,8 +72,8 @@ class Exposure:
 
     def __init__(
         self,
-        image: np.ndarray | galsim.Image,
-        wcs: WCS | galsim.BaseWCS | WCSBundle,
+        image: Union[np.ndarray, galsim.Image],
+        wcs: Union[WCS, galsim.BaseWCS, WCSBundle],
         weight=None,
         flag=None,
         noise=None,
@@ -97,7 +97,7 @@ class Exposure:
         if set_meta:
             self._set_meta()
 
-    def __getitem__(self, bounds: galsim.BoundsI) -> Self:
+    def __getitem__(self, bounds: galsim.BoundsI):
         """
         Return a new Exposure instance with the corresponding subimages.
         Also handle the WCS.
