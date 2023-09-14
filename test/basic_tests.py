@@ -7,7 +7,7 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
-from metacoadd.exposure import CoaddImage, ExpList, Exposure
+from metacoadd.exposure import CoaddImage, Exposure
 from metacoadd.metacoadd import SimpleCoadd
 
 # Defaults
@@ -377,7 +377,7 @@ exp_2 = Exposure(
 exp_3 = Exposure(
     image=exp_dict3["image"], wcs=exp_dict3["wcs"], weight=exp_dict3["weight"]
 )
-explist = ExpList()
+explist = []
 explist.append(exp_1)
 explist.append(exp_2)
 explist.append(exp_3)

@@ -184,7 +184,7 @@ class SimpleCoadd:
 
             # Check bounds, it should always pass. Just for safety.
             # We check only 'image' because it we always be there and the
-            # property are shared with the other kind.
+            # property are shared with the other knd.
             b = all_stamp["image"].bounds & self.coaddimage.image.bounds
             if b.isDefined():
                 if self._coadd_method == "weighted":
@@ -272,7 +272,7 @@ class SimpleCoadd:
 
         full_bounds = exp._meta["image_bounds"]
 
-        border_wcs = exp.wcs
+        border_wcs = exp.wcs_bundle.galsim
 
         border_image = galsim.Image(
             bounds=full_bounds,
@@ -300,7 +300,7 @@ class SimpleCoadd:
 
         input_reproj = (
             resized_border.image.array,
-            resized_border.wcs.astropy,
+            resized_border.wcs_bundle.astropy,
         )
         border_resamp, _ = self.coaddimage._do_resamp(
             input_reproj,
@@ -410,14 +410,14 @@ class MetaCoadd(SimpleCoadd):
             img_jac = ngmix.Jacobian(
                 row=self.coaddimage.image_coadd_center.x,
                 col=self.coaddimage.image_coadd_center.y,
-                wcs=self.coaddimage.coadd_wcs.jacobian(
+                wcs=self.coaddimage.coadd_wcs_bundle.galsim.jacobian(
                     world_pos=self.coaddimage.world_coadd_center
                 ),
             )
             psf_jac = ngmix.Jacobian(
                 row=self.psf_coaddimage.image_coadd_center.x,
                 col=self.psf_coaddimage.image_coadd_center.y,
-                wcs=self.psf_coaddimage.coadd_wcs.jacobian(
+                wcs=self.psf_coaddimage.coadd_wcs_bundle.galsim.jacobian(
                     world_pos=self.psf_coaddimage.world_coadd_center
                 ),
             )
