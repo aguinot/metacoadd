@@ -184,7 +184,7 @@ class SimpleCoadd:
 
             # Check bounds, it should always pass. Just for safety.
             # We check only 'image' because it we always be there and the
-            # property are shared with the other knd.
+            # property are shared with the other kind.
             b = all_stamp["image"].bounds & self.coaddimage.image.bounds
             if b.isDefined():
                 if self._coadd_method == "weighted":
