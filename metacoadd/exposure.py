@@ -1,5 +1,5 @@
 import copy
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import galsim
 import numpy as np
@@ -245,7 +245,7 @@ class CoaddImage:
 
     def __init__(
         self,
-        explist: list[Exposure],
+        explist: List[Exposure],
         world_coadd_center: galsim.celestial.CelestialCoord,
         scale,
         image_coadd_size=None,

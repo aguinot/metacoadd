@@ -1,7 +1,7 @@
 import copy
 import os
 from math import ceil
-from typing import Optional
+from typing import List, Optional
 
 import galsim
 import metadetect as mdet
@@ -719,12 +719,12 @@ def run_simplecoadd(
 
 
 def run_metacoadd(
-    explist: list[Exposure],
+    explist: List[Exposure],
     coadd_ra,
     coadd_dec,
     coadd_scale,
     coadd_size,
-    explist_psf: Optional[list[Exposure]] = None,
+    explist_psf: Optional[List[Exposure]] = None,
 ):
     """Run metacoadd
 
