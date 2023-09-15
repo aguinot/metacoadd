@@ -8,7 +8,7 @@ import numpy as np
 
 class WCSBundle:
     _astropy_wcs: astropy.wcs.WCS
-    _galsim_WCS: galsim.BaseWCS
+    _galsim_wcs: galsim.BaseWCS
 
     def __init__(
         self,
