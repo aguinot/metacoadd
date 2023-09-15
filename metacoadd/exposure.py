@@ -97,7 +97,7 @@ class Exposure:
         if set_meta:
             self._set_meta()
 
-    def __getitem__(self, bounds: galsim.BoundsI):
+    def __getitem__(self, bounds: galsim.BoundsI) -> "Exposure":
         """
         Return a new Exposure instance with the corresponding subimages.
         Also handle the WCS.
