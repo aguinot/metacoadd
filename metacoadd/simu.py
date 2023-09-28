@@ -1,12 +1,14 @@
 import copy
 import os
 from math import ceil
+from typing import Optional
 
 import galsim
 import metadetect as mdet
 import ngmix
 import numpy as np
 from astropy.io.fits import Header
+from astropy.wcs import WCS
 
 from metacoadd import utils
 
@@ -207,7 +209,7 @@ def make_sim(
             # print(f'{header_path} skipped.')
             continue
 
-        coadd_center_on_exp = exp_dict["wcs"].toImage(
+        coadd_center_on_exp = exp_dict["wcs"].galsim.toImage(
             galsim.CelestialCoord(
                 ra=coadd_ra * galsim.degrees,
                 dec=coadd_dec * galsim.degrees,
@@ -225,7 +227,7 @@ def make_sim(
                 nx=51,
                 ny=51,
                 offset=correct_offset,
-                wcs=psf_wcs,
+                wcs=psf_wcs.galsim,
             )
         except ValueError:
             psf_wcs = copy.deepcopy(exp_dict["wcs"])
@@ -233,7 +235,7 @@ def make_sim(
                 center=coadd_center_on_exp,
                 nx=51,
                 ny=51,
-                wcs=psf_wcs,
+                wcs=psf_wcs.galsim,
             )
 
         psf_weight = np.ones_like(psf_img_local.array) / 1e-5**2.0
@@ -417,7 +419,8 @@ def make_single_exp(
 
     # Get true WCS
     img_header = Header.fromfile(header_path)
-    wcs = galsim.AstropyWCS(header=img_header)
+    wcs_astropy = WCS(img_header)
+    wcs_bundle = utils.WCSBundle(wcs_astropy)
     nx = img_header["NAXIS1"]
     ny = img_header["NAXIS2"]
 
@@ -446,24 +449,24 @@ def make_single_exp(
     image = galsim.Image(
         nx,
         ny,
-        wcs=wcs,
+        wcs=wcs_bundle.galsim,
     )
     weight_image = galsim.Image(
         nx,
         ny,
-        wcs=wcs,
+        wcs=wcs_bundle.galsim,
     )
     # Used for the image
     _np_noise = np_rng.normal(size=(nx, ny)).T * params_single["noise"]
     _noise_image = galsim.Image(
         _np_noise,
-        wcs=wcs,
+        wcs=wcs_bundle.galsim,
     )
     # Independant noise for fixnoise
     np_noise = np_rng.normal(size=(nx, ny)).T * params_single["noise"]
     noise_image = galsim.Image(
         np_noise,
-        wcs=wcs,
+        wcs=wcs_bundle.galsim,
     )
 
     # Make PSF
@@ -489,14 +492,14 @@ def make_single_exp(
         "gal_img": final_img,
         "weight": weight_image.array,
         "noise": noise_image.array,
-        "wcs": wcs,
+        "wcs": wcs_bundle,
         "psf": psf,
     }
 
     return exp_dict
 
 
-def draw_obj(image, obj_dict, psf):
+def draw_obj(image: galsim.Image, obj_dict, psf):
     """Draw obj
 
     Draw all objects on a `galsim.Image`.
@@ -643,7 +646,7 @@ def run_simplecoadd(
     n_epoch = len(sim_data["band_data"]["i"])
 
     # Process images
-    explist = ExpList()
+    explist = []
     rng = np.random.RandomState(seed)
     for i in range(n_epoch):
         exp = Exposure(
@@ -672,7 +675,7 @@ def run_simplecoadd(
     output = (simplecoadd,)
 
     # Process PSFs
-    explist_psf = ExpList()
+    explist_psf = []
     for i in range(n_epoch):
         coadd_center_on_exp = sim_data["band_data"]["i"][i].wcs.toImage(
             sim_data["coadd_wcs"].center
@@ -716,12 +719,12 @@ def run_simplecoadd(
 
 
 def run_metacoadd(
-    explist,
+    explist: ExpList,
     coadd_ra,
     coadd_dec,
     coadd_scale,
     coadd_size,
-    explist_psf=None,
+    explist_psf: Optional[ExpList] = None,
 ):
     """Run metacoadd
 

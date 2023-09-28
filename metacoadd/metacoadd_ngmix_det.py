@@ -256,7 +256,7 @@ class SimpleCoadd:
 
         return stamp_dict
 
-    def _set_border(self, exp):
+    def _set_border(self, exp: Exposure):
         """Set border
 
         This method handle the CCD border to avoid issues in case the edge of
@@ -272,7 +272,7 @@ class SimpleCoadd:
 
         full_bounds = exp._meta["image_bounds"]
 
-        border_wcs = exp.wcs
+        border_wcs = exp.wcs_bundle.galsim
 
         border_image = galsim.Image(
             bounds=full_bounds,
@@ -300,7 +300,7 @@ class SimpleCoadd:
 
         input_reproj = (
             resized_border.image.array,
-            resized_border.wcs.astropy,
+            resized_border.wcs_bundle.astropy,
         )
         border_resamp, _ = self.coaddimage._do_resamp(
             input_reproj,
@@ -412,14 +412,14 @@ class MetaCoadd(SimpleCoadd):
             img_jac = ngmix.Jacobian(
                 row=self.coaddimage.image_coadd_center.x,
                 col=self.coaddimage.image_coadd_center.y,
-                wcs=self.coaddimage.coadd_wcs.jacobian(
+                wcs=self.coaddimage.coadd_wcs_bundle.galsim.jacobian(
                     world_pos=self.coaddimage.world_coadd_center
                 ),
             )
             psf_jac = ngmix.Jacobian(
                 row=self.psf_coaddimage.image_coadd_center.x,
                 col=self.psf_coaddimage.image_coadd_center.y,
-                wcs=self.psf_coaddimage.coadd_wcs.jacobian(
+                wcs=self.psf_coaddimage.coadd_wcs_bundle.galsim.jacobian(
                     world_pos=self.psf_coaddimage.world_coadd_center
                 ),
             )
