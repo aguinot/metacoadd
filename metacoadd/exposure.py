@@ -1,5 +1,5 @@
 import copy
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import galsim
 import numpy as np
@@ -197,6 +197,40 @@ class Exposure:
         }
 
 
+class ExpList(list):
+    """Exposure list
+
+    List of Exposure.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def append(self, exp):
+        """append
+
+        Add a new Exposure to the list.
+
+        Args:
+            exp (metacoadd.Exposure): Exposure to add.
+        """
+
+        if not isinstance(exp, Exposure):
+            raise TypeError("exp must be a metacoadd.Exposure.")
+        super().append(exp)
+
+    def __setitem__(self, index, exp):
+        """[summary]
+
+        Args:
+            index ([type]): [description]
+            exp ([type]): [description]
+        """
+        if not isinstance(exp, Exposure):
+            raise TypeError("exp must be a metacoadd.Exposure.")
+        super().__setitem__(index, exp)
+
+
 class CoaddImage:
     """CoaddImage
 
@@ -245,7 +279,7 @@ class CoaddImage:
 
     def __init__(
         self,
-        explist: List[Exposure],
+        explist: ExpList,
         world_coadd_center: galsim.celestial.CelestialCoord,
         scale,
         image_coadd_size=None,
@@ -439,7 +473,7 @@ class CoaddImage:
         Args:
             relax_resize (float): Resize relax parameter.
         """
-        resized_explist = []
+        resized_explist = ExpList()
         for exp in self._orig_explist:
             resized_exp = self._resize_exp(exp, relax_resize)
             if resized_exp is not None:

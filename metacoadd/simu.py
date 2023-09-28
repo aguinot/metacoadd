@@ -1,7 +1,7 @@
 import copy
 import os
 from math import ceil
-from typing import List, Optional
+from typing import Optional
 
 import galsim
 import metadetect as mdet
@@ -13,7 +13,7 @@ from astropy.wcs import WCS
 from metacoadd import utils
 
 # import metacoadd as mtc
-from metacoadd.exposure import CoaddImage, Exposure
+from metacoadd.exposure import CoaddImage, ExpList, Exposure
 from metacoadd.metacoadd import MetaCoadd, SimpleCoadd
 
 TEST_METADETECT_CONFIG = {
@@ -193,9 +193,9 @@ def make_sim(
 
     # Create exposures
     # print("Build all exposures..")
-    explist = []
+    explist = ExpList()
     if get_psf:
-        explist_psf = []
+        explist_psf = ExpList()
     for header_path in headers_list:
         params_single_tmp = params_single.copy()
         params_single_tmp["seed"] = np_rng.integers(low=1, high=2**30)
@@ -719,12 +719,12 @@ def run_simplecoadd(
 
 
 def run_metacoadd(
-    explist: List[Exposure],
+    explist: ExpList,
     coadd_ra,
     coadd_dec,
     coadd_scale,
     coadd_size,
-    explist_psf: Optional[List[Exposure]] = None,
+    explist_psf: Optional[ExpList] = None,
 ):
     """Run metacoadd
 
