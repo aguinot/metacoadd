@@ -8,6 +8,8 @@ from metadetect.mfrac import measure_mfrac
 
 from metacoadd.exposure import CoaddImage, Exposure
 from metacoadd.utils import exp2obs
+# from metacoadd.moments.galsim_admom import GAdmomFitter
+
 
 TEST_METADETECT_CONFIG = {
     "model": "wmom",
@@ -384,14 +386,17 @@ class MetaCoadd(SimpleCoadd):
                     & self.psf_coaddimage.image[type].bounds
                 )
                 if b.isDefined():
-                    self.psf_coaddimage.image[type][b] += all_stamp["psf"][type]
+                    self.psf_coaddimage.image[type][b] += \
+                        all_stamp["psf"][type]
 
             stamps.append(all_stamp)
         self.stamps = stamps
 
         # Finish the stacking
         for type in self.types:
-            non_zero_weights = np.where(self.coaddimage.weight[type].array != 0)
+            non_zero_weights = np.where(
+                self.coaddimage.weight[type].array != 0
+            )
             self.coaddimage.image[type].array[
                 non_zero_weights
             ] /= self.coaddimage.weight[type].array[non_zero_weights]
@@ -499,7 +504,10 @@ class MetaCoadd(SimpleCoadd):
                     img = getattr(mcal_obs[type], key).image
                     # print("after")
                     # print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
-                    wcs = getattr(mcal_obs[type], key).jacobian.get_galsim_wcs()
+                    wcs = getattr(
+                        mcal_obs[type],
+                        key
+                    ).jacobian.get_galsim_wcs()
                 else:
                     img = getattr(mcal_obs[type], key)
                     wcs = mcal_obs[type].jacobian.get_galsim_wcs()
@@ -932,7 +940,7 @@ def _fill_in_mask_col(*, mask_region, rows, cols, mask):
             uc = int(min(dims[1] - 1, max(0, cclip[ind] + mask_region)))
 
             res[ind] = np.bitwise_or.reduce(
-                mask[lr : ur + 1, lc : uc + 1],
+                mask[lr: ur + 1, lc: uc + 1],
                 axis=None,
             )
     else:

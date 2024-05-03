@@ -96,7 +96,9 @@ class Exposure:
             elif isinstance(wcs, WCS):
                 self._set_wcs(astropy_wcs=wcs)
             else:
-                raise TypeError(f"wcs must be a galsim.BaseWCS or {type(WCS)}.")
+                raise TypeError(
+                    f"wcs must be a galsim.BaseWCS or {type(WCS)}."
+                )
         else:
             raise ValueError("Either header or wcs has to be provided")
 
@@ -126,9 +128,9 @@ class Exposure:
             raise TypeError("bounds must be a galsim.BoundsI.")
         new_exp_dict = {}
         for image_kind in self._exposure_images:
-            new_exp_dict[image_kind] = copy.deepcopy(getattr(self, image_kind))[
-                bounds
-            ]
+            new_exp_dict[image_kind] = copy.deepcopy(
+                getattr(self, image_kind)
+                )[bounds]
 
         # We need to update the WCS to match new origin
         # WARNING: only if the origin changes
@@ -644,7 +646,10 @@ class CoaddImage:
 
                 # NOTE: Add verbose option
                 # print(f"Interpolate {image_kind}...")
-                input_reproj = (getattr(exp, image_kind).array, exp.wcs.astropy)
+                input_reproj = (
+                    getattr(exp, image_kind).array,
+                    exp.wcs.astropy
+                )
                 resampled, footprint = self._do_resamp(
                     input_reproj,
                     resamp_method,
@@ -654,11 +659,11 @@ class CoaddImage:
                     resampled,
                     wcs=copy.deepcopy(self.coadd_wcs),
                 )
-                print(image_kind)
-                try:
-                    print(gal_img_tmp.FindAdaptiveMom())
-                except galsim.errors.GalSimHSMError:
-                    print("Mom failed")
+                # print(image_kind)
+                # try:
+                #     print(gal_img_tmp.FindAdaptiveMom())
+                # except galsim.errors.GalSimHSMError:
+                #     print("Mom failed")
                 setattr(exp, image_kind + "_resamp", gal_img_tmp)
             exp.wcs_resamp = copy.deepcopy(self.coadd_wcs)
 
@@ -668,8 +673,8 @@ class CoaddImage:
         resamp_config = self.resamp_config[resamp_method]
         resamp_config.update(kwargs)
 
-        print(input[1])
-        print(self.coadd_wcs.astropy)
+        # print(input[1])
+        # print(self.coadd_wcs.astropy)
 
         resamp_img, footprint = reproject_interp(
             input,
