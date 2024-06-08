@@ -24,7 +24,7 @@ dependencies = [
     "metadetect @ git+https://github.com/esheldon/metadetect.git",
     "ngmix @ git+https://github.com/esheldon/ngmix.git",
     "esutil",
-    "pyfftw>=0.12"
+    #"pyfftw>=0.12"
 ]
 
 [project.urls]
