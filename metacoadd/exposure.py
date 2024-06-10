@@ -145,8 +145,12 @@ class Exposure:
             for image_kind in self._exposure_images:
                 new_exp_dict[image_kind].wcs = new_exp_dict["wcs"]
 
-        new_exposure = Exposure(set_meta=False, **new_exp_dict)
-        new_exposure._meta = copy.deepcopy(self._meta)
+        new_exposure = Exposure(meta=copy.deepcopy(self._meta), **new_exp_dict)
+
+        # The image_bounds is used for the coadding only, to keep track of the
+        # original bounds of the image.
+        # NOTE: might need to find a better way to handle this!
+        new_exposure._meta["image_bounds"] = self._meta["image_bounds"]
 
         return new_exposure
 

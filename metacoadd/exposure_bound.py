@@ -96,8 +96,15 @@ class ExposureBound:
             new_exp_dict["wcs"] = shift_wcs(orig_wcs, galsim.PositionI(1, 1))
             new_exp_dict["image_bounds"].wcs = new_exp_dict["wcs"]
 
-        new_exposure = ExposureBound(set_meta=False, **new_exp_dict)
-        new_exposure._meta = copy.deepcopy(self._meta)
+        new_exposure = ExposureBound(
+            meta=copy.deepcopy(self._meta),
+            **new_exp_dict
+        )
+
+        # The image_bounds is used for the coadding only, to keep track of the
+        # original bounds of the image.
+        # NOTE: might need to find a better way to handle this!
+        new_exposure._meta["image_bounds"] = self._meta["image_bounds"]
 
         return new_exposure
 
