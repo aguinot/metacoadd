@@ -40,9 +40,9 @@ DEFAULT_GSPARAMS = galsim.GSParams(maximum_fft_size=8192)
 class Exposure:
     """Exposure
 
-    Structure to store all the informations for an exposure.
+    Structure to store all the information for an exposure.
 
-    TODO: Add consistancy check if several images are provided:
+    TODO: Add consistency check if several images are provided:
         Same size. Other?
 
     Args:
@@ -58,10 +58,9 @@ class Exposure:
             None.
         noise (numpy.ndarray or galsim.Image, optional): Noise image. Defaults
             to None.
-        set_meta (bool): If `True` will set the metadata information during the
-            initialization. Should always be `True`. This is mainly to be able
-            to probagate those information when a resizing is apply through
-            `__getitem__`. Defaults to True.
+        meta (dict): Add metadata information in the form of a dictionary. For
+            example, it can be used to store the exposure ID as follow:
+            meta = {'ID': 12345}. Defaults to None.
     """
 
     def __init__(
@@ -72,7 +71,7 @@ class Exposure:
         weight=None,
         flag=None,
         noise=None,
-        set_meta=True,
+        meta=None,
     ):
         self._exposure_images = []
 
@@ -110,8 +109,7 @@ class Exposure:
         if noise is not None:
             self._init_input_image(noise, "noise")
 
-        if set_meta:
-            self._set_meta()
+        self._set_meta(meta)
 
     def __getitem__(self, bounds):
         """
@@ -215,7 +213,7 @@ class Exposure:
 
         Args:
             image (numpy.ndarray or galsim.Image): Image to setup.
-            image_knid (str): Name of the image to set. Must be in ['image',
+            image_kind (str): Name of the image to set. Must be in ['image',
                 'weight', 'flag', 'noise'].
         """
 
@@ -228,8 +226,8 @@ class Exposure:
                 image.wcs = self.wcs
             elif image.wcs != self.wcs:
                 raise ValueError(
-                    "Inconsistant WCS between galsim.Image({image_kind}) and "
-                    "proveded header."
+                    "Inconsistent WCS between galsim.Image({image_kind}) and "
+                    "provided header."
                 )
             galsim_image = image
         else:
@@ -241,20 +239,28 @@ class Exposure:
         setattr(self, image_kind, galsim_image)
 
         # In case galsim WCS where provided as input we set now the astropy one
-        # We need infromation that become available only once we have set the
+        # We need information that become available only once we have set the
         # galsim image
         if not hasattr(self.wcs, "astropy"):
             self._set_astropy_wcs(galsim_image)
 
-    def _set_meta(self):
+    def _set_meta(self, meta):
         """
         Set metadata information.
         At moment, save only the image bounds.
+
+        Args:
+            meta (dict): Metadata to add.
         """
 
-        self._meta = {
-            "image_bounds": self.image.bounds,
-        }
+        if meta is not None:
+            if not isinstance(meta, dict):
+                raise TypeError("meta must be a dictionary.")
+            self._meta = meta
+        else:
+            self._meta = {}
+
+        self._meta["image_bounds"] = self.image_bounds
 
 
 class ExpList(list):
@@ -294,7 +300,7 @@ class ExpList(list):
 class CoaddImage:
     """CoaddImage
 
-    Structure to store all the informations to build a coadd image.
+    Structure to store all the information to build a coadd image.
     This class do not build the coadd but will prepare the data (create
     interpolated images).
 
@@ -321,7 +327,7 @@ class CoaddImage:
         resamp_config (dict, optional): Set of parameters for the resampling.
             If `None` use the default configuration. Defaults to None.
         resize_exposure (bool, optional): Whether to resize the exposures
-            before doing the interpolation. It is recommanded to leave this to
+            before doing the interpolation. It is recommended to leave this to
             `True` since it will save computing time and memory. We use a
             "relax" parameters to make the resizing slightly larger the the
             coadd size given that this operation happen before the
@@ -331,7 +337,7 @@ class CoaddImage:
         relax_resize (float, optional): Default relax parameters for
             the resizing (see above). Correspond to a percentage of the coadd
             size for both axes. Has to be in ]0, 1] (no good reason to go for
-            more than 1 given that distrotion effect are small). This can be
+            more than 1 given that distortion effect are small). This can be
             internally change in case we reach one of the border of the
             exposure. Default to 0.10.
         gsparams ([type], optional): [description]. Defaults to None.
@@ -409,7 +415,7 @@ class CoaddImage:
                 "provided."
             )
 
-        # Set galsim bounds and dervie center for the coadd
+        # Set galsim bounds and derive center for the coadd
         self._set_coadd_bounds()
         self._set_image_coadd_center()
 
@@ -481,7 +487,7 @@ class CoaddImage:
     def _set_coadd_bounds(self):
         """
         Create a galsim.Image that describe the coadd. This is just for
-        convinience.
+        convenience.
         """
 
         self.coadd_bounds = galsim.BoundsI(
@@ -626,10 +632,10 @@ class CoaddImage:
         **kwargs,
     ):
         """
-        Get all resampeled images.
+        Get all resampled images.
 
         Args:
-            kwargs: Any additionnal keywords arguments for
+            kwargs: Any additional keywords arguments for
                 reproject.reproject_interp.
         """
 
@@ -695,7 +701,7 @@ class CoaddImage:
         Get all interpolated images.
 
         Args:
-            kwargs: Any additionnal keywords arguments for
+            kwargs: Any additional keywords arguments for
                 galsim.InterpolatedImage.
         """
 
@@ -738,7 +744,7 @@ class CoaddImage:
             interp_method (str): Select which interpolation to use. Hard coded.
                 Must be in ['classic', 'weight', 'flag']. Will set the
                 interpolation to 'nearest' for the weight and flag images.
-            kwargs: Any additionnal keywords arguments for
+            kwargs: Any additional keywords arguments for
                 galsim.InterpolatedImage.
 
         Returns:
