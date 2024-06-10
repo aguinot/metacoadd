@@ -22,10 +22,9 @@ class ExposureBound:
             both.
         wcs (galsim.BaseWCS or astropy.wcs.wcs.WCS): wcs corresponding to the
             images. Either header or wcs has to be provided, not both.
-        set_meta (bool): If `True` will set the metadata information during the
-            initialization. Should always be `True`. This is mainly to be able
-            to propagate those information when a resizing is apply through
-            `__getitem__`. Defaults to True.
+        meta (dict): Add metadata information in the form of a dictionary. For
+            example, it can be used to store the exposure ID as follow:
+            meta = {'ID': 12345}. Defaults to None.
     """
 
     def __init__(
@@ -33,7 +32,7 @@ class ExposureBound:
         image_bounds,
         header=None,
         wcs=None,
-        set_meta=True,
+        meta=None,
     ):
         self._exposure_bounds = []
 
@@ -65,8 +64,7 @@ class ExposureBound:
 
         self._init_input_image_bound(image_bounds)
 
-        if set_meta:
-            self._set_meta()
+        self._set_meta(meta)
 
     def __getitem__(self, bounds):
         """
@@ -98,8 +96,15 @@ class ExposureBound:
             new_exp_dict["wcs"] = shift_wcs(orig_wcs, galsim.PositionI(1, 1))
             new_exp_dict["image_bounds"].wcs = new_exp_dict["wcs"]
 
-        new_exposure = ExposureBound(set_meta=False, **new_exp_dict)
-        new_exposure._meta = copy.deepcopy(self._meta)
+        new_exposure = ExposureBound(
+            meta=copy.deepcopy(self._meta),
+            **new_exp_dict
+        )
+
+        # The image_bounds is used for the coadding only, to keep track of the
+        # original bounds of the image.
+        # NOTE: might need to find a better way to handle this!
+        new_exposure._meta["image_bounds"] = self._meta["image_bounds"]
 
         return new_exposure
 
@@ -192,15 +197,23 @@ class ExposureBound:
         if not hasattr(self.wcs, "astropy"):
             self._set_astropy_wcs(galsim_bound)
 
-    def _set_meta(self):
+    def _set_meta(self, meta):
         """
         Set metadata information.
         At moment, save only the image bounds.
+
+        Args:
+            meta (dict): Metadata to add.
         """
 
-        self._meta = {
-            "image_bounds": self.image_bounds,
-        }
+        if meta is not None:
+            if not isinstance(meta, dict):
+                raise TypeError("meta must be a dictionary.")
+            self._meta = meta
+        else:
+            self._meta = {}
+
+        self._meta["image_bounds"] = self.image_bounds
 
 
 class ExpBList(list):
