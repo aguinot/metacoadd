@@ -260,7 +260,7 @@ class Exposure:
         else:
             self._meta = {}
 
-        self._meta["image_bounds"] = self.image_bounds
+        self._meta["image_bounds"] = self.image.bounds
 
 
 class ExpList(list):
