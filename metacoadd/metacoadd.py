@@ -147,6 +147,7 @@ class SimpleCoadd:
         coaddimage,
         coadd_method="weighted",
         do_border=True,
+        border_size=20,
     ):
         if isinstance(coaddimage, CoaddImage):
             self.coaddimage = coaddimage
@@ -166,9 +167,9 @@ class SimpleCoadd:
         # NOTE: Not sure if this should be accessible by the user
         self._do_border = do_border
         if self._do_border:
-            self._border_size = 20
+            self._border_size = border_size
 
-    def go(self):
+    def go(self, **resamp_kwargs):
         """
         Run the coaddition process.
         """
@@ -177,7 +178,7 @@ class SimpleCoadd:
             raise ValueError("No exposure find to make the coadd.")
         if not self.coaddimage.explist[0]._resamp:
             # raise ValueError('Exposure must be resampled first.')
-            self.coaddimage.get_all_resamp_images()
+            self.coaddimage.get_all_resamp_images(**resamp_kwargs)
 
         self.coaddimage.setup_coadd()
         stamps = []
@@ -209,13 +210,13 @@ class SimpleCoadd:
             stamps.append(all_stamp)
         self.stamps = stamps
         non_zero_weights = np.where(self.coaddimage.weight.array != 0)
-        self.coaddimage.image.array[
-            non_zero_weights
-        ] /= self.coaddimage.weight.array[non_zero_weights]
+        self.coaddimage.image.array[non_zero_weights] /= (
+            self.coaddimage.weight.array[non_zero_weights]
+        )
         if "noise" in list(all_stamp.keys()):
-            self.coaddimage.noise.array[
-                non_zero_weights
-            ] /= self.coaddimage.weight.array[non_zero_weights]
+            self.coaddimage.noise.array[non_zero_weights] /= (
+                self.coaddimage.weight.array[non_zero_weights]
+            )
 
     def _process_one_exp(self, exp):
         """Process one exposure
@@ -288,7 +289,9 @@ class SimpleCoadd:
             ymin=full_bounds.ymin + self._border_size,
             ymax=full_bounds.ymax - self._border_size,
         )
-        border_image[border_bounds].fill(1)
+        common_bound = border_image.bounds & border_bounds
+        if common_bound.isDefined():
+            border_image[border_bounds].fill(1)
 
         border_exp = Exposure(border_image, wcs=border_wcs)
         if self.coaddimage._relax_resize is None:
@@ -386,8 +389,9 @@ class MetaCoadd(SimpleCoadd):
                     & self.psf_coaddimage.image[type].bounds
                 )
                 if b.isDefined():
-                    self.psf_coaddimage.image[type][b] += \
-                        all_stamp["psf"][type]
+                    self.psf_coaddimage.image[type][b] += all_stamp["psf"][
+                        type
+                    ]
 
             stamps.append(all_stamp)
         self.stamps = stamps
@@ -397,13 +401,13 @@ class MetaCoadd(SimpleCoadd):
             non_zero_weights = np.where(
                 self.coaddimage.weight[type].array != 0
             )
-            self.coaddimage.image[type].array[
-                non_zero_weights
-            ] /= self.coaddimage.weight[type].array[non_zero_weights]
+            self.coaddimage.image[type].array[non_zero_weights] /= (
+                self.coaddimage.weight[type].array[non_zero_weights]
+            )
             if "noise" in list(all_stamp.keys()):
-                self.coaddimage.noise[type].array[
-                    non_zero_weights
-                ] /= self.coaddimage.weight[type].array[non_zero_weights]
+                self.coaddimage.noise[type].array[non_zero_weights] /= (
+                    self.coaddimage.weight[type].array[non_zero_weights]
+                )
             self.psf_coaddimage.image[type].array[:, :] /= len(
                 self.psf_coaddimage.explist
             )
@@ -505,8 +509,7 @@ class MetaCoadd(SimpleCoadd):
                     # print("after")
                     # print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
                     wcs = getattr(
-                        mcal_obs[type],
-                        key
+                        mcal_obs[type], key
                     ).jacobian.get_galsim_wcs()
                 else:
                     img = getattr(mcal_obs[type], key)
@@ -940,7 +943,7 @@ def _fill_in_mask_col(*, mask_region, rows, cols, mask):
             uc = int(min(dims[1] - 1, max(0, cclip[ind] + mask_region)))
 
             res[ind] = np.bitwise_or.reduce(
-                mask[lr: ur + 1, lc: uc + 1],
+                mask[lr : ur + 1, lc : uc + 1],
                 axis=None,
             )
     else:

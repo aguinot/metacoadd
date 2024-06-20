@@ -1,10 +1,14 @@
 import copy
+import io
+from contextlib import redirect_stdout
 
 import galsim
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-from reproject import reproject_interp
+from reproject import reproject_interp, reproject_adaptive, reproject_exact
+import sep
+# from scipy import ndimage
 
 from metacoadd.utils import shift_wcs
 
@@ -128,7 +132,7 @@ class Exposure:
         for image_kind in self._exposure_images:
             new_exp_dict[image_kind] = copy.deepcopy(
                 getattr(self, image_kind)
-                )[bounds]
+            )[bounds]
 
         # We need to update the WCS to match new origin
         # WARNING: only if the origin changes
@@ -633,69 +637,172 @@ class CoaddImage:
 
     def get_all_resamp_images(
         self,
+        resamp_algo="interp",
+        flux_scaling=True,
+        fscale_keyword="FSCALE",
+        conserve_flux=True,
+        rescale_weight=True,
+        rms_keyword="BKG_RMS",
         **kwargs,
     ):
-        """
-        Get all resampled images.
-
-        Args:
-            kwargs: Any additional keywords arguments for
-                reproject.reproject_interp.
-        """
+        resamp_method = "classic"
+        pix_area = 1.0
+        coadd_pix_area = 1.0
+        pix_ratio = 1.0
+        flux_ratio = 1.0
+        wght_scale = 1.0
 
         for exp in self.explist:
+            input_resamp = []
+            img_kind_resamp = []
             for image_kind in exp._exposure_images:
                 # We skip if an image is already resampled
                 if "_resamp" in image_kind:
                     continue
 
-                if image_kind == "weight" or image_kind == "flag":
-                    resamp_method = "nearest"
-                else:
-                    resamp_method = "classic"
-
                 # NOTE: Add verbose option
                 # print(f"Interpolate {image_kind}...")
-                input_reproj = (
-                    getattr(exp, image_kind).array,
-                    exp.wcs.astropy
-                )
-                resampled, footprint = self._do_resamp(
-                    input_reproj,
-                    resamp_method,
-                    **kwargs,
-                )
-                gal_img_tmp = galsim.Image(
-                    resampled,
-                    wcs=copy.deepcopy(self.coadd_wcs),
-                )
-                # print(image_kind)
-                # try:
-                #     print(gal_img_tmp.FindAdaptiveMom())
-                # except galsim.errors.GalSimHSMError:
-                #     print("Mom failed")
-                setattr(exp, image_kind + "_resamp", gal_img_tmp)
-            exp.wcs_resamp = copy.deepcopy(self.coadd_wcs)
+                if image_kind == "flag":
+                    input_reproj = (
+                        getattr(exp, image_kind).array,
+                        exp.wcs.astropy,
+                    )
+                    resampled, footprint = self._do_resamp(
+                        input_reproj,
+                        "nearest",
+                        resamp_algo="interp",
+                        # **kwargs,
+                    )
+                    gal_img_tmp = galsim.Image(
+                        resampled,
+                        wcs=self.coadd_wcs.copy(),
+                    )
+                    setattr(exp, image_kind + "_resamp", gal_img_tmp)
+                    setattr(exp, image_kind + "_footprint", footprint)
+                    # exp.wcs_resamp = self.coadd_wcs.copy()
+                else:
+                    img_kind_resamp.append(image_kind)
+                    exp_tmp = copy.deepcopy(getattr(exp, image_kind).array)
+                    # if image_kind == "weight":
+                    #     exp_tmp = 1 - exp_tmp
+                    if conserve_flux:
+                        pix_area = exp.wcs.pixelArea(
+                            world_pos=self.world_coadd_center
+                        )
+                    input_resamp.append(exp_tmp)
+                    if len(input_resamp) == 1:
+                        input_wcs = exp.wcs.astropy
+            input_reproj = (np.stack(input_resamp), input_wcs)
 
+            resampled, footprint = self._do_resamp(
+                input_reproj,
+                resamp_method,
+                resamp_algo=resamp_algo,
+                **kwargs,
+            )
+            if conserve_flux:
+                coadd_pix_area = self.coadd_wcs.pixelArea(
+                    world_pos=self.world_coadd_center
+                )
+                pix_ratio = coadd_pix_area / pix_area
+            if flux_scaling:
+                try:
+                    flux_ratio = exp._meta["header"][fscale_keyword]
+                except Exception as e:
+                    raise Exception(e)
+            for i, image_kind in enumerate(img_kind_resamp):
+                if image_kind == "weight":
+                    # This part handle the case where the weight is not only 1.
+                    # It needs to be improved a lot, but the ideal way to do
+                    # that is, I think, not possible with reproject at the
+                    # moment. Do to the this, the border might be a bit
+                    # "funcky".
+                    # new_weight = copy.deepcopy(resampled[i])
+                    # new_weight[np.abs(new_weight) > 1e-3] = 1
+                    # new_weight[new_weight != 1] = 0
+                    # # new_weight2 = ndimage.binary_closing(new_weight)
+                    # # new_weight2[new_weight == 1] = 1
+                    # new_weight2 = 1 - new_weight
+                    # resampled[i] = new_weight2
+
+                    pix_scale = 1 / pix_ratio**2
+                    flux_scale = 1 / flux_ratio**2
+                    if rescale_weight:
+                        rms = self._get_image_rms(exp, rms_keyword)
+                        wght_scale = 1 / rms**2
+                    else:
+                        wght_scale = 1.0
+                else:
+                    pix_scale = pix_ratio
+                    flux_scale = flux_ratio
+                    wght_scale = 1.0
+                gal_img_tmp = galsim.Image(
+                    resampled[i] * pix_scale * flux_scale * wght_scale,
+                    wcs=self.coadd_wcs.copy(),
+                )
+                setattr(exp, image_kind + "_resamp", gal_img_tmp)
+                setattr(exp, image_kind + "_footprint", footprint[i])
+            exp.wcs_resamp = self.coadd_wcs.copy()
             exp._resamp = True
 
-    def _do_resamp(self, input, resamp_method, **kwargs):
-        resamp_config = self.resamp_config[resamp_method]
+    def _do_resamp(self, input, resamp_method, resamp_algo="interp", **kwargs):
+        resamp_config = {}
+        if resamp_algo == "interp":
+            resamp_config = self.resamp_config[resamp_method]
         resamp_config.update(kwargs)
 
-        # print(input[1])
-        # print(self.coadd_wcs.astropy)
-
-        resamp_img, footprint = reproject_interp(
-            input,
-            output_projection=self.coadd_wcs.astropy,
-            shape_out=self.image_coadd_size,
-            **resamp_config,
-        )
+        _ = io.StringIO()
+        with redirect_stdout(_):
+            if resamp_algo == "interp":
+                resamp_img, footprint = reproject_interp(
+                    input,
+                    output_projection=self.coadd_wcs.astropy,
+                    shape_out=self.image_coadd_size,
+                    **resamp_config,
+                )
+            elif resamp_algo == "adapt":
+                resamp_img, footprint = reproject_adaptive(
+                    input,
+                    output_projection=self.coadd_wcs.astropy,
+                    shape_out=self.image_coadd_size,
+                    **resamp_config,
+                )
+            elif resamp_algo == "exact":
+                resamp_img, footprint = reproject_exact(
+                    input,
+                    output_projection=self.coadd_wcs.astropy,
+                    shape_out=self.image_coadd_size,
+                    **resamp_config,
+                )
 
         resamp_img[np.isnan(resamp_img)] = 0
 
         return resamp_img, footprint
+
+    def _get_image_rms(self, exp, rms_keyword):
+        """get_image_rms
+
+        Compute the RMS of the input image, used to rescale the associated
+        weight.
+
+        Parameters
+        ----------
+        exp (metacoadd.Exposure): Exposure to resize.
+        rms_keyword (str): Keyword to use for the RMS.
+
+        Returns
+        -------
+        Float
+            Image RMS.
+        """
+
+        if rms_keyword in exp._meta["header"]:
+            return exp._meta["header"][rms_keyword]
+        else:
+            img = exp.image.array
+            bkg = sep.Background(img, bw=128, bh=128)
+
+            return bkg.globalrms
 
     def get_all_interp_images(
         self,

@@ -97,8 +97,7 @@ class ExposureBound:
             new_exp_dict["image_bounds"].wcs = new_exp_dict["wcs"]
 
         new_exposure = ExposureBound(
-            meta=copy.deepcopy(self._meta),
-            **new_exp_dict
+            meta=copy.deepcopy(self._meta), **new_exp_dict
         )
 
         # The image_bounds is used for the coadding only, to keep track of the
@@ -173,9 +172,8 @@ class ExposureBound:
             image (numpy.ndarray or galsim.Image): Image to setup.
         """
 
-        if (
-            isinstance(image_bounds, np.ndarray) |
-            isinstance(image_bounds, list)
+        if isinstance(image_bounds, np.ndarray) | isinstance(
+            image_bounds, list
         ):
             galsim_bound = self._set_galsim_bound(image_bounds)
         elif isinstance(image_bounds, galsim.BoundsI):
@@ -446,7 +444,7 @@ class PrepCoaddBound:
             origin=self.image_coadd_center,  # -galsim.PositionD(1., 1.),
         )
 
-        self.coadd_wcs = galsim.TanWCS(
+        self.wcs = galsim.TanWCS(
             affine=affine_transform,
             world_origin=self.world_coadd_center,
             units=galsim.arcsec,
@@ -466,9 +464,9 @@ class PrepCoaddBound:
 
         h_tmp = fits.ImageHDU(np.zeros(self.image_coadd_size)).header
         # h_tmp is directly updated
-        self.coadd_wcs.writeToFitsHeader(h_tmp, self.coadd_bounds)
+        self.wcs.writeToFitsHeader(h_tmp, self.coadd_bounds)
         astropy_wcs = WCS(h_tmp)
-        self.coadd_wcs.astropy = astropy_wcs
+        self.wcs.astropy = astropy_wcs
 
     def resize_expblist(self, relax_resize):
         """Resize ExposureBound list
@@ -557,7 +555,7 @@ class PrepCoaddBound:
             images.append(img)
 
         if do_coadd:
-            coadd_img = galsim.Image(self.coadd_bounds, wcs=self.coadd_wcs)
+            coadd_img = galsim.Image(self.coadd_bounds, wcs=self.wcs)
             return images, coadd_img
         else:
             return images
