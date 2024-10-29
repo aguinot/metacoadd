@@ -2,9 +2,9 @@ import esutil as eu
 import galsim
 import ngmix
 import numpy as np
-from metadetect import detect, procflags, shearpos
-from metadetect.fitting import fit_mbobs_list_wavg
-from metadetect.mfrac import measure_mfrac
+# from metadetect import detect, procflags, shearpos
+# from metadetect.fitting import fit_mbobs_list_wavg
+# from metadetect.mfrac import measure_mfrac
 
 from metacoadd.exposure import CoaddImage, Exposure
 from metacoadd.utils import exp2obs

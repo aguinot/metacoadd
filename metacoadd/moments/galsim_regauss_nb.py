@@ -153,7 +153,9 @@ def fast_convolve_image1(
     if b3[3] > xim.shape[1]:
         b3[3] = xim.shape[1] - 1
     b4 = [b3[0] + shift_x, b3[1] + shift_x, b3[2] + shift_y, b3[3] + shift_y]
-    image_out[b4[0] : b4[1], b4[2] : b4[3]] += xim[b3[0] : b3[1], b3[2] : b3[3]]
+    image_out[b4[0] : b4[1], b4[2] : b4[3]] += xim[
+        b3[0] : b3[1], b3[2] : b3[3]
+    ]
 
 
 def get_resi_img(
@@ -290,7 +292,9 @@ def get_resi_img(
     return out_image_img
 
 
-def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
+def regauss(obs, psf_res, resarray, fitter=None, guess_fwhm=0.6):
+    res = resarray[0]
+
     # Get PSF info
     xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5]
     T_psf = xx_psf + yy_psf
@@ -336,7 +340,6 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
     e1_gal = (xx_gal - yy_gal) / T_gal
     e2_gal = (2 * xy_gal) / T_gal
     rho4gal = res_resi[0]["pars"][6]
-    flux_gal = res_resi[0]["pars"][5] / res_resi[0]["wnorm"] / obs.jacobian.area
 
     e1_bj, e2_bj = bj_nullPSF(
         T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
@@ -345,8 +348,27 @@ def regauss(obs, psf_res, fitter=None, pars=None, do_fit=True, guess_fwhm=0.6):
         e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
     )
 
-    T_gal = (xx_gal - xx_psf) + (yy_gal - yy_psf)
+    res["pars"][0] = res_resi[0]["pars"][0]
+    res["pars"][1] = res_resi[0]["pars"][1]
+    res["pars"][2] = xx_final
+    res["pars"][3] = xy_final
+    res["pars"][4] = yy_final
+    res["pars"][5] = res_resi[0]["pars"][5]
+    res["pars"][6] = res_resi[0]["pars"][6]
 
-    Res = T_gal / T_psf
+    res["sums"] = res_resi[0]["sums"]
 
-    return flux_gal, T_gal, Res, xx_final, yy_final, xy_final, 1.0
+    # NOTE: I think this is not technically correct as the PSF uncertainties
+    # should be included. We could also consider that they are really small and
+    # that we are dominated by the Galaxy measurement errors.
+    # NOTE 2: We are also neglecting the ellipticity manipulation from the
+    # `bj_nullPSF` and `get_corrected_mom3` functions.
+    res["sums_cov"] = res_resi[0]["sums_cov"]
+
+    # Propagate the rest of the results from the last adaptive moment run
+    res["flags"] = res_resi[0]["flags"]
+    res["numiter"] = res_resi[0]["numiter"]
+    res["nimage"] = res_resi[0]["nimage"]
+    res["npix"] = res_resi[0]["npix"]
+    res["wsum"] = res_resi[0]["wsum"]
+    res["wnorm"] = res_resi[0]["wnorm"]

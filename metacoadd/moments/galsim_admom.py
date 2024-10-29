@@ -111,6 +111,7 @@ class GAdmomFitter:
 
     def __init__(
         self,
+        guess_fwhm,
         maxiter=DEFAULT_MAXITER,
         shiftmax=DEFAULT_SHIFTMAX,
         tol=DEFAULT_TOL,
@@ -118,6 +119,7 @@ class GAdmomFitter:
         bound_correct_wt=DEFAULT_BOUND_CORRECT_WT,
         rng=None,
     ):
+        self.guess_fwhm = guess_fwhm
         self._set_conf(
             maxiter=maxiter,
             shiftmax=shiftmax,
@@ -128,7 +130,7 @@ class GAdmomFitter:
 
         self.rng = rng
 
-    def go(self, obs, guess_fwhm):
+    def go(self, obs):
         """
         run the adpative moments
         parameters
@@ -146,7 +148,7 @@ class GAdmomFitter:
         if not isinstance(obs, Observation):
             raise ValueError("input obs must be an Observation")
 
-        guess = self._get_guess(obs=obs, guess_fwhm=guess_fwhm)
+        guess = self._get_guess(obs=obs, guess_fwhm=self.guess_fwhm)
 
         ares = self._get_am_result()
 
