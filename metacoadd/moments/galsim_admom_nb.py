@@ -1,3 +1,9 @@
+"""
+This an implementation of the Galsim adaptive moments algorithm in ngmix format.
+To see the original implementation, please visit:
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+"""
+
 from math import atan2, cos, exp, sin, sqrt
 
 import ngmix

@@ -1,3 +1,11 @@
+"""
+This an implementation of the Galsim re-gauss algorithm in ngmix format.
+To see the original implementation, please visit:
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+
+This implementation is modified to allowed post-metacalibration PSF correction.
+"""
+
 from math import ceil, exp, floor, log, sqrt
 
 import ngmix

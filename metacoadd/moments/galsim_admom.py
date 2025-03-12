@@ -1,6 +1,7 @@
 """
-This is a re-wrote of the adaptive moments from ngmix. They have been slightly
-modified to allow error propagation through pseudo-regauss.
+This an implementation of the Galsim adaptive moments algorithm in ngmix format.
+To see the original implementation, please visit:
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
 """
 
 import ngmix.flags
