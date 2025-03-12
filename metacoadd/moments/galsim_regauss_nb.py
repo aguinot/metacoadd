@@ -7,6 +7,8 @@ from numba import njit, objmode
 
 from metacoadd.moments.galsim_admom_nb import find_ellipmom2
 
+import matplotlib.pyplot as plt
+
 
 @njit(fastmath=True, cache=False)
 def _check_exp(pixels, w_data):
@@ -159,7 +161,17 @@ def fast_convolve_image1(
 
 
 def get_resi_img(
-    obs, xx_gal, yy_gal, xy_gal, flux_gal, xx_psf, yy_psf, xy_psf, flux_psf
+    obs,
+    xx_gal,
+    yy_gal,
+    xy_gal,
+    flux_gal,
+    xx_psf,
+    yy_psf,
+    xy_psf,
+    flux_psf,
+    obs_real_psf=None,
+    obs_deconv_psf=None,
 ):
     nsig_rg = 3.0
     nsig_rg2 = 3.6
@@ -173,6 +185,9 @@ def get_resi_img(
     xx_f = xx_gal - xx_psf
     yy_f = yy_gal - yy_psf
     xy_f = xy_gal - xy_psf
+    # xx_f = xx_gal
+    # yy_f = yy_gal
+    # xy_f = xy_gal
     if xx_f <= obs.jacobian.area:
         xx_f = obs.jacobian.area
     if yy_f <= obs.jacobian.area:
@@ -259,22 +274,155 @@ def get_resi_img(
     pars_fgauss[4] = T
     pars_fgauss[5] = flux_gal
     gmix_fgauss = ngmix.GMixModel(pars_fgauss, "gauss")
-
-    g1_psf, g2_psf, T_psf = ngmix.moments.mom2g(yy_psf, xy_psf, xx_psf)
-    pars_psf = np.zeros(6)
-    pars_psf[2] = g1_psf
-    pars_psf[3] = g2_psf
-    pars_psf[4] = T_psf
-    pars_psf[5] = flux_psf
-    gmix_psf = ngmix.GMixModel(pars_psf, "gauss")
-
     fgauss_img = gmix_fgauss.make_image(
         (f_dim_x, f_dim_y), f_jac, fast_exp=True
     )
-    fpsf_img = gmix_psf.make_image((p_dim_x, p_dim_y), p_jac, fast_exp=True)
+
+    if obs_real_psf is None:
+        g1_psf, g2_psf, T_psf = ngmix.moments.mom2g(yy_psf, xy_psf, xx_psf)
+        pars_psf = np.zeros(6)
+        pars_psf[2] = g1_psf
+        pars_psf[3] = g2_psf
+        pars_psf[4] = T_psf
+        pars_psf[5] = flux_psf
+        gmix_psf = ngmix.GMixModel(pars_psf, "gauss")
+        fpsf_img = gmix_psf.make_image(
+            (p_dim_x, p_dim_y), p_jac, fast_exp=True
+        )
+
+        PSF_resid_img = (
+            -obs.psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
+        )
+    else:
+        PSF_resid_img = (
+            -obs_real_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
+            + obs_deconv_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
+        )
+
+    fgauss_img *= flux_gal / np.sum(fgauss_img)
+
+    out_image_img = obs.image.copy()
+
+    fast_convolve_image1(
+        fgauss_img,
+        PSF_resid_img,
+        out_image_img,
+        orig_img1=(fgauss_xmin, fgauss_ymin),
+        orig_img2=(p_xmin, p_ymin),
+    )
+
+    return out_image_img
+
+
+def get_true_resi_img(
+    obs,
+    xx_gal,
+    yy_gal,
+    xy_gal,
+    flux_gal,
+    xx_psf,
+    yy_psf,
+    xy_psf,
+    flux_psf,
+    obs_real_psf=None,
+    obs_deconv_psf=None,
+):
+    nsig_rg = 3.0
+    nsig_rg2 = 3.6
+
+    x_gal_min, y_gal_min = 0, 0
+    x_gal_max, y_gal_max = obs.image.shape
+    x_psf_min, y_psf_min = 0, 0
+    x_psf_max, y_psf_max = obs.psf.image.shape
+
+    # Approx deconv
+    xx_f = xx_gal - xx_psf
+    yy_f = yy_gal - yy_psf
+    xy_f = xy_gal - xy_psf
+    if xx_f <= obs.jacobian.area:
+        xx_f = obs.jacobian.area
+    if yy_f <= obs.jacobian.area:
+        yy_f = obs.jacobian.area
+
+    # Get fgauss bounds
+    fgauss_xmin = x_gal_min - x_psf_max
+    fgauss_xmax = x_gal_max - x_psf_min
+    fgauss_ymin = y_gal_min - y_psf_max
+    fgauss_ymax = y_gal_max - y_psf_min
+    fgauss_xctr = obs.jacobian.row0 - obs.psf.jacobian.row0
+    fgauss_yctr = obs.jacobian.col0 - obs.psf.jacobian.col0
+    fgauss_xsig = np.sqrt(xx_f / obs.jacobian.area)
+    fgauss_ysig = np.sqrt(yy_f / obs.jacobian.area)
+    if fgauss_xmin < fgauss_xctr - nsig_rg * fgauss_xsig:
+        fgauss_xmin = int(floor(fgauss_xctr - nsig_rg * fgauss_xsig))
+    if fgauss_xmax > fgauss_xctr + nsig_rg * fgauss_xsig:
+        fgauss_xmax = int(ceil(fgauss_xctr + nsig_rg * fgauss_xsig))
+    if fgauss_ymin < fgauss_yctr - nsig_rg * fgauss_ysig:
+        fgauss_ymin = int(floor(fgauss_yctr - nsig_rg * fgauss_ysig))
+    if fgauss_ymax > fgauss_yctr + nsig_rg * fgauss_ysig:
+        fgauss_ymax = int(ceil(fgauss_yctr + nsig_rg * fgauss_ysig))
+    f_dim_x = fgauss_xmax - fgauss_xmin
+    f_dim_y = fgauss_ymax - fgauss_ymin
+    f_row0 = f_dim_x / 2
+    f_col0 = f_dim_y / 2
+    f_dim_x += 1
+    f_dim_y += 1
+    f_jac = ngmix.Jacobian(
+        row=f_row0, col=f_col0, wcs=obs.jacobian.get_galsim_wcs()
+    )
+
+    # Get PSF bounds
+    p_xmin = int(
+        floor(
+            obs.psf.jacobian.row0
+            - nsig_rg2 * sqrt(xx_gal / obs.jacobian.area)
+            - nsig_rg * fgauss_xsig
+        )
+    )
+    p_xmax = int(
+        ceil(
+            obs.psf.jacobian.row0
+            + nsig_rg2 * sqrt(xx_gal / obs.jacobian.area)
+            + nsig_rg * fgauss_xsig
+        )
+    )
+    p_ymin = int(
+        floor(
+            obs.psf.jacobian.col0
+            - nsig_rg2 * sqrt(yy_gal / obs.jacobian.area)
+            - nsig_rg * fgauss_ysig
+        )
+    )
+    p_ymax = int(
+        ceil(
+            obs.psf.jacobian.col0
+            + nsig_rg2 * sqrt(yy_gal / obs.jacobian.area)
+            + nsig_rg * fgauss_ysig
+        )
+    )
+    if x_psf_min >= p_xmin:
+        p_xmin = x_psf_min
+    if x_psf_max <= p_xmax:
+        p_xmax = x_psf_max
+    if y_psf_min >= p_ymin:
+        p_ymin = y_psf_min
+    if y_psf_max <= p_ymax:
+        p_ymax = y_psf_max
+
+    g1, g2, T = ngmix.moments.mom2g(yy_f, xy_f, xx_f)
+    pars_fgauss = np.zeros(6)
+    pars_fgauss[2] = g1
+    pars_fgauss[3] = g2
+    pars_fgauss[4] = T
+    pars_fgauss[5] = flux_gal
+    gmix_fgauss = ngmix.GMixModel(pars_fgauss, "gauss")
+    fgauss_img = gmix_fgauss.make_image(
+        (f_dim_x, f_dim_y), f_jac, fast_exp=True
+    )
 
     PSF_resid_img = (
-        -obs.psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
+        -obs_real_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
+        + obs_deconv_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
     )
 
     fgauss_img *= flux_gal / np.sum(fgauss_img)
@@ -292,7 +440,16 @@ def get_resi_img(
     return out_image_img
 
 
-def regauss(obs, psf_res, resarray, fitter=None, guess_fwhm=0.6):
+def regauss(
+    obs,
+    psf_res,
+    resarray,
+    fitter=None,
+    guess_fwhm=0.6,
+    psf_real_res=None,
+    psf_real=None,
+    psf_deconv=None,
+):
     res = resarray[0]
 
     # Get PSF info
@@ -302,7 +459,16 @@ def regauss(obs, psf_res, resarray, fitter=None, guess_fwhm=0.6):
     e1_psf = (xx_psf - yy_psf) / T_psf
     e2_psf = 2.0 * xy_psf / T_psf
 
-    flux_psf = psf_res["pars"][5] / psf_res["wnorm"] / obs.psf.jacobian.area
+    if psf_real is not None:
+        flux_psf = (
+            psf_real_res["pars"][5]
+            / psf_real_res["wnorm"]
+            / psf_real.jacobian.area
+        )
+    else:
+        flux_psf = (
+            psf_res["pars"][5] / psf_res["wnorm"] / obs.psf.jacobian.area
+        )
 
     # Gal
     res_gal = fitter._get_am_result()
@@ -316,12 +482,6 @@ def regauss(obs, psf_res, resarray, fitter=None, guess_fwhm=0.6):
     flux_gal = res_gal[0]["pars"][5] / res_gal[0]["wnorm"] / obs.jacobian.area
 
     # Get resi
-    resi_img = get_resi_img(
-        obs, xx_gal, yy_gal, xy_gal, flux_gal, xx_psf, yy_psf, xy_psf, flux_psf
-    )
-    resi_obs = obs.copy()
-    resi_obs.set_image(resi_img, update_pixels=True)
-
     guess_resi = np.array(
         [
             res_gal[0]["pars"][0],
@@ -332,21 +492,80 @@ def regauss(obs, psf_res, resarray, fitter=None, guess_fwhm=0.6):
             flux_gal,
         ]
     )
-    res_resi = fitter._get_am_result()
-    find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
-    xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
+    # Correct for PSF residuals
+    if psf_real is None:
+        resi_img = get_resi_img(
+            obs,
+            xx_gal,
+            yy_gal,
+            xy_gal,
+            flux_gal,
+            xx_psf,
+            yy_psf,
+            xy_psf,
+            flux_psf,
+            None,
+            None,
+        )
+        resi_obs = obs.copy()
+        resi_obs.set_image(resi_img, update_pixels=True)
 
-    T_gal = xx_gal + yy_gal
-    e1_gal = (xx_gal - yy_gal) / T_gal
-    e2_gal = (2 * xy_gal) / T_gal
-    rho4gal = res_resi[0]["pars"][6]
+        guess_resi = np.array(
+            [
+                res_gal[0]["pars"][0],
+                res_gal[0]["pars"][1],
+                xx_gal,
+                xy_gal,
+                yy_gal,
+                flux_gal,
+            ]
+        )
+        res_resi = fitter._get_am_result()
+        find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
+        xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
 
-    e1_bj, e2_bj = bj_nullPSF(
-        T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
-    )
-    xx_final, yy_final, xy_final = get_corrected_mom3(
-        e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
-    )
+        T_gal = xx_gal + yy_gal
+        e1_gal = (xx_gal - yy_gal) / T_gal
+        e2_gal = (2 * xy_gal) / T_gal
+        rho4gal = res_resi[0]["pars"][6]
+
+        e1_bj, e2_bj = bj_nullPSF(
+            T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
+        )
+        xx_final, yy_final, xy_final = get_corrected_mom3(
+            e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
+        )
+    else:
+        resi_img = get_true_resi_img(
+            obs,
+            xx_gal,
+            yy_gal,
+            xy_gal,
+            flux_gal,
+            xx_psf,
+            yy_psf,
+            xy_psf,
+            flux_psf,
+            psf_real,
+            psf_deconv,
+        )
+        resi_obs = obs.copy()
+        resi_obs.set_image(resi_img, update_pixels=True)
+        res_resi = fitter._get_am_result()
+        find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
+        xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
+
+        T_gal = xx_gal + yy_gal
+        e1_gal = (xx_gal - yy_gal) / T_gal
+        e2_gal = (2 * xy_gal) / T_gal
+        rho4gal = res_resi[0]["pars"][6]
+
+        e1_bj, e2_bj = bj_nullPSF(
+            T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
+        )
+        xx_final, yy_final, xy_final = get_corrected_mom3(
+            e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
+        )
 
     res["pars"][0] = res_resi[0]["pars"][0]
     res["pars"][1] = res_resi[0]["pars"][1]

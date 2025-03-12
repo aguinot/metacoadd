@@ -14,7 +14,7 @@ from .galsim_admom import (
     DEFAULT_SHIFTMAX,
     DEFAULT_TOL,
 )
-from .galsim_admom import GAdmomFitter, get_result, GAdmomResult
+from .galsim_admom import GAdmomFitter, GAdmomResult
 from .galsim_regauss_nb import (
     _check_exp,
     find_ellipmom2,
@@ -102,7 +102,7 @@ class ReGaussFitter(GAdmomFitter):
 
         self.rng = rng
 
-    def go(self, obs):
+    def go(self, obs, mcal_key=None):
         """
         run re-gauss
         parameters
@@ -123,6 +123,7 @@ class ReGaussFitter(GAdmomFitter):
                 obs,
                 self.guess_fwhm,
                 seed,
+                mcal_key,
             )
             jac_area = obs.jacobian.area
             all_res.append(res_tmp)
@@ -134,6 +135,7 @@ class ReGaussFitter(GAdmomFitter):
                     obs_,
                     self.guess_fwhm,
                     seed,
+                    mcal_key,
                 )
                 all_res.append(res_tmp)
                 if res_tmp[0]["flags"] == 0:
@@ -148,7 +150,7 @@ class ReGaussFitter(GAdmomFitter):
 
         return GAdmomResult(obs=obs, result=result)
 
-    def _go_obs(self, obs, guess_fwhm, seed):
+    def _go_obs(self, obs, guess_fwhm, seed, mcal_key=None):
         rng = np.random.RandomState(seed)
         fitter = GAdmomFitter(guess_fwhm=guess_fwhm, rng=rng)
 
@@ -168,12 +170,28 @@ class ReGaussFitter(GAdmomFitter):
             ares_tmp["flags"] = 2**16
         # Now measure gal
         if (ares_tmp[0]["flags"] == 0) & (psf_res[0]["flags"] == 0):
+            psf_real = None
+            psf_deconv = None
+            psf_real_res = None
+            if "psf_real" in obs.meta.keys():
+                psf_real = obs.meta["psf_real"][mcal_key]
+                psf_deconv = obs.meta["psf_deconv"]
+
+                psf_real_res_ = self._get_am_result()
+                guess_real = self._generate_guess(psf_real, guess_fwhm)
+                find_ellipmom2(
+                    obs.psf.pixels, guess_real, psf_real_res_, self.conf
+                )
+                psf_real_res = psf_real_res_[0]
             regauss(
                 obs,
                 psf_res[0],
                 ares_tmp,
                 fitter=fitter,
                 guess_fwhm=guess_fwhm,
+                psf_real_res=psf_real_res,
+                psf_real=psf_real,
+                psf_deconv=psf_deconv,
             )
         return ares_tmp, psf_res
 
@@ -424,6 +442,7 @@ def get_result(ares, jac_area, wgt_norm):
     res["flux_flagstr"] = ngmix.flags.get_flags_str(res["flux_flags"])
     res["T_flagstr"] = ngmix.flags.get_flags_str(res["T_flags"])
     res["g1"], res["g2"] = e1e2_to_g1g2(res["e1"], res["e2"])
+    res["g"] = np.array([res["g1"], res["g2"]])
     res["T"] -= res["Tpsf"]
     res["Tr"] = ngmix.moments.get_Tround(res["T"], res["g1"], res["g2"])
     res["nimage"] = ares["nimage"]
