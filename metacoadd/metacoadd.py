@@ -2,9 +2,9 @@ import esutil as eu
 import galsim
 import ngmix
 import numpy as np
-# from metadetect import detect, procflags, shearpos
-# from metadetect.fitting import fit_mbobs_list_wavg
-# from metadetect.mfrac import measure_mfrac
+from metadetect import detect, procflags, shearpos
+from metadetect.fitting import fit_mbobs_list_wavg
+from metadetect.mfrac import measure_mfrac
 
 from metacoadd.exposure import CoaddImage, Exposure
 from metacoadd.utils import exp2obs
@@ -304,15 +304,23 @@ class SimpleCoadd:
             )
 
         input_reproj = (
-            resized_border.image.array,
+            np.array([resized_border.image.array]),
             resized_border.wcs.astropy,
         )
+        # NOTE: need to change this part!
+        # border_resamp, _ = self.coaddimage._do_resamp(
+        #     input_reproj,
+        #     "nearest",
+        #     image_kinds=["border"],
+        # )
         border_resamp, _ = self.coaddimage._do_resamp(
             input_reproj,
-            "nearest",
+            "classic",
+            image_kinds=["border"],
+            resamp_algo="swarp",
         )
 
-        return border_resamp
+        return border_resamp[0]
 
 
 class MetaCoadd(SimpleCoadd):

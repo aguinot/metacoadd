@@ -10,7 +10,8 @@ from reproject import reproject_interp, reproject_adaptive, reproject_exact
 import sep
 # from scipy import ndimage
 
-from metacoadd.utils import shift_wcs
+from .utils import shift_wcs
+from .swarp_wrapper import reproject_swarp
 
 DEFAULT_INTERP_CONFIG = {
     "classic": {
@@ -32,6 +33,8 @@ DEFAULT_INTERP_CONFIG = {
 DEFAULT_RESAMP_CONFIG = {
     "classic": {
         "order": 5,
+        "exec": "swarp",
+        "resamp_method": "LANCZOS3",
     },
     "nearest": {
         "order": 0,
@@ -77,7 +80,7 @@ class Exposure:
         noise=None,
         meta=None,
     ):
-        self._exposure_images = []
+        self._image_kinds = []
 
         if header is not None:
             if wcs is not None:
@@ -129,7 +132,7 @@ class Exposure:
         if not isinstance(bounds, galsim.BoundsI):
             raise TypeError("bounds must be a galsim.BoundsI.")
         new_exp_dict = {}
-        for image_kind in self._exposure_images:
+        for image_kind in self._image_kinds:
             new_exp_dict[image_kind] = copy.deepcopy(
                 getattr(self, image_kind)
             )[bounds]
@@ -140,13 +143,13 @@ class Exposure:
         if self._meta["image_bounds"] != bounds:
             offset_wcs = galsim.PositionI(bounds.xmin, bounds.ymin)
             new_exp_dict["wcs"] = shift_wcs(orig_wcs, offset_wcs)
-            for image_kind in self._exposure_images:
+            for image_kind in self._image_kinds:
                 new_exp_dict[image_kind].wcs = new_exp_dict["wcs"]
         else:
             # If same bounds we still run the shift but we set the shift to
             # the fits origin.
             new_exp_dict["wcs"] = shift_wcs(orig_wcs, galsim.PositionI(1, 1))
-            for image_kind in self._exposure_images:
+            for image_kind in self._image_kinds:
                 new_exp_dict[image_kind].wcs = new_exp_dict["wcs"]
 
         new_exposure = Exposure(meta=copy.deepcopy(self._meta), **new_exp_dict)
@@ -166,12 +169,17 @@ class Exposure:
         """
         if not isinstance(header, type(None)):
             astropy_wcs = WCS(header)
-            self.wcs = galsim.AstropyWCS(header=astropy_wcs)
+            # self.wcs = galsim.AstropyWCS(header=astropy_wcs)
+            self.wcs = galsim.AstropyWCS(wcs=astropy_wcs)
+            self.wcs.header = galsim.FitsHeader(header=header)
             self.wcs.astropy = astropy_wcs
         elif not isinstance(galsim_wcs, type(None)):
             self.wcs = galsim_wcs
         elif not isinstance(astropy_wcs, type(None)):
             self.wcs = galsim.AstropyWCS(wcs=astropy_wcs)
+            self.wcs.header = galsim.FitsHeader(
+                header=astropy_wcs.to_header(relax=True)
+            )
             self.wcs.astropy = astropy_wcs
 
     def _set_astropy_wcs(self, galsim_image):
@@ -243,7 +251,7 @@ class Exposure:
                 "image must be a ngmix.ndarray or a galsim.Image. "
                 f"Got {type(image)}."
             )
-        self._exposure_images.append(image_kind)
+        self._image_kinds.append(image_kind)
         setattr(self, image_kind, galsim_image)
 
         # In case galsim WCS where provided as input we set now the astropy one
@@ -294,7 +302,7 @@ class ExpList(list):
         super().append(exp)
 
     def __setitem__(self, index, exp):
-        """[summary]
+        """
 
         Args:
             index ([type]): [description]
@@ -303,6 +311,40 @@ class ExpList(list):
         if not isinstance(exp, Exposure):
             raise TypeError("exp must be a metacoadd.Exposure.")
         super().__setitem__(index, exp)
+
+
+class MultiBandExpList(list):
+    """Multi-band exposure list
+
+    List of multi-band of list of Exposure.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def append(self, explist):
+        """append
+
+        Add a new ExpList to the list.
+
+        Args:
+            exp (metacoadd.ExpList): ExpList to add.
+        """
+
+        if not isinstance(explist, ExpList):
+            raise TypeError("explist must be a metacoadd.ExpList.")
+        super().append(explist)
+
+    def __setitem__(self, index, explist):
+        """
+
+        Args:
+            index ([type]): [description]
+            exp ([type]): [description]
+        """
+        if not isinstance(explist, ExpList):
+            raise TypeError("explist must be a metacoadd.ExpList.")
+        super().__setitem__(index, explist)
 
 
 class CoaddImage:
@@ -655,7 +697,7 @@ class CoaddImage:
         for exp in self.explist:
             input_resamp = []
             img_kind_resamp = []
-            for image_kind in exp._exposure_images:
+            for image_kind in exp._image_kinds:
                 # We skip if an image is already resampled
                 if "_resamp" in image_kind:
                     continue
@@ -697,6 +739,7 @@ class CoaddImage:
             resampled, footprint = self._do_resamp(
                 input_reproj,
                 resamp_method,
+                img_kind_resamp,
                 resamp_algo=resamp_algo,
                 **kwargs,
             )
@@ -710,6 +753,7 @@ class CoaddImage:
                     flux_ratio = exp._meta["header"][fscale_keyword]
                 except Exception as e:
                     raise Exception(e)
+
             for i, image_kind in enumerate(img_kind_resamp):
                 if image_kind == "weight":
                     # This part handle the case where the weight is not only 1.
@@ -725,54 +769,83 @@ class CoaddImage:
                     # new_weight2 = 1 - new_weight
                     # resampled[i] = new_weight2
 
-                    pix_scale = 1 / pix_ratio**2
+                    # pix_scale = 1 / pix_ratio**2
+                    pix_scale = 1
                     flux_scale = 1 / flux_ratio**2
                     if rescale_weight:
                         rms = self._get_image_rms(exp, rms_keyword)
                         wght_scale = 1 / rms**2
                     else:
                         wght_scale = 1.0
+                elif image_kind == "flag":
+                    pix_scale = 1
+                    flux_scale = 1
+                    wght_scale = 1
                 else:
-                    pix_scale = pix_ratio
-                    flux_scale = flux_ratio
-                    wght_scale = 1.0
+                    # pix_scale = pix_ratio
+                    # flux_scale = flux_ratio
+                    pix_scale = 1
+                    flux_scale = 1
+                    wght_scale = 1
                 gal_img_tmp = galsim.Image(
                     resampled[i] * pix_scale * flux_scale * wght_scale,
                     wcs=self.coadd_wcs.copy(),
                 )
                 setattr(exp, image_kind + "_resamp", gal_img_tmp)
-                setattr(exp, image_kind + "_footprint", footprint[i])
+                setattr(exp, image_kind + "_footprint", footprint)
             exp.wcs_resamp = self.coadd_wcs.copy()
             exp._resamp = True
 
-    def _do_resamp(self, input, resamp_method, resamp_algo="interp", **kwargs):
+    def _do_resamp(
+        self,
+        input,
+        resamp_method,
+        image_kinds,
+        resamp_algo="interp",
+        **kwargs,
+    ):
         resamp_config = {}
-        if resamp_algo == "interp":
-            resamp_config = self.resamp_config[resamp_method]
+        # if resamp_algo == "interp":
+        resamp_config = self.resamp_config[resamp_method]
+
         resamp_config.update(kwargs)
 
+        # Right now we silence the output of the resampling. This should be
+        # improved in the future.
         _ = io.StringIO()
         with redirect_stdout(_):
             if resamp_algo == "interp":
-                resamp_img, footprint = reproject_interp(
+                resamp_img, footprint_ = reproject_interp(
                     input,
                     output_projection=self.coadd_wcs.astropy,
                     shape_out=self.image_coadd_size,
                     **resamp_config,
                 )
+                footprint = footprint_[0]
             elif resamp_algo == "adapt":
-                resamp_img, footprint = reproject_adaptive(
+                resamp_img, footprint_ = reproject_adaptive(
                     input,
                     output_projection=self.coadd_wcs.astropy,
                     shape_out=self.image_coadd_size,
                     **resamp_config,
                 )
+                footprint = footprint_[0]
             elif resamp_algo == "exact":
-                resamp_img, footprint = reproject_exact(
+                resamp_img, footprint_ = reproject_exact(
                     input,
                     output_projection=self.coadd_wcs.astropy,
                     shape_out=self.image_coadd_size,
                     **resamp_config,
+                )
+                footprint = footprint_[0]
+            elif resamp_algo == "swarp":
+                resamp_img, footprint = reproject_swarp(
+                    input,
+                    coadd_center=self.world_coadd_center,
+                    coadd_size=self.image_coadd_size,
+                    coadd_scale=self.coadd_pixel_scale,
+                    image_kinds=image_kinds,
+                    swarp_config=resamp_config,
                 )
 
         resamp_img[np.isnan(resamp_img)] = 0
@@ -825,7 +898,7 @@ class CoaddImage:
                 wcs = exp.wcs
             else:
                 wcs = exp.wcs.local(world_pos=self.world_coadd_center)
-            for image_kind in exp._exposure_images:
+            for image_kind in exp._image_kinds:
                 if image_kind == "weight" or image_kind == "flag":
                     interp_method = "nearest"
                 else:
