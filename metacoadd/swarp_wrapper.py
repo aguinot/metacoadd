@@ -37,7 +37,11 @@ def reproject_swarp(
         tmp_dir = swarp_config["run_dir"]
 
     # Make resamp dir
-    run_dir = os.path.join(tmp_dir, "resamp")
+    # run_dir = os.path.join(tmp_dir, "resamp")
+    run_dir = tempfile.TemporaryDirectory(
+        dir=os.path.expandvars(tmp_dir),
+        prefix="resamp-",
+    ).name
     os.makedirs(run_dir, exist_ok=True)
 
     # Set input images
