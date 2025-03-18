@@ -35,11 +35,12 @@ def shift_wcs(wcs, offset):
     return new_wcs
 
 
-def exp2obs(exp, exp_psf=None, use_resamp=True):
+def _exp2obs(exp, exp_psf=None, use_resamp=False):
     if use_resamp:
         kind = "_resamp"
     else:
         kind = ""
+
     # Set images
     if hasattr(exp, "image" + kind):
         img = getattr(exp, "image" + kind).array

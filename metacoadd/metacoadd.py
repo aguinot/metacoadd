@@ -1,14 +1,14 @@
-import esutil as eu
-import galsim
-import ngmix
 import numpy as np
-from metadetect import detect, procflags, shearpos
-from metadetect.fitting import fit_mbobs_list_wavg
-from metadetect.mfrac import measure_mfrac
 
-from metacoadd.exposure import CoaddImage, Exposure
-from metacoadd.utils import exp2obs
-# from metacoadd.moments.galsim_admom import GAdmomFitter
+import galsim
+
+import ngmix
+
+from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
+
+from .metacal_oversampling import get_all_metacal
+from .detect import get_cutout, get_cat, DET_CAT_DTYPE
+from .moments.galsim_regauss import ReGaussFitter
 
 
 TEST_METADETECT_CONFIG = {
@@ -43,7 +43,7 @@ TEST_METADETECT_CONFIG = {
                 0.051328,
                 0.021388,
                 0.004963,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.021388,
                 0.092163,
@@ -52,7 +52,7 @@ TEST_METADETECT_CONFIG = {
                 0.221178,
                 0.092163,
                 0.021388,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.051328,
                 0.221178,
@@ -61,7 +61,7 @@ TEST_METADETECT_CONFIG = {
                 0.530797,
                 0.221178,
                 0.051328,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.068707,
                 0.296069,
@@ -70,7 +70,7 @@ TEST_METADETECT_CONFIG = {
                 0.710525,
                 0.296069,
                 0.068707,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.051328,
                 0.221178,
@@ -79,7 +79,7 @@ TEST_METADETECT_CONFIG = {
                 0.530797,
                 0.221178,
                 0.051328,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.021388,
                 0.092163,
@@ -88,7 +88,7 @@ TEST_METADETECT_CONFIG = {
                 0.221178,
                 0.092163,
                 0.021388,
-            ],  # noqa
+            ],  # noqa: E501
             [
                 0.004963,
                 0.021388,
@@ -97,7 +97,7 @@ TEST_METADETECT_CONFIG = {
                 0.051328,
                 0.021388,
                 0.004963,
-            ],  # noqa
+            ],  # noqa: E501
         ],
     },
     "meds": {
@@ -125,6 +125,27 @@ TEST_METADETECT_CONFIG = {
 
 
 _available_method = ["weighted"]
+
+
+SHAPE_CAT_DTYPE = [
+    ("regauss_flags", np.int32),
+    ("regauss_nimage", np.int32),
+    ("regauss_flux", np.float64),
+    ("regauss_flux_err", np.float64),
+    ("regauss_T", np.float64),
+    ("regauss_T_err", np.float64),
+    ("regauss_Tr", np.float64),
+    ("regauss_Tpsf", np.float64),
+    ("regauss_rho4", np.float64),
+    ("regauss_rho4_err", np.float64),
+    ("regauss_s2n", np.float64),
+    ("regauss_e1", np.float64),
+    ("regauss_e2", np.float64),
+    ("regauss_e1err", np.float64),
+    ("regauss_e2err", np.float64),
+    ("regauss_g1", np.float64),
+    ("regauss_g2", np.float64),
+]
 
 
 class SimpleCoadd:
@@ -174,49 +195,47 @@ class SimpleCoadd:
         Run the coaddition process.
         """
 
-        if len(self.coaddimage.explist) == 0:
-            raise ValueError("No exposure find to make the coadd.")
-        if not self.coaddimage.explist[0]._resamp:
-            # raise ValueError('Exposure must be resampled first.')
-            self.coaddimage.get_all_resamp_images(**resamp_kwargs)
-
         self.coaddimage.setup_coadd()
-        stamps = []
-        for exp in self.coaddimage.explist:
-            all_stamp = self._process_one_exp(exp)
+        for i, explist in enumerate(self.coaddimage.mb_explist):
+            if len(explist) == 0:
+                raise ValueError("No exposure find to make the coadd.")
+            if not explist[0]._resamp:
+                # raise ValueError('Exposure must be resampled first.')
+                self.coaddimage.get_all_resamp_images(**resamp_kwargs)
 
-            # Check bounds, it should always pass. Just for safety.
-            # We check only 'image' because it we always be there and the
-            # property are shared with the other kind.
-            b = all_stamp["image"].bounds & self.coaddimage.image.bounds
-            if b.isDefined():
-                if self._coadd_method == "weighted":
-                    # NOTE: check for the presence of a 'weight' for the
-                    # weighted average coadding
-                    self.coaddimage.image[b] += (
-                        all_stamp["image"]
-                        * all_stamp["weight"]
-                        * all_stamp["border"]
-                    )
-                    if "noise" in list(all_stamp.keys()):
-                        self.coaddimage.noise[b] += (
-                            all_stamp["noise"]
+            for exp in explist:
+                all_stamp = self._process_one_exp(exp)
+
+                # Check bounds, it should always pass. Just for safety.
+                # We check only 'image' because it we always be there and the
+                # property are shared with the other kind.
+                b = all_stamp["image"].bounds & self.coaddimage.image[i].bounds
+                if b.isDefined():
+                    if self._coadd_method == "weighted":
+                        # NOTE: check for the presence of a 'weight' for the
+                        # weighted average coadding
+                        self.coaddimage.image[i][b] += (
+                            all_stamp["image"]
                             * all_stamp["weight"]
                             * all_stamp["border"]
                         )
-                    self.coaddimage.weight += (
-                        all_stamp["weight"] * all_stamp["border"]
-                    )
-            stamps.append(all_stamp)
-        self.stamps = stamps
-        non_zero_weights = np.where(self.coaddimage.weight.array != 0)
-        self.coaddimage.image.array[non_zero_weights] /= (
-            self.coaddimage.weight.array[non_zero_weights]
-        )
-        if "noise" in list(all_stamp.keys()):
-            self.coaddimage.noise.array[non_zero_weights] /= (
-                self.coaddimage.weight.array[non_zero_weights]
+                        if "noise" in list(all_stamp.keys()):
+                            self.coaddimage.noise[i][b] += (
+                                all_stamp["noise"]
+                                * all_stamp["weight"]
+                                * all_stamp["border"]
+                            )
+                        self.coaddimage.weight[i] += (
+                            all_stamp["weight"] * all_stamp["border"]
+                        )
+            non_zero_weights = np.where(self.coaddimage.weight[i].array != 0)
+            self.coaddimage.image[i].array[non_zero_weights] /= (
+                self.coaddimage.weight[i].array[non_zero_weights]
             )
+            if "noise" in list(all_stamp.keys()):
+                self.coaddimage.noise[i].array[non_zero_weights] /= (
+                    self.coaddimage.weight[i].array[non_zero_weights]
+                )
 
     def _process_one_exp(self, exp):
         """Process one exposure
@@ -245,7 +264,7 @@ class SimpleCoadd:
             stamp_dict["weight"] = exp.weight_resamp
 
         if self._do_border:
-            border_image = self._set_border(exp)
+            border_image = self._get_border(exp)
             border_stamp = galsim.Image(
                 border_image,
                 bounds=exp.image_resamp.bounds,
@@ -259,7 +278,7 @@ class SimpleCoadd:
 
         return stamp_dict
 
-    def _set_border(self, exp):
+    def _get_border(self, exp):
         """Set border
 
         This method handle the CCD border to avoid issues in case the edge of
@@ -328,18 +347,50 @@ class MetaCoadd(SimpleCoadd):
         self,
         coaddimage,
         psfs,
+        resamp_config,
+        rng,
         coadd_method="weighted",
+        do_border=True,
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
     ):
-        super().__init__(coaddimage, coadd_method)
+        super().__init__(coaddimage=coaddimage, coadd_method=coadd_method)
 
         self.psf_coaddimage = psfs
+        self.resamp_config = resamp_config
+        self.rng = rng
+        self.mcal_config = {
+            "step": step,
+            "types": types,
+            "psf": "fitgauss_UR",
+            "use_noise_image": True,
+        }
 
-        self.step = step
-        self.types = types
+        # Set observations
+        self.mbobs = exp2obs(
+            self.coaddimage.mb_explist,
+            self.psf_coaddimage.mb_explist,
+            use_resamp=False,
+        )
 
-        self._do_border = True
+        # if len(self.coaddimage.mb_explist) == 0:
+        #     raise ValueError("No exposures find to make the coadd.")
+        # if not self.coaddimage.mb_explist[0]._resamp:
+        #     # raise ValueError('Exposure must be resampled first.')
+        #     self.coaddimage.get_all_resamp_images(**resamp_config)
+
+        # if len(self.psf_coaddimage.explist) == 0:
+        #     raise ValueError("No PSFs find.")
+
+        # self.coaddimage.setup_coadd_metacal(self.types)
+        # self.psf_coaddimage.setup_coadd_metacal(self.types)
+
+        # self.step = step
+        # self.types = types
+
+        # self._set_metacal_input()
+
+        self._do_border = do_border
 
     def go(
         self,
@@ -348,579 +399,218 @@ class MetaCoadd(SimpleCoadd):
         Run the coaddition process.
         """
 
-        if len(self.coaddimage.explist) == 0:
-            raise ValueError("No exposure find to make the coadd.")
-        # if not self.coaddimage.explist[0]._interp:
-        #     raise ValueError('Exposure must be interpolated first.')
+        # if len(self.coaddimage.explist) == 0:
+        #     raise ValueError("No exposure find to make the coadd.")
+        # # if not self.coaddimage.explist[0]._interp:
+        # #     raise ValueError('Exposure must be interpolated first.')
 
-        self.coaddimage.setup_coadd_metacal(self.types)
-        self.psf_coaddimage.setup_coadd_metacal(self.types)
-        stamps = []
-        for n, exp in enumerate(self.coaddimage.explist):
-            # print(n)
-            # all_stamp = self._process_one_exp(exp, self._inv_psflist[n])
-            all_stamp = self._process_one_exp(
-                exp, self.psf_coaddimage.explist[n]
+        self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
+        # self.psf_coaddimage.setup_coadd_metacal(self.types)
+
+        mcal_dict = self._run_metacal()
+
+        self._mcal_coadd_image = {}
+        all_sep_cat = {}
+        all_shape_cat = {}
+        final_cat = {}
+        for mcal_key in mcal_dict.keys():
+            mb_obs = mcal_dict[mcal_key]
+
+            mcal_coadd_image, mcal_mb_explist, mcal_mb_explist_psf = (
+                self._get_resamp(mb_obs)
+            )
+            self._mcal_coadd_image[mcal_key] = mcal_coadd_image
+
+            self.make_coadds(
+                mcal_coadd_image.mb_explist, mcal_key, do_multiband=True
+            )
+            all_sep_cat[mcal_key] = self.get_cat(mcal_key, do_multiband=True)
+            all_shape_cat[mcal_key] = self.get_shape_cat(
+                mcal_mb_explist, mcal_mb_explist_psf, all_sep_cat[mcal_key]
+            )
+            final_cat[mcal_key] = self.build_output_cat(
+                all_sep_cat[mcal_key], all_shape_cat[mcal_key]
             )
 
-            # Check bounds, it should always pass. Just for safety.
-            # We check only 'image' because it we always be there and the
-            # property are shared with the other kind.
-            for type in self.types:
+        self.all_sep_cat = all_sep_cat
+        self.all_shape_cat = all_shape_cat
+        return final_cat
+
+    def _run_metacal(self):
+        mcal_obs = get_all_metacal(
+            self.mbobs,
+            rng=self.rng,
+            **self.mcal_config,
+        )
+
+        return mcal_obs
+
+    def _get_resamp(self, mb_obs):
+        mb_explist = MultiBandExpList()
+        mb_explist_psf = MultiBandExpList()
+        for i, obs_list in enumerate(mb_obs):
+            exp_list = ExpList()
+            exp_list_psf = ExpList()
+            for j, obs in enumerate(obs_list):
+                exp = Exposure(
+                    image=obs.image,
+                    weight=obs.weight,
+                    noise=obs.noise,
+                    wcs=self.coaddimage.mb_explist[i][j].wcs,
+                )
+                exp_list.append(exp)
+
+                exp_psf = Exposure(
+                    image=obs.psf.image,
+                    wcs=self.psf_coaddimage.mb_explist[i][j].wcs,
+                )
+                exp_list_psf.append(exp_psf)
+            mb_explist.append(exp_list)
+            mb_explist_psf.append(exp_list_psf)
+
+        coadd_image = CoaddImage(
+            mb_explist,
+            world_coadd_center=self.coaddimage.world_coadd_center,
+            scale=self.coaddimage.coadd_pixel_scale,
+            image_coadd_size=self.coaddimage.image_coadd_size,
+        )
+
+        coadd_image.get_all_resamp_images(**self.resamp_config)
+
+        return coadd_image, mb_explist, mb_explist_psf
+
+    def make_coadds(self, mb_explist, mcal_key, do_multiband=False):
+        if do_multiband:
+            if not self.coaddimage._mb_coadd_set:
+                self.coaddimage.setup_mb_coadd_metacal(
+                    self.mcal_config["types"]
+                )
+        for i, exp_list in enumerate(mb_explist):
+            for exp in exp_list:
+                if self._do_border:
+                    border_image = galsim.Image(
+                        self._get_border(exp),
+                        bounds=exp.image_resamp.bounds,
+                    )
+                else:
+                    border_image = galsim.Image(
+                        bounds=exp.image_resamp.bounds,
+                    )
+                    border_image.fill(1)
                 b = (
-                    all_stamp["image"][type].bounds
-                    & self.coaddimage.image[type].bounds
+                    exp.image_resamp.bounds
+                    & self.coaddimage.image[i][mcal_key].bounds
                 )
                 if b.isDefined():
                     if self._coadd_method == "weighted":
                         # NOTE: check for the presence of a 'weight' for the
                         # weighted average coadding
-                        self.coaddimage.image[type][b] += (
-                            all_stamp["image"][type]
-                            * all_stamp["weight"][type]
-                            * all_stamp["border"]
+                        self.coaddimage.image[i][mcal_key][b] += (
+                            exp.image_resamp * exp.weight_resamp * border_image
                         )
-                        if "noise" in list(all_stamp.keys()):
-                            self.coaddimage.noise[type][b] += (
-                                all_stamp["noise"][type]
-                                * all_stamp["weight"][type]
-                                * all_stamp["border"]
+                        self.coaddimage.weight[i][mcal_key] += (
+                            exp.weight_resamp * border_image
+                        )
+                        if do_multiband:
+                            self.coaddimage.mb_image[mcal_key][b] += (
+                                exp.image_resamp
+                                * exp.weight_resamp
+                                * border_image
                             )
-                        self.coaddimage.weight[type] += (
-                            all_stamp["weight"][type] * all_stamp["border"]
-                        )
-
-            # Now we coadd the PSF
-            for type in self.types:
-                b = (
-                    all_stamp["psf"][type].bounds
-                    & self.psf_coaddimage.image[type].bounds
-                )
-                if b.isDefined():
-                    self.psf_coaddimage.image[type][b] += all_stamp["psf"][
-                        type
-                    ]
-
-            stamps.append(all_stamp)
-        self.stamps = stamps
-
-        # Finish the stacking
-        for type in self.types:
+                            self.coaddimage.mb_weight[mcal_key] += (
+                                exp.weight_resamp * border_image
+                            )
             non_zero_weights = np.where(
-                self.coaddimage.weight[type].array != 0
+                self.coaddimage.weight[i][mcal_key].array != 0
             )
-            self.coaddimage.image[type].array[non_zero_weights] /= (
-                self.coaddimage.weight[type].array[non_zero_weights]
+            self.coaddimage.image[i][mcal_key].array[non_zero_weights] /= (
+                self.coaddimage.weight[i][mcal_key].array[non_zero_weights]
             )
-            if "noise" in list(all_stamp.keys()):
-                self.coaddimage.noise[type].array[non_zero_weights] /= (
-                    self.coaddimage.weight[type].array[non_zero_weights]
-                )
-            self.psf_coaddimage.image[type].array[:, :] /= len(
-                self.psf_coaddimage.explist
+        if do_multiband:
+            non_zero_weights = np.where(
+                self.coaddimage.mb_weight[mcal_key].array != 0
             )
-
-        # Run detection + shape measurement
-        self.results = {}
-        self.mcal_dict = {}
-        for type in self.types:
-            img_jac = ngmix.Jacobian(
-                row=self.coaddimage.image_coadd_center.x,
-                col=self.coaddimage.image_coadd_center.y,
-                wcs=self.coaddimage.coadd_wcs.jacobian(
-                    world_pos=self.coaddimage.world_coadd_center
-                ),
-            )
-            psf_jac = ngmix.Jacobian(
-                row=self.psf_coaddimage.image_coadd_center.x,
-                col=self.psf_coaddimage.image_coadd_center.y,
-                wcs=self.psf_coaddimage.coadd_wcs.jacobian(
-                    world_pos=self.psf_coaddimage.world_coadd_center
-                ),
-            )
-            psf_obs = ngmix.Observation(
-                image=self.psf_coaddimage.image[type].array,
-                jacobian=psf_jac,
-            )
-            obs = ngmix.Observation(
-                image=self.coaddimage.image[type].array,
-                weight=self.coaddimage.weight[type].array,
-                bmask=np.zeros_like(
-                    self.coaddimage.image[type].array,
-                    dtype=np.int32,
-                ),
-                ormask=np.zeros_like(
-                    self.coaddimage.image[type].array,
-                    dtype=np.int32,
-                ),
-                noise=self.coaddimage.noise[type].array,
-                jacobian=img_jac,
-                psf=psf_obs,
-            )
-            mbobs = ngmix.MultiBandObsList()
-            obslist = ngmix.ObsList()
-            obslist.append(obs)
-            mbobs.append(obslist)
-            self.mcal_dict[type] = mbobs
-            self.results[type] = self._measure(
-                mbobs,
-                type,
-                nonshear_mbobs=None,
-            )
-            self.obs = obs
-
-    def _run_metacal(self, exp, psf_exp, use_resamp=True):
-        obs = exp2obs(exp, psf_exp, use_resamp=use_resamp)
-
-        rng = np.random.RandomState(1234)
-
-        mcal_obs = ngmix.metacal.get_all_metacal(
-            obs,
-            step=self.step,
-            types=self.types,
-            use_noise_image=True,
-            # psf="gauss",
-            psf=galsim.Gaussian(sigma=0.6, flux=1.0),
-            rng=rng,
-        )
-
-        return mcal_obs
-
-    def _process_one_exp(self, exp, psf_exp):
-        if self._do_border:
-            border_image = self._set_border(exp)
-            border_stamp = galsim.Image(
-                border_image,
-                bounds=exp.image_resamp.bounds,
-            )
-        else:
-            border_stamp = galsim.Image(
-                bounds=exp.image_resamp.bounds,
-            )
-            border_stamp.fill(1)
-
-        mcal_obs = self._run_metacal(exp, psf_exp, use_resamp=True)
-
-        stamp_dict = {"image": {}, "psf": {}, "border": {}}
-        if hasattr(exp, "noise"):
-            stamp_dict["noise"] = {}
-        if hasattr(exp, "weight"):
-            stamp_dict["weight"] = {}
-
-        for key in stamp_dict.keys():
-            if key == "border":
-                stamp_dict[key] = border_stamp
-                continue
-            for type in self.types:
-                if key == "psf":
-                    img = getattr(mcal_obs[type], key).image
-                    # print("after")
-                    # print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
-                    wcs = getattr(
-                        mcal_obs[type], key
-                    ).jacobian.get_galsim_wcs()
-                else:
-                    img = getattr(mcal_obs[type], key)
-                    wcs = mcal_obs[type].jacobian.get_galsim_wcs()
-                gs_img = galsim.Image(
-                    img,
-                    wcs=wcs,
-                )
-                stamp_dict[key][type] = gs_img
-
-        return stamp_dict
-
-    def _render_coord(self, coord):
-        return [coord.ra.deg, coord.dec.deg]
-
-    def _get_shear(self, type):
-        if type == "1m":
-            return -self.step, 0.0
-        elif type == "1p":
-            return self.step, 0.0
-        elif type == "2m":
-            return 0.0, -self.step
-        elif type == "2p":
-            return 0.0, self.step
-        elif type == "noshear":
-            return 0.0, 0.0
-        else:
-            raise ValueError(
-                'type must be in ["1m", "1p", "2m", "2p", "noshear"].'
+            self.coaddimage.mb_image[mcal_key].array[non_zero_weights] /= (
+                self.coaddimage.mb_weight[mcal_key].array[non_zero_weights]
             )
 
-    def _process_psf(self, psfs):
-        if isinstance(psfs, list):
-            if all(isinstance(n, np.ndarray) for n in psfs):
-                (
-                    self._inv_psflist,
-                    self._sigma_psflist,
-                    self._flux_psflist,
-                ) = self._init_invpsf_nparray(psfs)
-            elif all(isinstance(n, galsim.Image) for n in psfs):
-                (
-                    self._inv_psflist,
-                    self._sigma_psflist,
-                    self._flux_psflist,
-                ) = self._init_invpsf_galimage(psfs)
-            else:
-                raise TypeError(
-                    "psf should be a list of numpy.ndarray or galsim.Image."
-                )
-        else:
-            raise TypeError(
-                "psf should be a list of numpy.ndarray or galsim.Image."
+    def get_cat(self, mcal_key, do_multiband=False):
+        if do_multiband:
+            cat, seg_map = get_cat(
+                self.coaddimage.mb_image[mcal_key].array,
+                self.coaddimage.mb_weight[mcal_key].array,
+                thresh=1.5,
+                wcs=self.coaddimage.mb_image[mcal_key].wcs.astropy,
             )
+        return cat
 
-    def _init_invpsf_nparray(self, psfs):
-        inv_psflist = []
-        sigma_psflist = []
-        flux_psflist = []
-        for n, psf in enumerate(psfs):
-            local_wcs = self._get_exposures_local_wcs(
-                self.coaddimage.explist[n]
-            )
-            psf_img = galsim.Image(
-                psf,
-                wcs=local_wcs,
-            )
-            psf_interp = galsim.InterpolatedImage(
-                psf_img,
-                x_interpolant="lanczos15",
-            )
-            exp = self.coaddimage.explist[0]
-            sigma_psflist.append(
-                self._get_exp_reconv_psf_size(
-                    self.deconvolve(psf_interp, self._get_exposures_pixel(exp))
-                )
-            )
-            flux_psflist.append(psf_interp.flux)
-            inv_psf_interp = galsim.Deconvolve(psf_interp)
+    def get_shape_cat(self, mcal_mb_explist, mcal_mb_explist_psf, sep_cat):
+        cutout_size = 51
+        fitter = ReGaussFitter(guess_fwhm=0.3)
 
-            inv_psflist.append(inv_psf_interp)
-
-        return inv_psflist, sigma_psflist, flux_psflist
-
-    def _init_invpsf_galimage(self, psfs):
-        inv_psflist = []
-        sigma_psflist = []
-        flux_psflist = []
-        for n, psf in enumerate(psfs):
-            local_wcs = self._get_exposures_local_wcs(
-                self.coaddimage.explist[n]
-            )
-            if hasattr(psf, "wcs"):
-                if psf.wcs != local_wcs:
-                    raise ValueError(
-                        "The provided psf WCS are different from the derived "
-                        "local WCS on the corresponding single exposure."
+        all_shape_cat = []
+        for det_obj in sep_cat:
+            mb_obs = ngmix.MultiBandObsList()
+            for explist, explist_psf in zip(
+                mcal_mb_explist, mcal_mb_explist_psf
+            ):
+                obs_list = ngmix.ObsList()
+                for exp, exp_psf in zip(explist, explist_psf):
+                    obj_world_pos = galsim.CelestialCoord(
+                        ra=det_obj["ra"] * galsim.degrees,
+                        dec=det_obj["dec"] * galsim.degrees,
                     )
-            else:
-                psf.wcs = local_wcs
-            psf_interp = galsim.InterpolatedImage(
-                psf,
-                x_interpolant="lanczos15",
-            )
-            sigma_psflist.append(
-                self._get_exp_reconv_psf_size(
-                    psf_interp,
-                )
-            )
-            flux_psflist.append(psf_interp.flux)
-            inv_psf_interp = galsim.Deconvolve(psf_interp)
+                    img_pos = exp.wcs.toImage(obj_world_pos)
+                    img, dx, dy = get_cutout(
+                        exp.image.array, img_pos.x, img_pos.y, cutout_size
+                    )
+                    wgt, _, _ = get_cutout(
+                        exp.weight.array, img_pos.x, img_pos.y, cutout_size
+                    )
+                    noise, _, _ = get_cutout(
+                        exp.noise.array, img_pos.x, img_pos.y, cutout_size
+                    )
+                    jac = ngmix.Jacobian(
+                        row=(cutout_size - 1) / 2.0 + dy,
+                        col=(cutout_size - 1) / 2.0 + dx,
+                        wcs=exp.wcs.jacobian(world_pos=obj_world_pos),
+                    )
 
-            inv_psflist.append(inv_psf_interp)
+                    psf_img = exp_psf.image.array
+                    psf_jac = ngmix.Jacobian(
+                        row=(psf_img.shape[0] - 1) / 2.0,
+                        col=(psf_img.shape[1] - 1) / 2.0,
+                        wcs=exp_psf.wcs.jacobian(world_pos=obj_world_pos),
+                    )
+                    psf_obs = ngmix.Observation(
+                        image=psf_img,
+                        jacobian=psf_jac,
+                    )
+                    obs = ngmix.Observation(
+                        image=img,
+                        weight=wgt,
+                        jacobian=jac,
+                        noise=noise,
+                        psf=psf_obs,
+                    )
+                    obs_list.append(obs)
+            mb_obs.append(obs_list)
+            res = fitter.go(mb_obs)
+            all_shape_cat.append(res)
+        return all_shape_cat
 
-        return inv_psflist, sigma_psflist, flux_psflist
-
-    def _get_exposures_local_wcs(self, exp):
-        """
-        Get the local WCS for the single exposure images.
-
-        Args:
-            exp (metacoadd.Exposure): Exposure from which we want the pixel
-                information.
-        Returns
-            galsim.BaseWCS: Local WCS.
-        """
-
-        wcs = exp.image.wcs
-        if not wcs.isLocal():
-            wcs = wcs.local(
-                world_pos=self.coaddimage.world_coadd_center,
-            )
-
-        return wcs
-
-    def _get_exp_reconv_psf_size(self, psf):
-        """
-        taken from galsim/tests/test_metacal.py
-        assumes the psf is centered
-        """
-
-        dk = psf.stepk / 4.0
-
-        small_kval = 1.0e-2  # Find the k where the given psf hits this kvalue
-        smaller_kval = 3.0e-3  # Target PSF will have this kvalue at the same k
-
-        kim = psf.drawKImage(scale=dk)
-        karr_r = kim.real.array
-        # Find the smallest r where the kval < small_kval
-        nk = karr_r.shape[0]
-        kx, ky = np.meshgrid(
-            np.arange(-nk / 2, nk / 2), np.arange(-nk / 2, nk / 2)
+    def build_output_cat(self, all_sep_cat, all_shape_cat):
+        final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
+        final_cat = np.zeros(
+            len(all_sep_cat),
+            dtype=final_cat_dtype,
         )
-        ksq = (kx**2 + ky**2) * dk**2
-        ksq_max = np.min(ksq[karr_r < small_kval * psf.flux])
-
-        # We take our target PSF to be the (round) Gaussian that is even
-        # smaller at this ksq
-        # exp(-0.5 * ksq_max * sigma_sq) = smaller_kval
-        sigma_sq = -2.0 * np.log(smaller_kval) / ksq_max
-
-        return np.sqrt(sigma_sq)
-
-    def _get_reconv_psf(self, g1, g2, method="max"):
-        g = np.sqrt(g1**2.0 + g2**2.0)
-        dilation = 1.0 + 2.0 * g
-
-        if method == "max":
-            sigma = np.max(self._sigma_psflist)
-            flux = np.mean(self._flux_psflist)
-
-            psf = galsim.Gaussian(sigma=sigma, flux=flux)
-            psf = psf.dilate(dilation)
-
-        return psf
-
-    def _measure(self, mbobs, shear_str, nonshear_mbobs=None):
-        """
-        perform measurements on the input mbobs. This involves running
-        detection as well as measurements.
-        we only detect on the shear bands in mbobs.
-        we then do flux measurements on the nonshear_mbobs as well if it is
-        given.
-        """
-
-        medsifier = self._do_detect(mbobs)
-        mbm = medsifier.get_multiband_meds()
-        mbobs_list = mbm.get_mbobs_list()
-
-        if nonshear_mbobs is not None:
-            nonshear_medsifier = detect.CatalogMEDSifier(
-                nonshear_mbobs,
-                medsifier.cat["x"],
-                medsifier.cat["y"],
-                medsifier.cat["box_size"],
-            )
-            nonshear_mbm = nonshear_medsifier.get_multiband_meds()
-            nonshear_mbm.get_mbobs_list()
-        else:
-            pass
-
-        self._fitter = ngmix.gaussmom.GaussMom(fwhm=1.2)
-
-        res = fit_mbobs_list_wavg(
-            mbobs_list=mbobs_list,
-            fitter=self._fitter,
-            bmask_flags=TEST_METADETECT_CONFIG.get("bmask_flags", 0),
-        )
-
-        if res is not None:
-            res = self._add_positions_and_psf(
-                mbobs, medsifier.cat, res, shear_str
-            )
-
-        return res
-
-    def _do_detect(self, mbobs):
-        """
-        use a MEDSifier to run detection
-        """
-        return detect.MEDSifier(
-            mbobs=mbobs,
-            sx_config=TEST_METADETECT_CONFIG["sx"],
-            meds_config=TEST_METADETECT_CONFIG["meds"],
-            # nodet_flags=TEST_METADETECT_CONFIG['nodet_flags'],
-        )
-
-    def _add_positions_and_psf(self, mbobs, cat, res, shear_str):
-        """
-        add catalog positions to the result
-        """
-
-        new_dt = [
-            ("sx_row", "f4"),
-            ("sx_col", "f4"),
-            ("sx_row_noshear", "f4"),
-            ("sx_col_noshear", "f4"),
-            ("ormask", "i4"),
-            ("mfrac", "f4"),
-            ("bmask", "i4"),
-            ("ormask_det", "i4"),
-            ("mfrac_det", "f4"),
-            ("bmask_det", "i4"),
-        ]
-        if "psfrec_flags" not in res.dtype.names:
-            new_dt += [
-                ("psfrec_flags", "i4"),  # psfrec is the original psf
-                ("psfrec_g", "f8", 2),
-                ("psfrec_T", "f8"),
-            ]
-        newres = eu.numpy_util.add_fields(
-            res,
-            new_dt,
-        )
-        if "psfrec_flags" not in res.dtype.names:
-            newres["psfrec_flags"] = procflags.NO_ATTEMPT
-
-        if hasattr(self, "psf_stats"):
-            newres["psfrec_flags"][:] = self.psf_stats["flags"]
-            newres["psfrec_g"][:, 0] = self.psf_stats["g1"]
-            newres["psfrec_g"][:, 1] = self.psf_stats["g2"]
-            newres["psfrec_T"][:] = self.psf_stats["T"]
-
-        if cat.size > 0:
-            obs = mbobs[0][0]
-
-            newres["sx_col"] = cat["x"]
-            newres["sx_row"] = cat["y"]
-
-            rows_noshear, cols_noshear = shearpos.unshear_positions_obs(
-                newres["sx_row"],
-                newres["sx_col"],
-                shear_str,
-                obs,
-                # an example for jacobian and image shape
-                # default is 0.01 but make sure to use the passed in default
-                # if needed
-                step=TEST_METADETECT_CONFIG["metacal"].get(
-                    "step", shearpos.DEFAULT_STEP
-                ),
-            )
-
-            newres["sx_row_noshear"] = rows_noshear
-            newres["sx_col_noshear"] = cols_noshear
-
-            self._set_ormask_and_bmask(mbobs)
-            if (
-                "ormask_region" in TEST_METADETECT_CONFIG
-                and TEST_METADETECT_CONFIG["ormask_region"] > 1
-            ):
-                ormask_region = TEST_METADETECT_CONFIG["ormask_region"]
-            elif (
-                "mask_region" in TEST_METADETECT_CONFIG
-                and TEST_METADETECT_CONFIG["mask_region"] > 1
-            ):
-                ormask_region = TEST_METADETECT_CONFIG["mask_region"]
-            else:
-                ormask_region = 1
-
-            if (
-                "mask_region" in TEST_METADETECT_CONFIG
-                and TEST_METADETECT_CONFIG["mask_region"] > 1
-            ):
-                bmask_region = TEST_METADETECT_CONFIG["mask_region"]
-            else:
-                bmask_region = 1
-
-            newres["ormask"] = _fill_in_mask_col(
-                mask_region=ormask_region,
-                rows=newres["sx_row_noshear"],
-                cols=newres["sx_col_noshear"],
-                mask=self.ormask,
-            )
-            newres["ormask_det"] = _fill_in_mask_col(
-                mask_region=ormask_region,
-                rows=newres["sx_row"],
-                cols=newres["sx_col"],
-                mask=self.ormask,
-            )
-
-            newres["bmask"] = _fill_in_mask_col(
-                mask_region=bmask_region,
-                rows=newres["sx_row_noshear"],
-                cols=newres["sx_col_noshear"],
-                mask=self.bmask,
-            )
-            newres["bmask_det"] = _fill_in_mask_col(
-                mask_region=bmask_region,
-                rows=newres["sx_row"],
-                cols=newres["sx_col"],
-                mask=self.bmask,
-            )
-
-            self._set_mfrac(mbobs)
-            if np.any(self.mfrac > 0):
-                newres["mfrac"] = measure_mfrac(
-                    mfrac=self.mfrac,
-                    x=newres["sx_col_noshear"],
-                    y=newres["sx_row_noshear"],
-                    box_sizes=cat["box_size"],
-                    obs=obs,
-                    fwhm=self.get("mfrac_fwhm", None),
-                )
-
-                newres["mfrac_det"] = measure_mfrac(
-                    mfrac=self.mfrac,
-                    x=newres["sx_col"],
-                    y=newres["sx_row"],
-                    box_sizes=cat["box_size"],
-                    obs=obs,
-                    fwhm=self.get("mfrac_fwhm", None),
-                )
-            else:
-                newres["mfrac"] = 0
-
-        return newres
-
-    def _set_ormask_and_bmask(self, mbobs):
-        """
-        set the ormask and bmask, ored from all epochs
-        """
-
-        for band, obslist in enumerate(mbobs):
-            nepoch = len(obslist)
-            assert nepoch == 1, "expected 1 epoch, got %d" % nepoch
-
-            obs = obslist[0]
-
-            if band == 0:
-                ormask = obs.ormask.copy()
-                bmask = obs.bmask.copy()
-            else:
-                ormask |= obs.ormask
-                bmask |= obs.bmask
-
-        self.ormask = ormask
-        self.bmask = bmask
-
-    def _set_mfrac(self, mbobs):
-        """
-        set the masked fraction image, averaged over all bands
-        """
-        wgts = []
-        mfrac = np.zeros_like(mbobs[0][0].image)
-        for band, obslist in enumerate(mbobs):
-            nepoch = len(obslist)
-            assert nepoch == 1, "expected 1 epoch, got %d" % nepoch
-
-            obs = obslist[0]
-            msk = obs.weight > 0
-            if not np.any(msk):
-                wgt = 0
-            else:
-                wgt = np.median(obs.weight[msk])
-            if hasattr(obs, "mfrac"):
-                mfrac += obs.mfrac * wgt
-            wgts.append(wgt)
-
-        if np.sum(wgts) > 0:
-            mfrac = mfrac / np.sum(wgts)
-        else:
-            mfrac[:, :] = 1.0
-
-        self.mfrac = mfrac
+        for i, sep_obj in enumerate(all_sep_cat):
+            for key in sep_obj.dtype.names:
+                final_cat[i][key] = sep_obj[key]
+            for key in np.dtype(SHAPE_CAT_DTYPE).names:
+                final_cat[i][key] = all_shape_cat[i][key.split("regauss_")[1]]
+        return final_cat
 
 
 def _clip_and_round(vals_in, dim):

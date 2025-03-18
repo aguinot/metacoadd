@@ -5,7 +5,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from metacoadd.utils import shift_wcs
+from .utils import shift_wcs
 
 
 class ExposureBound:

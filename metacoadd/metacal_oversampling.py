@@ -17,7 +17,8 @@ from ngmix.metacal.convenience import (
     _replace_image_with_noise,
     _rotate_obs_image_square,
     _doadd_single_obs,
-    _make_metacal_mb_obs_list_dict,
+    # _make_metacal_mb_obs_list_dict,
+    _init_mb_obs_list_dict,
     _init_obs_list_dict,
 )
 from ngmix.observation import (
@@ -29,7 +30,7 @@ from ngmix.metacal.metacal import _get_ellip_dilation
 from ngmix.gexceptions import GMixRangeError
 import logging
 
-from metacoadd.moments.galsim_admom import GAdmomFitter
+from .moments.galsim_admom import GAdmomFitter
 
 
 logger = logging.getLogger(__name__)
@@ -668,6 +669,25 @@ def _get_all_metacal_fixnoise(
                     _doadd_single_obs(obs, nobs)
 
     return obsdict
+
+
+def _make_metacal_mb_obs_list_dict(mb_obs_list, step, rng=None, **kw):
+    new_dict = None
+    for obs_list in mb_obs_list:
+        odict = _make_metacal_obs_list_dict(
+            obs_list=obs_list,
+            step=step,
+            rng=rng,
+            **kw,
+        )
+
+        if new_dict is None:
+            new_dict = _init_mb_obs_list_dict(odict.keys())
+
+        for key in odict:
+            new_dict[key].append(odict[key])
+
+    return new_dict
 
 
 def _make_metacal_obs_list_dict(obs_list, step, rng=None, **kw):
