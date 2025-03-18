@@ -10,7 +10,7 @@ import numpy as np
 from numpy import diag
 
 import ngmix
-from ngmix.observation import Observation, ObsList
+from ngmix.observation import Observation, ObsList, MultiBandObsList
 from ngmix.shape import e1e2_to_g1g2
 from ngmix.util import get_ratio_error
 from ngmix.gmix.gmix_nb import GMIX_LOW_DETVAL
@@ -149,7 +149,25 @@ class ReGaussFitter(GAdmomFitter):
                 if res_tmp[0]["flags"] == 0:
                     k += 1
                     jac_area += obs_.jacobian.area
-            jac_area /= k
+            if k != 0:
+                jac_area /= k
+        elif isinstance(obs, MultiBandObsList):
+            jac_area = 0
+            k = 0
+            for obsl in obs:
+                for obs_ in obsl:
+                    res_tmp = self._go_obs(
+                        obs_,
+                        self.guess_fwhm,
+                        seed,
+                        mcal_key,
+                    )
+                    all_res.append(res_tmp)
+                    if res_tmp[0]["flags"] == 0:
+                        k += 1
+                        jac_area += obs_.jacobian.area
+            if k != 0:
+                jac_area /= k
         else:
             raise ValueError("input obs must be an Observation or ObsList")
 
@@ -187,20 +205,28 @@ class ReGaussFitter(GAdmomFitter):
 
                 psf_real_res_ = self._get_am_result()
                 guess_real = self._generate_guess(psf_real, guess_fwhm)
-                find_ellipmom2(
-                    obs.psf.pixels, guess_real, psf_real_res_, self.conf
-                )
+                try:
+                    find_ellipmom2(
+                        obs.psf.pixels, guess_real, psf_real_res_, self.conf
+                    )
+                except Exception as e:
+                    psf_real_res_[0]["flags"] = 2**16
+                    ares_tmp[0]["flags"]
                 psf_real_res = psf_real_res_[0]
-            regauss(
-                obs,
-                psf_res[0],
-                ares_tmp,
-                fitter=fitter,
-                guess_fwhm=guess_fwhm,
-                psf_real_res=psf_real_res,
-                psf_real=psf_real,
-                psf_deconv=psf_deconv,
-            )
+            if psf_real_res is None or psf_real_res["flags"] == 0:
+                try:
+                    regauss(
+                        obs,
+                        psf_res[0],
+                        ares_tmp,
+                        fitter=fitter,
+                        guess_fwhm=guess_fwhm,
+                        psf_real_res=psf_real_res,
+                        psf_real=psf_real,
+                        psf_deconv=psf_deconv,
+                    )
+                except Exception as e:
+                    ares_tmp[0]["flags"] = 2**16
         return ares_tmp, psf_res
 
     def compile_results(self, all_res):
@@ -211,6 +237,7 @@ class ReGaussFitter(GAdmomFitter):
             res = res_[0]
             res_psf = res_psf_[0]
             if res["flags"] != 0:
+                rg_res[0]["flags"] |= res["flags"]
                 continue
             rg_res[0]["flags"] |= res["flags"]
             rg_res[0]["wsum"] += res["wsum"]
@@ -221,12 +248,13 @@ class ReGaussFitter(GAdmomFitter):
             rg_res[0]["pars_psf"] += res_psf["pars"] * res["wsum"]
             wsum2 += res["wsum"] ** 2
             k += 1
-        # rg_res[0]["wsum"] /= k
-        rg_res[0]["wnorm"] /= rg_res[0]["wsum"]
-        rg_res[0]["sums"] /= rg_res[0]["wsum"]
-        rg_res[0]["sums_cov"] /= wsum2
-        rg_res[0]["pars"] /= rg_res[0]["wsum"]
-        rg_res[0]["pars_psf"] /= rg_res[0]["wsum"]
+        if k > 0:
+            # rg_res[0]["wsum"] /= k
+            rg_res[0]["wnorm"] /= rg_res[0]["wsum"]
+            rg_res[0]["sums"] /= rg_res[0]["wsum"]
+            rg_res[0]["sums_cov"] /= wsum2
+            rg_res[0]["pars"] /= rg_res[0]["wsum"]
+            rg_res[0]["pars_psf"] /= rg_res[0]["wsum"]
 
         rg_res[0]["nimage"] = k
 
