@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 
 import galsim
@@ -356,7 +358,7 @@ class MetaCoadd(SimpleCoadd):
     ):
         super().__init__(coaddimage=coaddimage, coadd_method=coadd_method)
 
-        self.psf_coaddimage = psfs
+        self.psf_mb_explist = psfs
         self.resamp_config = resamp_config
         self.rng = rng
         self.mcal_config = {
@@ -369,26 +371,9 @@ class MetaCoadd(SimpleCoadd):
         # Set observations
         self.mbobs = exp2obs(
             self.coaddimage.mb_explist,
-            self.psf_coaddimage.mb_explist,
+            self.psf_mb_explist,
             use_resamp=False,
         )
-
-        # if len(self.coaddimage.mb_explist) == 0:
-        #     raise ValueError("No exposures find to make the coadd.")
-        # if not self.coaddimage.mb_explist[0]._resamp:
-        #     # raise ValueError('Exposure must be resampled first.')
-        #     self.coaddimage.get_all_resamp_images(**resamp_config)
-
-        # if len(self.psf_coaddimage.explist) == 0:
-        #     raise ValueError("No PSFs find.")
-
-        # self.coaddimage.setup_coadd_metacal(self.types)
-        # self.psf_coaddimage.setup_coadd_metacal(self.types)
-
-        # self.step = step
-        # self.types = types
-
-        # self._set_metacal_input()
 
         self._do_border = do_border
 
@@ -399,17 +384,13 @@ class MetaCoadd(SimpleCoadd):
         Run the coaddition process.
         """
 
-        # if len(self.coaddimage.explist) == 0:
-        #     raise ValueError("No exposure find to make the coadd.")
-        # # if not self.coaddimage.explist[0]._interp:
-        # #     raise ValueError('Exposure must be interpolated first.')
-
         self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
-        # self.psf_coaddimage.setup_coadd_metacal(self.types)
 
         mcal_dict = self._run_metacal()
 
         self._mcal_coadd_image = {}
+        self.mcal_mb_explist = {}
+        self.mcal_mb_explist_psf = {}
         all_sep_cat = {}
         all_shape_cat = {}
         final_cat = {}
@@ -431,6 +412,8 @@ class MetaCoadd(SimpleCoadd):
             final_cat[mcal_key] = self.build_output_cat(
                 all_sep_cat[mcal_key], all_shape_cat[mcal_key]
             )
+            self.mcal_mb_explist[mcal_key] = mcal_mb_explist
+            self.mcal_mb_explist_psf[mcal_key] = mcal_mb_explist_psf
 
         self.all_sep_cat = all_sep_cat
         self.all_shape_cat = all_shape_cat
@@ -462,14 +445,15 @@ class MetaCoadd(SimpleCoadd):
 
                 exp_psf = Exposure(
                     image=obs.psf.image,
-                    wcs=self.psf_coaddimage.mb_explist[i][j].wcs,
+                    weight=obs.psf.weight,
+                    wcs=self.psf_mb_explist[i][j].wcs,
                 )
                 exp_list_psf.append(exp_psf)
             mb_explist.append(exp_list)
             mb_explist_psf.append(exp_list_psf)
 
         coadd_image = CoaddImage(
-            mb_explist,
+            copy.deepcopy(mb_explist),
             world_coadd_center=self.coaddimage.world_coadd_center,
             scale=self.coaddimage.coadd_pixel_scale,
             image_coadd_size=self.coaddimage.image_coadd_size,
@@ -573,17 +557,19 @@ class MetaCoadd(SimpleCoadd):
                     jac = ngmix.Jacobian(
                         row=(cutout_size - 1) / 2.0 + dy,
                         col=(cutout_size - 1) / 2.0 + dx,
-                        wcs=exp.wcs.jacobian(world_pos=obj_world_pos),
+                        wcs=exp.wcs.local(world_pos=obj_world_pos),
                     )
 
                     psf_img = exp_psf.image.array
+                    psf_wgt = exp_psf.weight.array
                     psf_jac = ngmix.Jacobian(
                         row=(psf_img.shape[0] - 1) / 2.0,
                         col=(psf_img.shape[1] - 1) / 2.0,
-                        wcs=exp_psf.wcs.jacobian(world_pos=obj_world_pos),
+                        wcs=exp_psf.wcs.local(world_pos=obj_world_pos),
                     )
                     psf_obs = ngmix.Observation(
                         image=psf_img,
+                        weight=psf_wgt,
                         jacobian=psf_jac,
                     )
                     obs = ngmix.Observation(
@@ -611,40 +597,3 @@ class MetaCoadd(SimpleCoadd):
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 final_cat[i][key] = all_shape_cat[i][key.split("regauss_")[1]]
         return final_cat
-
-
-def _clip_and_round(vals_in, dim):
-    """
-    clip values and round to nearest integer
-    """
-
-    vals = vals_in.copy()
-
-    np.rint(vals, out=vals)
-    vals.clip(min=0, max=dim - 1, out=vals)
-
-    return vals.astype("i4")
-
-
-def _fill_in_mask_col(*, mask_region, rows, cols, mask):
-    dims = mask.shape
-    rclip = _clip_and_round(rows, dims[0])
-    cclip = _clip_and_round(cols, dims[1])
-
-    if mask_region > 1:
-        res = np.zeros_like(rows, dtype=np.int32)
-        for ind in range(rows.size):
-            lr = int(min(dims[0] - 1, max(0, rclip[ind] - mask_region)))
-            ur = int(min(dims[0] - 1, max(0, rclip[ind] + mask_region)))
-
-            lc = int(min(dims[1] - 1, max(0, cclip[ind] - mask_region)))
-            uc = int(min(dims[1] - 1, max(0, cclip[ind] + mask_region)))
-
-            res[ind] = np.bitwise_or.reduce(
-                mask[lr : ur + 1, lc : uc + 1],
-                axis=None,
-            )
-    else:
-        res = mask[rclip, cclip].astype(np.int32)
-
-    return res

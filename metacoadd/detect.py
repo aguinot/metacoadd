@@ -8,8 +8,6 @@ from astropy.wcs import WCS
 
 from sf_tools.image.stamp import FetchStamps
 
-import matplotlib.pyplot as plt
-
 DET_CAT_DTYPE = [
     ("number", np.int64),
     ("ra", np.float64),
@@ -51,11 +49,14 @@ def get_output_cat(n_obj):
 
 
 def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
+    # NOTE: Might need to look again into this. For now we keep it simple.
     rms = np.zeros_like(weight)
     mask_rms = np.ones_like(weight)
     m = np.where(weight > 0)
     rms[m] = np.sqrt(1 / weight[m])
     mask_rms[m] = 0
+
+    rms = np.median(np.sqrt(1 / weight[m]))
 
     if (header is not None) and (wcs is not None):
         raise ValueError("Only one of header or wcs can be provided.")

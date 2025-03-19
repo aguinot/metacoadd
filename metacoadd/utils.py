@@ -62,12 +62,12 @@ def _exp2obs(exp, exp_psf=None, use_resamp=False):
 
     if not isinstance(exp_psf, type(None)):
         if hasattr(exp_psf, "image" + kind):
-            img_psf = getattr(exp_psf, "image" + kind).array + 1e-5
+            img_psf = getattr(exp_psf, "image" + kind).array
         else:
             raise ValueError("PSF Exposure has no image set.")
 
         if hasattr(exp_psf, "weight" + kind):
-            getattr(exp_psf, "weight" + kind).array
+            weight_psf = getattr(exp_psf, "weight" + kind).array
         else:
             pass
 
@@ -95,7 +95,7 @@ def _exp2obs(exp, exp_psf=None, use_resamp=False):
         )
         psf_obs = ngmix.Observation(
             image=img_psf,
-            weight=None,
+            weight=weight_psf,
             jacobian=psf_jac,
         )
 
