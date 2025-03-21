@@ -8,6 +8,74 @@ from astropy.wcs import WCS
 
 from sf_tools.image.stamp import FetchStamps
 
+DES_KERNEL = np.array(
+    [
+        [
+            0.004963,
+            0.021388,
+            0.051328,
+            0.068707,
+            0.051328,
+            0.021388,
+            0.004963,
+        ],  # noqa
+        [
+            0.021388,
+            0.092163,
+            0.221178,
+            0.296069,
+            0.221178,
+            0.092163,
+            0.021388,
+        ],  # noqa
+        [
+            0.051328,
+            0.221178,
+            0.530797,
+            0.710525,
+            0.530797,
+            0.221178,
+            0.051328,
+        ],  # noqa
+        [
+            0.068707,
+            0.296069,
+            0.710525,
+            0.951108,
+            0.710525,
+            0.296069,
+            0.068707,
+        ],  # noqa
+        [
+            0.051328,
+            0.221178,
+            0.530797,
+            0.710525,
+            0.530797,
+            0.221178,
+            0.051328,
+        ],  # noqa
+        [
+            0.021388,
+            0.092163,
+            0.221178,
+            0.296069,
+            0.221178,
+            0.092163,
+            0.021388,
+        ],  # noqa
+        [
+            0.004963,
+            0.021388,
+            0.051328,
+            0.068707,
+            0.051328,
+            0.021388,
+            0.004963,
+        ],  # noqa
+    ]
+)
+
 DET_CAT_DTYPE = [
     ("number", np.int64),
     ("ra", np.float64),
@@ -24,6 +92,7 @@ DET_CAT_DTYPE = [
     ("flux_radius", np.float64),
     ("snr", np.float64),
     ("flags", np.int64),
+    ("flux_flags", np.int64),
     ("ext_flags", np.int64),
 ]
 
@@ -70,7 +139,9 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
         segmentation_map=True,
         minarea=5,
         deblend_nthresh=32,
-        deblend_cont=0.001,
+        deblend_cont=0.00001,
+        filter_type="conv",
+        filter_kernel=DES_KERNEL,
     )
     n_obj = len(obj)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
@@ -161,7 +232,8 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     out["flux_err"] = fluxerrs
     out["flux_radius"] = flux_rad
     out["snr"] = snr
-    out["flags"] = obj["flag"] | krflags | flags | flags_rad
+    out["flags"] = obj["flag"]
+    out["flux_flags"] = krflags | flags | flags_rad
     out["ext_flags"] = ext_flags
 
     return out, seg
