@@ -84,6 +84,7 @@ DET_CAT_DTYPE = [
     ("y", np.float64),
     ("a", np.float64),
     ("b", np.float64),
+    ("npix", np.int64),
     ("elongation", np.float64),
     ("ellipticity", np.float64),
     ("kronrad", np.float64),
@@ -97,16 +98,42 @@ DET_CAT_DTYPE = [
 ]
 
 
-def get_cutout(img, x, y, stamp_size):
-    fs = FetchStamps(img, int(stamp_size / 2))
-    x_round = np.round(x).astype(int)
-    y_round = np.round(y).astype(int)
-    dx = x_round - x
-    dy = y_round - y
-    fs.get_pixels(np.array([[y_round, x_round]]))
-    vign = fs.scan()[0].astype(np.float64)
+# def get_cutout(img, x, y, stamp_size):
+#     fs = FetchStamps(img, int(stamp_size / 2))
+#     x_round = np.round(x).astype(int)
+#     y_round = np.round(y).astype(int)
+#     dx = x_round - x
+#     dy = y_round - y
+#     fs.get_pixels(np.array([[y_round, x_round]]))
+#     vign = fs.scan()[0].astype(np.float64)
 
-    return vign, dx, dy
+#     return vign, dx, dy
+
+
+def get_cutout(img, x, y, stamp_size):
+    orow = int(y)
+    ocol = int(x)
+    half_box_size = stamp_size // 2
+    maxrow, maxcol = img.shape
+
+    ostart_row = orow - half_box_size + 1
+    ostart_col = ocol - half_box_size + 1
+    oend_row = orow + half_box_size + 2  # plus one for slices
+    oend_col = ocol + half_box_size + 2
+
+    ostart_row = max(0, ostart_row)
+    ostart_col = max(0, ostart_col)
+    oend_row = min(maxrow, oend_row)
+    oend_col = min(maxcol, oend_col)
+
+    cutout_row = y - ostart_row
+    cutout_col = x - ostart_col
+
+    return (
+        img[ostart_row:oend_row, ostart_col:oend_col],
+        cutout_row,
+        cutout_col,
+    )
 
 
 def get_output_cat(n_obj):
@@ -138,7 +165,7 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
         err=rms,
         segmentation_map=True,
         minarea=5,
-        deblend_nthresh=32,
+        # deblend_nthresh=32,
         deblend_cont=0.00001,
         filter_type="conv",
         filter_kernel=DES_KERNEL,
@@ -203,7 +230,7 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     good_snr = (fluxes > 0) & (fluxerrs > 0)
     snr[good_snr] = fluxes[good_snr] / fluxerrs[good_snr]
 
-    ra, dec = wcs.all_pix2world(obj["x"] - 1, obj["y"] - 1, 0)
+    ra, dec = wcs.all_pix2world(obj["x"], obj["y"], 0)
 
     # Build the equivalent to IMAFLAGS_ISO
     # But you only know if the object is flagged or not, you don't get the flag
@@ -221,10 +248,11 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     out["number"] = seg_id
     out["ra"] = ra
     out["dec"] = dec
-    out["x"] = obj["x"] - 1
-    out["y"] = obj["y"] - 1
+    out["x"] = obj["x"]
+    out["y"] = obj["y"]
     out["a"] = obj["a"]
     out["b"] = obj["b"]
+    out["npix"] = obj["npix"]
     out["elongation"] = obj["a"] / obj["b"]
     out["ellipticity"] = 1.0 - obj["b"] / obj["a"]
     out["kronrad"] = kronrads

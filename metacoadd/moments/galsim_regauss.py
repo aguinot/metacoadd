@@ -199,6 +199,7 @@ class ReGaussFitter(GAdmomFitter):
             psf_real = None
             psf_deconv = None
             psf_real_res = None
+            psf_resi = None
             if "psf_real" in obs.meta.keys():
                 psf_real = obs.meta["psf_real"][mcal_key]
                 psf_deconv = obs.meta["psf_deconv"]
@@ -213,8 +214,11 @@ class ReGaussFitter(GAdmomFitter):
                     psf_real_res_[0]["flags"] = 2**16
                     ares_tmp[0]["flags"]
                 psf_real_res = psf_real_res_[0]
+            if "psf_resi" in obs.meta.keys():
+                psf_resi = obs.meta["psf_resi"][mcal_key]
             if psf_real_res is None or psf_real_res["flags"] == 0:
                 try:
+                    # print(mcal_key)
                     regauss(
                         obs,
                         psf_res[0],
@@ -224,8 +228,10 @@ class ReGaussFitter(GAdmomFitter):
                         psf_real_res=psf_real_res,
                         psf_real=psf_real,
                         psf_deconv=psf_deconv,
+                        psf_resi=psf_resi,
                     )
                 except Exception as e:
+                    # print(e)
                     ares_tmp[0]["flags"] = 2**16
         return ares_tmp, psf_res
 

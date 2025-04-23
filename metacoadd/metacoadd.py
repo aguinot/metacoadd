@@ -3,14 +3,21 @@ import copy
 import numpy as np
 
 import galsim
+import galsim.roman as roman
 
 import ngmix
 
-from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
+from metadetect import detect as mdet_detect
 
+from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
 from .metacal_oversampling import get_all_metacal
 from .detect import get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
+from .moments.galsim_admom import GAdmomFitter
+from .uberseg import fast_uberseg
+
+
+import matplotlib.pyplot as plt
 
 
 TEST_METADETECT_CONFIG = {
@@ -103,8 +110,8 @@ TEST_METADETECT_CONFIG = {
         ],
     },
     "meds": {
-        "min_box_size": 32,
-        "max_box_size": 32,
+        "min_box_size": 31,
+        "max_box_size": 31,
         "box_type": "iso_radius",
         "rad_min": 4,
         "rad_fac": 2,
@@ -345,6 +352,22 @@ class SimpleCoadd:
 
 
 class MetaCoadd(SimpleCoadd):
+    """MetaCoadd
+
+    The class run the metacoaddition process.
+    The inputs are multi-band multi-epoch images and PSFs.
+    The processing goes as follow:
+    0. Resize the exposures to fit within the planned coadded region.
+    1. run metacalibration (deconvolutioon | shear | re-convolution) on each input single exposures.
+    2. Re-sample each sheared single exposures to the coadd WCS.
+    3. Coadd the exposures together (can do a multi-band coadd if the PSF is homogenized through all bands).
+    4. Run dectection on each sheared coadded image.
+    5. Run multi-band multi-epoch shape measurement at each detected object position.
+
+    Parameters
+    ----------
+    """
+
     def __init__(
         self,
         coaddimage,
@@ -353,8 +376,11 @@ class MetaCoadd(SimpleCoadd):
         rng,
         coadd_method="weighted",
         do_border=True,
+        border_size=20,
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
+        do_psf_sed_corr=False,
+        psf_true=None,
     ):
         super().__init__(coaddimage=coaddimage, coadd_method=coadd_method)
 
@@ -365,6 +391,7 @@ class MetaCoadd(SimpleCoadd):
             "step": step,
             "types": types,
             "psf": "fitgauss_UR",
+            # "psf": "fitgauss",
             "use_noise_image": True,
         }
 
@@ -376,6 +403,19 @@ class MetaCoadd(SimpleCoadd):
         )
 
         self._do_border = do_border
+        self._border_size = border_size
+        self._do_psf_sed_corr = do_psf_sed_corr
+
+        # Set mcal shear dict
+        self._shear_dict = {
+            "1m": galsim.Shear(g1=-step, g2=0),
+            "1p": galsim.Shear(g1=step, g2=0),
+            "2m": galsim.Shear(g1=0, g2=-step),
+            "2p": galsim.Shear(g1=0, g2=step),
+            "noshear": galsim.Shear(g1=0, g2=0),
+        }
+        self._bandpass = roman.getBandpasses()["Y106"]
+        self._true_psf = psf_true
 
     def go(
         self,
@@ -387,12 +427,19 @@ class MetaCoadd(SimpleCoadd):
         self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
 
         mcal_dict = self._run_metacal()
+        self.mcal_obs = mcal_dict
 
         self._mcal_coadd_image = {}
         self.mcal_mb_explist = {}
         self.mcal_mb_explist_psf = {}
+
+        self.all_mb_obs = {}
+        self.all_exp_pos = {}
+        self.all_exp_dxy = {}
+
         all_sep_cat = {}
         all_shape_cat = {}
+        all_seg_map = {}
         final_cat = {}
         for mcal_key in mcal_dict.keys():
             mb_obs = mcal_dict[mcal_key]
@@ -405,9 +452,17 @@ class MetaCoadd(SimpleCoadd):
             self.make_coadds(
                 mcal_coadd_image.mb_explist, mcal_key, do_multiband=True
             )
-            all_sep_cat[mcal_key] = self.get_cat(mcal_key, do_multiband=True)
+            all_sep_cat[mcal_key], seg_map = self.get_cat(
+                mcal_key, do_multiband=True
+            )
+            all_seg_map[mcal_key] = seg_map
+            # print(mcal_key)
             all_shape_cat[mcal_key] = self.get_shape_cat(
-                mcal_mb_explist, mcal_mb_explist_psf, all_sep_cat[mcal_key]
+                mcal_mb_explist,
+                mcal_mb_explist_psf,
+                all_sep_cat[mcal_key],
+                seg_map,
+                mcal_key,
             )
             final_cat[mcal_key] = self.build_output_cat(
                 all_sep_cat[mcal_key], all_shape_cat[mcal_key]
@@ -417,6 +472,7 @@ class MetaCoadd(SimpleCoadd):
 
         self.all_sep_cat = all_sep_cat
         self.all_shape_cat = all_shape_cat
+        self.all_seg_map = all_seg_map
         return final_cat
 
     def _run_metacal(self):
@@ -425,6 +481,34 @@ class MetaCoadd(SimpleCoadd):
             rng=self.rng,
             **self.mcal_config,
         )
+
+        # Set interpolated nopixel deconv PSF
+        if self._do_psf_sed_corr:
+            self._psf_corr_dict = []
+            for i, obs_list in enumerate(self.mbobs):
+                self._psf_corr_dict.append([])
+                for j, obs in enumerate(obs_list):
+                    psf = obs.psf.image
+                    psf_wcs = obs.psf.jacobian.get_galsim_wcs()
+                    img = galsim.Image(psf, wcs=psf_wcs)
+                    img_int = galsim.InterpolatedImage(
+                        img,
+                        x_interpolant="lanczos15",
+                    )
+
+                    wcs = obs.jacobian.get_galsim_wcs()
+                    pixel = wcs.toWorld(galsim.Pixel(scale=1))
+                    pixel_inv = galsim.Deconvolve(pixel)
+
+                    psf_int_nopix = galsim.Convolve(img_int, pixel_inv)
+                    psf_int_nopix_inv = galsim.Deconvolve(psf_int_nopix)
+                    self._psf_corr_dict[i].append(
+                        {
+                            "psf_int_nopix_inv": psf_int_nopix_inv,
+                            "pixel_inv": pixel_inv,
+                            "psf_deconv": mcal_obs["noshear"][i][j].psf,
+                        }
+                    )
 
         return mcal_obs
 
@@ -457,6 +541,7 @@ class MetaCoadd(SimpleCoadd):
             world_coadd_center=self.coaddimage.world_coadd_center,
             scale=self.coaddimage.coadd_pixel_scale,
             image_coadd_size=self.coaddimage.image_coadd_size,
+            relax_resize=0.15,
         )
 
         coadd_image.get_all_resamp_images(**self.resamp_config)
@@ -492,7 +577,7 @@ class MetaCoadd(SimpleCoadd):
                         self.coaddimage.image[i][mcal_key][b] += (
                             exp.image_resamp * exp.weight_resamp * border_image
                         )
-                        self.coaddimage.weight[i][mcal_key] += (
+                        self.coaddimage.weight[i][mcal_key][b] += (
                             exp.weight_resamp * border_image
                         )
                         if do_multiband:
@@ -501,7 +586,7 @@ class MetaCoadd(SimpleCoadd):
                                 * exp.weight_resamp
                                 * border_image
                             )
-                            self.coaddimage.mb_weight[mcal_key] += (
+                            self.coaddimage.mb_weight[mcal_key][b] += (
                                 exp.weight_resamp * border_image
                             )
             non_zero_weights = np.where(
@@ -518,33 +603,110 @@ class MetaCoadd(SimpleCoadd):
                 self.coaddimage.mb_weight[mcal_key].array[non_zero_weights]
             )
 
-    def get_cat(self, mcal_key, do_multiband=False):
+    def get_cat(self, mcal_key, do_multiband=True):
         if do_multiband:
             cat, seg_map = get_cat(
                 self.coaddimage.mb_image[mcal_key].array,
                 self.coaddimage.mb_weight[mcal_key].array,
                 thresh=1.5,
+                # thresh=1e3,
                 wcs=self.coaddimage.mb_image[mcal_key].wcs.astropy,
             )
-        return cat
 
-    def get_shape_cat(self, mcal_mb_explist, mcal_mb_explist_psf, sep_cat):
-        cutout_size = 51
+            # plt.figure()
+            # plt.imshow(self.coaddimage.mb_image[mcal_key].array)
+            # plt.plot(cat["x"], cat["y"], "r+")
+            # plt.axvline(75, c="k", ls="--")
+            # plt.axhline(75, c="k", ls="--")
+            # plt.xlim(60, 90)
+            # plt.ylim(60, 90)
+            # plt.title(f"Coadd {mcal_key}")
+            # plt.show()
+
+        return cat, seg_map
+
+    def get_shape_cat(
+        self,
+        mcal_mb_explist,
+        mcal_mb_explist_psf,
+        sep_cat,
+        seg_map,
+        mcal_key,
+    ):
+        # cutout_size = 51
         fitter = ReGaussFitter(guess_fwhm=0.3)
+        # fitter = GAdmomFitter(guess_fwhm=0.3)
+        # fitter = ngmix.gaussmom.GaussMom(fwhm=0.3)
+
+        # prior = _make_ml_prior(self.rng, 0.1, len(mcal_mb_explist))
+        # fitter = ngmix.fitting.Fitter(
+        #     model="gauss",
+        #     prior=prior,
+        # )
+        # guesser = ngmix.guessers.TPSFFluxGuesser(
+        #     rng=self.rng,
+        #     T=0.25,
+        #     prior=prior,
+        # )
+        # runner = ngmix.runners.Runner(
+        #     fitter=fitter,
+        #     guesser=guesser,
+        #     ntry=2,
+        # )
+        # psf_runner = get_gauss_psf_runner(self.rng)
+        # boot = ngmix.bootstrap.Bootstrapper(
+        #     runner=runner,
+        #     psf_runner=psf_runner,
+        # )
+
+        if self._do_psf_sed_corr:
+            final_psf = []
+            psf_reconv = galsim.Gaussian(fwhm=0.3)
+            for i in range(len(mcal_mb_explist)):
+                final_psf.append([])
+                for j in range(len(mcal_mb_explist[0])):
+                    tmp = galsim.Convolve(
+                        self._true_psf[i][j],
+                        self._psf_corr_dict[i][j]["psf_int_nopix_inv"],
+                    )
+                    tmp = tmp.shear(self._shear_dict[mcal_key])
+                    final_psf[i].append(galsim.Convolve(tmp, psf_reconv))
+
+        all_mb_obs = []
 
         all_shape_cat = []
+        all_exp_pos = []
+        all_exp_dxy = []
         for det_obj in sep_cat:
             mb_obs = ngmix.MultiBandObsList()
-            for explist, explist_psf in zip(
-                mcal_mb_explist, mcal_mb_explist_psf
+            for i, (explist, explist_psf) in enumerate(
+                zip(mcal_mb_explist, mcal_mb_explist_psf)
             ):
                 obs_list = ngmix.ObsList()
-                for exp, exp_psf in zip(explist, explist_psf):
+                for j, (exp, exp_psf) in enumerate(zip(explist, explist_psf)):
                     obj_world_pos = galsim.CelestialCoord(
                         ra=det_obj["ra"] * galsim.degrees,
                         dec=det_obj["dec"] * galsim.degrees,
                     )
-                    img_pos = exp.wcs.toImage(obj_world_pos)
+                    # img_pos = exp.wcs.toImage(obj_world_pos)
+                    x, y = exp.wcs.astropy.all_world2pix(
+                        det_obj["ra"],
+                        det_obj["dec"],
+                        0,
+                    )
+                    img_pos = galsim.PositionD(x, y)
+                    # img_pos -= galsim.PositionD(1.0, 1.0)
+                    # img_pos = galsim.PositionD(det_obj["x"], det_obj["y"])
+                    all_exp_pos.append([img_pos.x, img_pos.y])
+                    # all_exp_pos.append([xx, yy])
+                    cutout_size = np.int64(
+                        np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
+                    )
+                    if cutout_size % 2 == 0:
+                        cutout_size += 1
+                    # cutout_size = 31
+                    cutout_size = 51
+
                     img, dx, dy = get_cutout(
                         exp.image.array, img_pos.x, img_pos.y, cutout_size
                     )
@@ -554,24 +716,45 @@ class MetaCoadd(SimpleCoadd):
                     noise, _, _ = get_cutout(
                         exp.noise.array, img_pos.x, img_pos.y, cutout_size
                     )
+                    # seg, _, _ = get_cutout(
+                    #     seg_map, det_obj["x"], det_obj["y"], cutout_size
+                    # )
+                    # wgt = fast_uberseg(seg, wgt_, det_obj["number"])
+
+                    # jac = ngmix.Jacobian(
+                    #     row=(cutout_size - 1) / 2.0 - dy,
+                    #     col=(cutout_size - 1) / 2.0 - dx,
+                    #     wcs=exp.wcs.local(world_pos=obj_world_pos),
+                    # )
                     jac = ngmix.Jacobian(
-                        row=(cutout_size - 1) / 2.0 + dy,
-                        col=(cutout_size - 1) / 2.0 + dx,
-                        wcs=exp.wcs.local(world_pos=obj_world_pos),
+                        row=dx,
+                        col=dy,
+                        # wcs=exp.wcs.local(world_pos=obj_world_pos),
+                        wcs=exp.wcs.local(img_pos),
                     )
+                    all_exp_dxy.append([dx, dy])
 
                     psf_img = exp_psf.image.array
                     psf_wgt = exp_psf.weight.array
                     psf_jac = ngmix.Jacobian(
                         row=(psf_img.shape[0] - 1) / 2.0,
                         col=(psf_img.shape[1] - 1) / 2.0,
-                        wcs=exp_psf.wcs.local(world_pos=obj_world_pos),
+                        # wcs=exp_psf.wcs.local(world_pos=obj_world_pos),
+                        wcs=exp_psf.wcs,
+                        # wcs=exp_psf.wcs.local(
+                        #     world_pos=self.coaddimage.world_coadd_center
+                        # ),
+                        # wcs=exp.wcs.local(world_pos=obj_world_pos),
+                        # wcs=exp.wcs.local(
+                        #     world_pos=self.coaddimage.world_coadd_center
+                        # ),
                     )
                     psf_obs = ngmix.Observation(
                         image=psf_img,
                         weight=psf_wgt,
                         jacobian=psf_jac,
                     )
+
                     obs = ngmix.Observation(
                         image=img,
                         weight=wgt,
@@ -579,11 +762,151 @@ class MetaCoadd(SimpleCoadd):
                         noise=noise,
                         psf=psf_obs,
                     )
+
+                    # plt.figure()
+                    # plt.imshow(exp.image.array, origin="lower")
+                    # plt.plot(img_pos.x, img_pos.y, "rx")
+                    # plt.colorbar()
+                    # plt.xlim(75, 100)
+                    # plt.ylim(75, 100)
+                    # plt.show()
+
+                    # plt.figure()
+                    # plt.imshow(obs.image, origin="lower")
+                    # plt.plot(obs.jacobian.col0, obs.jacobian.row0, "rx")
+                    # plt.colorbar()
+                    # plt.axvline(25, c="k", ls="--")
+                    # plt.axhline(25, c="k", ls="--")
+                    # plt.xlim(20, 30)
+                    # plt.ylim(20, 30)
+                    # plt.title(f"{mcal_key}")
+                    # plt.show()
+
+                    # Deals with color correction
+                    if self._do_psf_sed_corr:
+                        # exp_wcs = exp.wcs.local(world_pos=obj_world_pos)
+                        # pix = exp_wcs.toWorld(galsim.Pixel(scale=1))
+                        wcs_loc = exp.wcs.local(img_pos)
+                        pix_loc = wcs_loc.toWorld(galsim.Pixel(scale=1))
+                        final_psf_ = galsim.Convolve(final_psf[i][j], pix_loc)
+
+                        # psf_corr_obs = ngmix.Observation(
+                        #     image=final_psf_img,
+                        #     jacobian=psf_jac,
+                        # )
+
+                        # obs.meta["psf_real"] = {
+                        #     mcal_key: psf_corr_obs,
+                        # }
+                        # obs.meta["psf_deconv"] = psf_obs
+                        exp_wcs = exp.wcs.local(
+                            world_pos=self.coaddimage.world_coadd_center
+                        )
+                        pix = exp_wcs.toWorld(galsim.Pixel(scale=1))
+                        tmp = galsim.Convolve(psf_reconv, pix)  # .withFlux(1)
+                        # tmp = galsim.Gaussian(fwhm=0.28).withFlux(1)
+                        tmp -= final_psf_
+                        # tmp -= final_psf[i][j]
+                        # tmp_img = tmp.drawImage(
+                        #     nx=img.shape[0],
+                        #     ny=img.shape[1],
+                        #     wcs=exp.wcs.local(world_pos=obj_world_pos),
+                        #     method="no_pixel",
+                        #     center=(dx, dy),
+                        # ).array
+                        obs.meta["psf_resi"] = {mcal_key: tmp}  # _img
+                        # obs.meta["psf_resi"] = None
+                        # obs.meta["psf_deconv"] = self._psf_corr_dict[i][j][
+                        #     "psf_deconv"
+                        # ]
                     obs_list.append(obs)
             mb_obs.append(obs_list)
-            res = fitter.go(mb_obs)
+            all_mb_obs.append(mb_obs)
+            res = fitter.go(mb_obs, mcal_key=mcal_key)
+            # res = fitter.go(obs)
+            # res = boot.go(mb_obs[0][0])
+            res["g1"] = res["g"][0]
+            res["g2"] = res["g"][1]
+
+            # res["g1"] = res["e"][0]
+            # res["g2"] = res["e"][1]
+            # res["Tpsf"] = 2 * (0.28 / 2.355) ** 2
+
+            # g1_, g2_, _ = ngmix.moments.mom2g(
+            #     *ngmix.moments.e2mom(*res["e"], res["T"])
+            # )
+            # res["g1"] = g1_
+            # res["g2"] = g2_
+
             all_shape_cat.append(res)
+        self.all_mb_obs[mcal_key] = all_mb_obs
+        self.all_exp_pos[mcal_key] = np.array(all_exp_pos)
+        self.all_exp_dxy[mcal_key] = np.array(all_exp_dxy)
         return all_shape_cat
+
+    def get_cat_meds(
+        self,
+        mcal_key,
+    ):
+        wcs_loc = self.coaddimage.mb_image[mcal_key].wcs.local(
+            world_pos=self.coaddimage.world_coadd_center
+        )
+        obs = ngmix.Observation(
+            image=self.coaddimage.mb_image[mcal_key].array,
+            weight=self.coaddimage.mb_weight[mcal_key].array,
+            jacobian=ngmix.Jacobian(
+                row=self.coaddimage.mb_image[mcal_key].bounds.true_center.y,
+                col=self.coaddimage.mb_image[mcal_key].bounds.true_center.x,
+                wcs=wcs_loc,
+            ),
+            psf=ngmix.Observation(
+                image=galsim.Gaussian(fwhm=0.28)
+                .drawImage(
+                    nx=51, ny=51, wcs=self.coaddimage.mb_image[mcal_key].wcs
+                )
+                .array,
+                jacobian=ngmix.Jacobian(
+                    row=25,
+                    col=25,
+                    wcs=wcs_loc,
+                ),
+            ),
+        )
+        obslist = ngmix.ObsList()
+        obslist.append(obs)
+        mb_obs = ngmix.MultiBandObsList()
+        mb_obs.append(obslist)
+
+        medsifier = mdet_detect.MEDSifier(
+            mbobs=mb_obs,
+            sx_config=TEST_METADETECT_CONFIG["sx"],
+            meds_config=TEST_METADETECT_CONFIG["meds"],
+            nodet_flags=TEST_METADETECT_CONFIG["nodet_flags"],
+        )
+        self.medsifier = medsifier
+
+    def get_shape_meds(self, medsifier, mcal_mb_explist, mcal_mb_explist_psf):
+        mbobs = exp2obs(
+            mcal_mb_explist,
+            mcal_mb_explist_psf,
+            use_resamp=False,
+        )
+
+        all_medsifier = mdet_detect.CatalogMEDSifier(
+            mbobs,
+            medsifier.cat["x"],
+            medsifier.cat["y"],
+            medsifier.cat["box_size"],
+            seg=medsifier.seg,
+            number=medsifier.cat["number"],
+        )
+        mbm = all_medsifier.get_multiband_meds()
+        mbobs_list = mbm.get_mbobs_list(
+            weight_type=TEST_METADETECT_CONFIG["meds"].get(
+                "weight_type", "weight"
+            ),
+        )
+        self.mbobs_list = mbobs_list
 
     def build_output_cat(self, all_sep_cat, all_shape_cat):
         final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
@@ -595,5 +918,77 @@ class MetaCoadd(SimpleCoadd):
             for key in sep_obj.dtype.names:
                 final_cat[i][key] = sep_obj[key]
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
-                final_cat[i][key] = all_shape_cat[i][key.split("regauss_")[1]]
+                try:
+                    final_cat[i][key] = all_shape_cat[i][
+                        key.split("regauss_")[1]
+                    ]
+                except:
+                    continue
         return final_cat
+
+
+def _make_ml_prior(rng, scale, nband):
+    """make the prior for the fitter.
+
+    Parameters
+    ----------
+    rng: np.random.RandomState
+        The random number generator
+    scale: float
+        Pixel scale
+    nband: int
+        number of bands
+    """
+    g_prior = ngmix.priors.GPriorBA(sigma=0.3, rng=rng)
+    cen_prior = ngmix.priors.CenPrior(
+        cen1=0,
+        cen2=0,
+        sigma1=scale,
+        sigma2=scale,
+        rng=rng,
+    )
+    T_prior = ngmix.priors.TwoSidedErf(
+        minval=-10.0,
+        width_at_min=0.03,
+        maxval=1.0e6,
+        width_at_max=1.0e5,
+        rng=rng,
+    )
+    F_prior = ngmix.priors.TwoSidedErf(
+        minval=-1.0e4,
+        width_at_min=1.0,
+        maxval=1.0e9,
+        width_at_max=0.25e8,
+        rng=rng,
+    )
+    F_prior = [F_prior] * nband
+
+    prior = ngmix.joint_prior.PriorSimpleSep(
+        cen_prior=cen_prior,
+        g_prior=g_prior,
+        T_prior=T_prior,
+        F_prior=F_prior,
+    )
+
+    return prior
+
+
+def get_gauss_psf_runner(rng):
+    psf_guesser = ngmix.guessers.SimplePSFGuesser(
+        rng=rng,
+        guess_from_moms=True,
+    )
+    psf_fitter = ngmix.fitting.Fitter(
+        model="gauss",
+        fit_pars={
+            "maxfev": 2000,
+            "xtol": 1.0e-5,
+            "ftol": 1.0e-5,
+        },
+    )
+    psf_runner = ngmix.runners.PSFRunner(
+        fitter=psf_fitter,
+        guesser=psf_guesser,
+        ntry=2,
+    )
+    return psf_runner

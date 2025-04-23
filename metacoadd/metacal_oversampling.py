@@ -59,6 +59,8 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
 
         ny, nx = self.image.array.shape
 
+        # imconv = galsim.Convolve(imconv, self.pixel)
+
         try:
             newim = imconv.drawImage(
                 nx=nx,
@@ -66,7 +68,7 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
                 # wcs=self.image.wcs,
                 wcs=self.get_wcs(),
                 # dtype=np.float64,
-                # method='no_pixel',
+                # method="no_pixel",
             )
         except RuntimeError as err:
             # argh, galsim uses generic exceptions
@@ -114,17 +116,8 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         key = self._get_psf_key(shear, doshear)
         if key not in self._psf_cache:
             # psf_grown = self._get_dilated_psf(shear, doshear=doshear)
-            psf_grown = galsim.Gaussian(fwhm=0.28)
-            # psf_grown = galsim.Airy(
-            #     lam=1059.5116430916528,
-            #     diam=roman.diameter,
-            #     obscuration=roman.obscuration,
-            # )
-            # psf_grown = psf_grown.dilate(1.2)
+            psf_grown = galsim.Gaussian(fwhm=0.3)
 
-            # this should carry over the wcs
-            # psf_grown_image = self.psf_image.copy()
-            # psf_grown_image.wcs = self.get_wcs()
             psf_bounds = self.psf_image.bounds
 
             try:
@@ -134,6 +127,7 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
                     # image=psf_grown_image,
                     method="no_pixel",  # pixel is already in psf
                     wcs=self.get_psf_wcs(),
+                    # wcs=self.get_wcs(),
                 )
             except RuntimeError as err:
                 # argh, galsim uses generic exceptions
@@ -151,6 +145,8 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         import galsim
 
         obs = self.obs
+
+        # self.interp = "lanczos50"
 
         # these would share data with the original numpy arrays, make copies
         # to be sure they don't get modified
@@ -177,7 +173,6 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         # we dilate, shear, etc and reconvolve the image by
         self.psf_int_nopix = galsim.Convolve(
             psf_int,
-            # self.pixel_psf_inv,
             self.pixel_inv,
         )
         psf_int_nopix_inv = galsim.Deconvolve(self.psf_int_nopix)
@@ -207,6 +202,7 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
 
         wcs = self.get_wcs()
         self.pixel = wcs.toWorld(galsim.Pixel(scale=1))
+        # self.pixel = galsim.Pixel(scale=0.11)
         self.pixel_inv = galsim.Deconvolve(self.pixel)
 
         wcs_psf = self.get_psf_wcs()
@@ -265,12 +261,12 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         # fitter = AdmomFitter(rng=self.rng)
         fitter = GAdmomFitter(rng=self.rng, guess_fwhm=0.1)
 
-        res = run_psf_fitter(
-            obs=psfobs, fitter=fitter, guesser=guesser, ntry=ntry
-        )
+        # res = run_psf_fitter(
+        #     obs=psfobs, fitter=fitter, guesser=guesser, ntry=ntry
+        # )
 
-        e1, e2 = res["e"]
-        T = res["T"]
+        # e1, e2 = res["e"]
+        # T = res["T"]
 
         # if res['flags'] == 0:
         #     e1, e2 = res['e']
@@ -311,14 +307,14 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         #             'could not get e1,e2 from psf fit for MetacalFitGaussPSF'
         #         )
 
-        dilation = _get_ellip_dilation(e1, e2, T)
-        T_dilated = T * dilation
-        sigma = np.sqrt(T_dilated / 2.0)
+        # dilation = _get_ellip_dilation(e1, e2, T)
+        # T_dilated = T * dilation
+        # sigma = np.sqrt(T_dilated / 2.0)
 
-        self.gauss_psf = galsim.Gaussian(
-            sigma=sigma,
-            flux=self.psf_flux,
-        )
+        # self.gauss_psf = galsim.Gaussian(
+        #     sigma=sigma,
+        #     flux=self.psf_flux,
+        # )
 
 
 # def _do_dilate(obj, shear):
