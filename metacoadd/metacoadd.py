@@ -704,8 +704,9 @@ class MetaCoadd(SimpleCoadd):
                     )
                     if cutout_size % 2 == 0:
                         cutout_size += 1
+                    cutout_size = min(31, cutout_size)
                     # cutout_size = 31
-                    cutout_size = 51
+                    # cutout_size = 51
 
                     img, dx, dy = get_cutout(
                         exp.image.array, img_pos.x, img_pos.y, cutout_size
