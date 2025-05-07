@@ -11,6 +11,7 @@ from ngmix.metacal.metacal import (
     MetacalAnalyticPSF,
     _check_shape,
 )
+from ngmix.shape import Shape
 from ngmix.metacal.defaults import DEFAULT_STEP
 from ngmix.bootstrap import bootstrap
 from ngmix.metacal.convenience import (
@@ -36,7 +37,64 @@ from .moments.galsim_admom import GAdmomFitter
 logger = logging.getLogger(__name__)
 
 
-class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
+class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
+    def __init__(self, obs, step, rng=None):
+        """
+        Parameters
+        ----------
+        obs: ngmix Observation
+            The observation to use for metacal
+        rng: numpy.random.RandomState, optional
+            Random state for generating noise fields.  Not needed if metacal if
+            using the noise field in the observations
+        """
+        self.step = step
+        super().__init__(obs=obs, rng=rng)
+
+    def get_obs_galshear(self, mcal_type):
+        """
+        This is the case where we shear the image, for calculating R
+
+        parameters
+        ----------
+        shear: ngmix.Shape
+            The shear to apply
+
+        get_unsheared: bool
+            Get an observation only convolved by the target psf, not
+            sheared
+        """
+
+        if mcal_type == "noshear":
+            shear = Shape(0.0, 0.0)
+        elif mcal_type == "1p":
+            shear = Shape(self.step, 0.0)
+        elif mcal_type == "1m":
+            shear = Shape(-self.step, 0.0)
+        elif mcal_type == "2p":
+            shear = Shape(0.0, self.step)
+        elif mcal_type == "2m":
+            shear = Shape(0.0, -self.step)
+
+        type = "gal_shear"
+
+        newpsf_image, newpsf_obj = self.get_target_psf(shear, type)
+
+        # if mcal_type == "noshear":
+        #     unsheared_image = self.get_target_image(newpsf_obj, shear=None)
+
+        #     newobs = self._make_obs(unsheared_image, newpsf_image)
+        #     newobs.psf.galsim_obj = newpsf_obj
+        # else:
+        sheared_image = self.get_target_image(newpsf_obj, shear=shear)
+
+        newobs = self._make_obs(sheared_image, newpsf_image)
+
+        # this is the pixel-convolved psf object, used to draw the
+        # psf image
+        newobs.psf.galsim_obj = newpsf_obj
+        return newobs
+
     def get_target_image(self, psf_obj, shear=None):
         """
         get the target image, convolved with the specified psf
@@ -59,16 +117,11 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
 
         ny, nx = self.image.array.shape
 
-        # imconv = galsim.Convolve(imconv, self.pixel)
-
         try:
             newim = imconv.drawImage(
                 nx=nx,
                 ny=ny,
-                # wcs=self.image.wcs,
                 wcs=self.get_wcs(),
-                # dtype=np.float64,
-                # method="no_pixel",
             )
         except RuntimeError as err:
             # argh, galsim uses generic exceptions
@@ -114,26 +167,26 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
             doshear = False
 
         key = self._get_psf_key(shear, doshear)
-        if key not in self._psf_cache:
-            # psf_grown = self._get_dilated_psf(shear, doshear=doshear)
-            psf_grown = galsim.Gaussian(fwhm=0.3)
+        if len(self._psf_cache) == 0 or "True" in key:
+            if key not in self._psf_cache:
+                psf_grown = galsim.Gaussian(fwhm=0.3)
 
-            psf_bounds = self.psf_image.bounds
+                psf_bounds = self.psf_image.bounds
 
-            try:
-                psf_grown_ = galsim.Convolve(psf_grown, self.pixel)
-                psf_grown_image = psf_grown_.drawImage(
-                    bounds=psf_bounds,
-                    # image=psf_grown_image,
-                    method="no_pixel",  # pixel is already in psf
-                    wcs=self.get_psf_wcs(),
-                    # wcs=self.get_wcs(),
-                )
-            except RuntimeError as err:
-                # argh, galsim uses generic exceptions
-                raise GMixRangeError(f"galsim error: '{str(err)}'")
+                try:
+                    psf_grown_ = galsim.Convolve(psf_grown, self.pixel)
+                    psf_grown_image = psf_grown_.drawImage(
+                        bounds=psf_bounds,
+                        method="no_pixel",  # pixel is already in psf
+                        wcs=self.get_psf_wcs(),
+                    )
+                except RuntimeError as err:
+                    # argh, galsim uses generic exceptions
+                    raise GMixRangeError(f"galsim error: '{str(err)}'")
 
-            self._psf_cache[key] = (psf_grown_image, psf_grown)
+                self._psf_cache[key] = (psf_grown_image, psf_grown)
+        else:
+            key = list(self._psf_cache)[0]
 
         psf_grown_image, psf_grown = self._psf_cache[key]
         return psf_grown_image.copy(), psf_grown
@@ -145,8 +198,6 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
         import galsim
 
         obs = self.obs
-
-        # self.interp = "lanczos50"
 
         # these would share data with the original numpy arrays, make copies
         # to be sure they don't get modified
@@ -176,6 +227,7 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
             self.pixel_inv,
         )
         psf_int_nopix_inv = galsim.Deconvolve(self.psf_int_nopix)
+        self.psf_int_nopix_inv = psf_int_nopix_inv
 
         # deconvolved galaxy image, psf+pixel removed
         image_int_nopix = galsim.Convolve(
@@ -202,139 +254,11 @@ class MetacalFitGaussPSFUnderRes(MetacalFitGaussPSF):
 
         wcs = self.get_wcs()
         self.pixel = wcs.toWorld(galsim.Pixel(scale=1))
-        # self.pixel = galsim.Pixel(scale=0.11)
         self.pixel_inv = galsim.Deconvolve(self.pixel)
 
         wcs_psf = self.get_psf_wcs()
         self.pixel_psf = wcs_psf.toWorld(galsim.Pixel(scale=1))
         self.pixel_psf_inv = galsim.Deconvolve(self.pixel_psf)
-
-    # def _get_dilated_psf(self, shear, doshear=False):
-    #     """
-    #     dilate the psf by the input shear and reconvolve by the pixel.  See
-    #     _do_dilate for the algorithm
-
-    #     If doshear, also shear it
-    #     """
-
-    #     psf_grown_nopix = self._do_dilate(self.psf_int_nopix, shear, doshear=doshear)
-
-    #     if doshear:
-    #         psf_grown_nopix = psf_grown_nopix.shear(g1=shear.g1, g2=shear.g2)
-
-    #     # psf_grown = galsim.Convolve(psf_grown_nopix, self.pixel)
-    #     return psf_grown_nopix
-
-    # def _do_dilate(self, psf, shear, doshear=False):
-    #     key = self._get_psf_key(shear, doshear)
-    #     if key not in self._psf_cache:
-    #         self._psf_cache[key] = _do_dilate(psf, shear)
-
-    #     return self._psf_cache[key]
-
-    def _do_psf_fit(self):
-        """
-        do the gaussian fit.
-
-        try the following in order
-            - adaptive moments
-            - maximim likelihood
-            - see if there is already a gmix object
-
-
-        if the above all fail, rase BootPSFFailure
-        """
-        import galsim
-
-        # from ngmix.admom import AdmomFitter
-        # from ngmix.guessers import GMixPSFGuesser, SimplePSFGuesser
-        from ngmix.runners import run_psf_fitter
-        # from ngmix.fitting import Fitter
-
-        psfobs = self.obs.psf
-
-        ntry = 4
-        # guesser = GMixPSFGuesser(rng=self.rng, ngauss=1)
-        guesser = None
-
-        # try adaptive moments first
-        # fitter = AdmomFitter(rng=self.rng)
-        fitter = GAdmomFitter(rng=self.rng, guess_fwhm=0.1)
-
-        # res = run_psf_fitter(
-        #     obs=psfobs, fitter=fitter, guesser=guesser, ntry=ntry
-        # )
-
-        # e1, e2 = res["e"]
-        # T = res["T"]
-
-        # if res['flags'] == 0:
-        #     e1, e2 = res['e']
-        #     T = res['T']
-        # else:
-        #     # try maximum likelihood
-
-        #     lm_pars = {
-        #         'maxfev': 2000,
-        #         'ftol': 1.0e-05,
-        #         'xtol': 1.0e-05,
-        #     }
-
-        #     fitter = Fitter(model='gauss', fit_pars=lm_pars)
-        #     guesser = SimplePSFGuesser(rng=self.rng)
-
-        #     res = run_psf_fitter(
-        #         obs=psfobs, fitter=fitter, guesser=guesser, ntry=ntry,
-        #         set_result=False,
-        #     )
-
-        #     if res['flags'] == 0:
-        #         psf_gmix = res.get_gmix()
-        #     else:
-
-        #         # see if there was already a gmix that we might use instead
-        #         if psfobs.has_gmix() and len(psfobs.gmix) == 1:
-        #             psf_gmix = psfobs.gmix.copy()
-        #         else:
-        #             # ok, just raise and exception
-        #             raise BootPSFFailure('failed to fit psf '
-        #                                  'for MetacalFitGaussPSF')
-        #     try:
-        #         e1, e2, T = psf_gmix.get_e1e2T()
-        #     except GMixRangeError as err:
-        #         logger.info('%s', err)
-        #         raise BootPSFFailure(
-        #             'could not get e1,e2 from psf fit for MetacalFitGaussPSF'
-        #         )
-
-        # dilation = _get_ellip_dilation(e1, e2, T)
-        # T_dilated = T * dilation
-        # sigma = np.sqrt(T_dilated / 2.0)
-
-        # self.gauss_psf = galsim.Gaussian(
-        #     sigma=sigma,
-        #     flux=self.psf_flux,
-        # )
-
-
-# def _do_dilate(obj, shear):
-#     """
-#     Dilate the input Galsim image object according to
-#     the input shear
-
-#     dilation = 1.0 + 2.0*|g|
-
-#     parameters
-#     ----------
-#     obj: Galsim Image or object
-#         The object to dilate
-#     shear: ngmix.Shape
-#         The shape to use for dilation
-#     """
-#     g = np.sqrt(shear.g1**2 + shear.g2**2)
-#     dilation = 1.0 + 2.0*g
-#     dilation = 1.15
-#     return obj.dilate(dilation)
 
 
 class MetacalBootstrapper:

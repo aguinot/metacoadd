@@ -6,18 +6,19 @@ import galsim
 import galsim.roman as roman
 
 import ngmix
-
-from metadetect import detect as mdet_detect
+from ngmix.metacal.convenience import (
+    _replace_image_with_noise,
+    _rotate_obs_image_square,
+    _doadd_single_obs,
+)
 
 from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
-from .metacal_oversampling import get_all_metacal
+from .metacal_oversampling import MetacalFitGaussPSFUnderRes
 from .detect import get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
-from .moments.galsim_admom import GAdmomFitter
 from .uberseg import fast_uberseg
 
-
-import matplotlib.pyplot as plt
+from memory_profiler import profile
 
 
 TEST_METADETECT_CONFIG = {
@@ -416,6 +417,7 @@ class MetaCoadd(SimpleCoadd):
         self._bandpass = roman.getBandpasses()["Y106"]
         self._true_psf = psf_true
 
+    @profile
     def go(
         self,
     ):
@@ -425,90 +427,96 @@ class MetaCoadd(SimpleCoadd):
 
         self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
 
-        mcal_dict = self._run_metacal()
-        self.mcal_obs = mcal_dict
-
-        self._mcal_coadd_image = {}
-        self.mcal_mb_explist = {}
-        self.mcal_mb_explist_psf = {}
-
-        self.all_mb_obs = {}
-        self.all_exp_pos = {}
-        self.all_exp_dxy = {}
+        self._init_metacal()
 
         all_sep_cat = {}
         all_shape_cat = {}
         all_seg_map = {}
         final_cat = {}
-        for mcal_key in mcal_dict.keys():
-            mb_obs = mcal_dict[mcal_key]
+        for mcal_key in self.mcal_config["types"]:
+            mb_obs = self.get_mcal(mcal_key)
 
             mcal_coadd_image, mcal_mb_explist, mcal_mb_explist_psf = (
                 self._get_resamp(mb_obs)
             )
-            self._mcal_coadd_image[mcal_key] = mcal_coadd_image
 
             self.make_coadds(
                 mcal_coadd_image.mb_explist, mcal_key, do_multiband=True
             )
-            all_sep_cat[mcal_key], seg_map = self.get_cat(
+            all_sep_cat[mcal_key], all_seg_map[mcal_key] = self.get_cat(
                 mcal_key, do_multiband=True
             )
-            all_seg_map[mcal_key] = seg_map
             all_shape_cat[mcal_key] = self.get_shape_cat(
                 mcal_mb_explist,
                 mcal_mb_explist_psf,
                 all_sep_cat[mcal_key],
-                seg_map,
+                all_seg_map[mcal_key],
                 mcal_key,
             )
             final_cat[mcal_key] = self.build_output_cat(
                 all_sep_cat[mcal_key], all_shape_cat[mcal_key]
             )
-            self.mcal_mb_explist[mcal_key] = mcal_mb_explist
-            self.mcal_mb_explist_psf[mcal_key] = mcal_mb_explist_psf
 
         self.all_sep_cat = all_sep_cat
         self.all_shape_cat = all_shape_cat
         self.all_seg_map = all_seg_map
         return final_cat
 
-    def _run_metacal(self):
-        mcal_obs = get_all_metacal(
-            self.mbobs,
-            rng=self.rng,
-            **self.mcal_config,
-        )
-
-        # Set interpolated nopixel deconv PSF
+    def _init_metacal(self):
         if self._do_psf_sed_corr:
             self._psf_corr_dict = []
-            for i, obs_list in enumerate(self.mbobs):
+        self.mcal_makers = []
+        for i, obs_list in enumerate(self.mbobs):
+            self.mcal_makers.append([])
+            if self._do_psf_sed_corr:
                 self._psf_corr_dict.append([])
-                for j, obs in enumerate(obs_list):
-                    psf = obs.psf.image
-                    psf_wcs = obs.psf.jacobian.get_galsim_wcs()
-                    img = galsim.Image(psf, wcs=psf_wcs)
-                    img_int = galsim.InterpolatedImage(
-                        img,
-                        x_interpolant="lanczos15",
+            for j, obs in enumerate(obs_list):
+                obs_rng = np.random.RandomState(self.rng.randint(2**32))
+                if self.mcal_config["use_noise_image"]:
+                    noise_obs = _replace_image_with_noise(obs)
+                else:
+                    noise_obs = ngmix.simobs.simulate_obs(
+                        gmix=None, obs=obs, rng=obs_rng
                     )
-
-                    wcs = obs.jacobian.get_galsim_wcs()
-                    pixel = wcs.toWorld(galsim.Pixel(scale=1))
-                    pixel_inv = galsim.Deconvolve(pixel)
-
-                    psf_int_nopix = galsim.Convolve(img_int, pixel_inv)
-                    psf_int_nopix_inv = galsim.Deconvolve(psf_int_nopix)
+                _rotate_obs_image_square(noise_obs, k=1)
+                mcal_maker = MetacalFitGaussPSFUnderRes(
+                    obs,
+                    self.mcal_config["step"],
+                    obs_rng,
+                )
+                mcal_maker_noise = MetacalFitGaussPSFUnderRes(
+                    noise_obs,
+                    self.mcal_config["step"],
+                    obs_rng,
+                )
+                self.mcal_makers[i].append(
+                    {"img": mcal_maker, "noise": mcal_maker_noise}
+                )
+                if self._do_psf_sed_corr:
                     self._psf_corr_dict[i].append(
                         {
-                            "psf_int_nopix_inv": psf_int_nopix_inv,
-                            "pixel_inv": pixel_inv,
-                            "psf_deconv": mcal_obs["noshear"][i][j].psf,
+                            "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
                         }
                     )
 
-        return mcal_obs
+    def get_mcal(self, mcal_type):
+        mcal_mbobs = ngmix.MultiBandObsList()
+        for i, obs_list in enumerate(self.mbobs):
+            mcal_obs_list = ngmix.ObsList()
+            for j, obs in enumerate(obs_list):
+                mcal_obs = self.mcal_makers[i][j]["img"].get_obs_galshear(
+                    mcal_type
+                )
+                noise_obs = self.mcal_makers[i][j]["noise"].get_obs_galshear(
+                    mcal_type
+                )
+                _rotate_obs_image_square(noise_obs, k=3)
+
+                _doadd_single_obs(mcal_obs, noise_obs)
+
+                mcal_obs_list.append(mcal_obs)
+            mcal_mbobs.append(mcal_obs_list)
+        return mcal_mbobs
 
     def _get_resamp(self, mb_obs):
         mb_explist = MultiBandExpList()
@@ -624,24 +632,9 @@ class MetaCoadd(SimpleCoadd):
     ):
         fitter = ReGaussFitter(guess_fwhm=0.3)
 
-        if self._do_psf_sed_corr:
-            final_psf = []
-            psf_reconv = galsim.Gaussian(fwhm=0.3)
-            for i in range(len(mcal_mb_explist)):
-                final_psf.append([])
-                for j in range(len(mcal_mb_explist[0])):
-                    tmp = galsim.Convolve(
-                        self._true_psf[i][j],
-                        self._psf_corr_dict[i][j]["psf_int_nopix_inv"],
-                    )
-                    tmp = tmp.shear(self._shear_dict[mcal_key])
-                    final_psf[i].append(galsim.Convolve(tmp, psf_reconv))
-
-        all_mb_obs = []
+        psf_reconv = galsim.Gaussian(fwhm=0.3)
 
         all_shape_cat = []
-        all_exp_pos = []
-        all_exp_dxy = []
         for det_obj in sep_cat:
             mb_obs = ngmix.MultiBandObsList()
             for i, (explist, explist_psf) in enumerate(
@@ -655,7 +648,6 @@ class MetaCoadd(SimpleCoadd):
                         0,
                     )
                     img_pos = galsim.PositionD(x, y)
-                    all_exp_pos.append([img_pos.x, img_pos.y])
                     cutout_size = np.int64(
                         np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
                     )
@@ -683,7 +675,6 @@ class MetaCoadd(SimpleCoadd):
                         col=dy,
                         wcs=exp.wcs.local(img_pos),
                     )
-                    all_exp_dxy.append([dx, dy])
 
                     psf_img = exp_psf.image.array
                     psf_wgt = exp_psf.weight.array
@@ -708,9 +699,16 @@ class MetaCoadd(SimpleCoadd):
 
                     # Deals with color correction
                     if self._do_psf_sed_corr:
+                        tmp = galsim.Convolve(
+                            self._true_psf[i][j],
+                            self._psf_corr_dict[i][j]["psf_int_nopix_inv"],
+                        )
+                        tmp = tmp.shear(self._shear_dict[mcal_key])
+                        final_psf = galsim.Convolve(tmp, psf_reconv)
+
                         wcs_loc = exp.wcs.local(img_pos)
                         pix_loc = wcs_loc.toWorld(galsim.Pixel(scale=1))
-                        final_psf_ = galsim.Convolve(final_psf[i][j], pix_loc)
+                        final_psf_ = galsim.Convolve(final_psf, pix_loc)
 
                         exp_wcs = exp.wcs.local(
                             world_pos=self.coaddimage.world_coadd_center
@@ -722,80 +720,12 @@ class MetaCoadd(SimpleCoadd):
                         obs.meta["psf_resi"] = {mcal_key: tmp}
                     obs_list.append(obs)
             mb_obs.append(obs_list)
-            all_mb_obs.append(mb_obs)
             res = fitter.go(mb_obs, mcal_key=mcal_key)
             res["g1"] = res["g"][0]
             res["g2"] = res["g"][1]
 
             all_shape_cat.append(res)
-        self.all_mb_obs[mcal_key] = all_mb_obs
-        self.all_exp_pos[mcal_key] = np.array(all_exp_pos)
-        self.all_exp_dxy[mcal_key] = np.array(all_exp_dxy)
         return all_shape_cat
-
-    def get_cat_meds(
-        self,
-        mcal_key,
-    ):
-        wcs_loc = self.coaddimage.mb_image[mcal_key].wcs.local(
-            world_pos=self.coaddimage.world_coadd_center
-        )
-        obs = ngmix.Observation(
-            image=self.coaddimage.mb_image[mcal_key].array,
-            weight=self.coaddimage.mb_weight[mcal_key].array,
-            jacobian=ngmix.Jacobian(
-                row=self.coaddimage.mb_image[mcal_key].bounds.true_center.y,
-                col=self.coaddimage.mb_image[mcal_key].bounds.true_center.x,
-                wcs=wcs_loc,
-            ),
-            psf=ngmix.Observation(
-                image=galsim.Gaussian(fwhm=0.28)
-                .drawImage(
-                    nx=51, ny=51, wcs=self.coaddimage.mb_image[mcal_key].wcs
-                )
-                .array,
-                jacobian=ngmix.Jacobian(
-                    row=25,
-                    col=25,
-                    wcs=wcs_loc,
-                ),
-            ),
-        )
-        obslist = ngmix.ObsList()
-        obslist.append(obs)
-        mb_obs = ngmix.MultiBandObsList()
-        mb_obs.append(obslist)
-
-        medsifier = mdet_detect.MEDSifier(
-            mbobs=mb_obs,
-            sx_config=TEST_METADETECT_CONFIG["sx"],
-            meds_config=TEST_METADETECT_CONFIG["meds"],
-            nodet_flags=TEST_METADETECT_CONFIG["nodet_flags"],
-        )
-        self.medsifier = medsifier
-
-    def get_shape_meds(self, medsifier, mcal_mb_explist, mcal_mb_explist_psf):
-        mbobs = exp2obs(
-            mcal_mb_explist,
-            mcal_mb_explist_psf,
-            use_resamp=False,
-        )
-
-        all_medsifier = mdet_detect.CatalogMEDSifier(
-            mbobs,
-            medsifier.cat["x"],
-            medsifier.cat["y"],
-            medsifier.cat["box_size"],
-            seg=medsifier.seg,
-            number=medsifier.cat["number"],
-        )
-        mbm = all_medsifier.get_multiband_meds()
-        mbobs_list = mbm.get_mbobs_list(
-            weight_type=TEST_METADETECT_CONFIG["meds"].get(
-                "weight_type", "weight"
-            ),
-        )
-        self.mbobs_list = mbobs_list
 
     def build_output_cat(self, all_sep_cat, all_shape_cat):
         final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
