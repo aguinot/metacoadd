@@ -391,7 +391,6 @@ class MetaCoadd(SimpleCoadd):
             "step": step,
             "types": types,
             "psf": "fitgauss_UR",
-            # "psf": "fitgauss",
             "use_noise_image": True,
         }
 
@@ -456,7 +455,6 @@ class MetaCoadd(SimpleCoadd):
                 mcal_key, do_multiband=True
             )
             all_seg_map[mcal_key] = seg_map
-            # print(mcal_key)
             all_shape_cat[mcal_key] = self.get_shape_cat(
                 mcal_mb_explist,
                 mcal_mb_explist_psf,
@@ -609,19 +607,9 @@ class MetaCoadd(SimpleCoadd):
                 self.coaddimage.mb_image[mcal_key].array,
                 self.coaddimage.mb_weight[mcal_key].array,
                 thresh=1.5,
-                # thresh=1e3,
+                # thresh=1e4,
                 wcs=self.coaddimage.mb_image[mcal_key].wcs.astropy,
             )
-
-            # plt.figure()
-            # plt.imshow(self.coaddimage.mb_image[mcal_key].array)
-            # plt.plot(cat["x"], cat["y"], "r+")
-            # plt.axvline(75, c="k", ls="--")
-            # plt.axhline(75, c="k", ls="--")
-            # plt.xlim(60, 90)
-            # plt.ylim(60, 90)
-            # plt.title(f"Coadd {mcal_key}")
-            # plt.show()
 
         return cat, seg_map
 
@@ -632,32 +620,9 @@ class MetaCoadd(SimpleCoadd):
         sep_cat,
         seg_map,
         mcal_key,
+        do_uberseg=False,
     ):
-        # cutout_size = 51
         fitter = ReGaussFitter(guess_fwhm=0.3)
-        # fitter = GAdmomFitter(guess_fwhm=0.3)
-        # fitter = ngmix.gaussmom.GaussMom(fwhm=0.3)
-
-        # prior = _make_ml_prior(self.rng, 0.1, len(mcal_mb_explist))
-        # fitter = ngmix.fitting.Fitter(
-        #     model="gauss",
-        #     prior=prior,
-        # )
-        # guesser = ngmix.guessers.TPSFFluxGuesser(
-        #     rng=self.rng,
-        #     T=0.25,
-        #     prior=prior,
-        # )
-        # runner = ngmix.runners.Runner(
-        #     fitter=fitter,
-        #     guesser=guesser,
-        #     ntry=2,
-        # )
-        # psf_runner = get_gauss_psf_runner(self.rng)
-        # boot = ngmix.bootstrap.Bootstrapper(
-        #     runner=runner,
-        #     psf_runner=psf_runner,
-        # )
 
         if self._do_psf_sed_corr:
             final_psf = []
@@ -684,29 +649,19 @@ class MetaCoadd(SimpleCoadd):
             ):
                 obs_list = ngmix.ObsList()
                 for j, (exp, exp_psf) in enumerate(zip(explist, explist_psf)):
-                    obj_world_pos = galsim.CelestialCoord(
-                        ra=det_obj["ra"] * galsim.degrees,
-                        dec=det_obj["dec"] * galsim.degrees,
-                    )
-                    # img_pos = exp.wcs.toImage(obj_world_pos)
                     x, y = exp.wcs.astropy.all_world2pix(
                         det_obj["ra"],
                         det_obj["dec"],
                         0,
                     )
                     img_pos = galsim.PositionD(x, y)
-                    # img_pos -= galsim.PositionD(1.0, 1.0)
-                    # img_pos = galsim.PositionD(det_obj["x"], det_obj["y"])
                     all_exp_pos.append([img_pos.x, img_pos.y])
-                    # all_exp_pos.append([xx, yy])
                     cutout_size = np.int64(
                         np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
                     )
                     if cutout_size % 2 == 0:
                         cutout_size += 1
                     cutout_size = min(31, cutout_size)
-                    # cutout_size = 31
-                    # cutout_size = 51
 
                     img, dx, dy = get_cutout(
                         exp.image.array, img_pos.x, img_pos.y, cutout_size
@@ -717,20 +672,15 @@ class MetaCoadd(SimpleCoadd):
                     noise, _, _ = get_cutout(
                         exp.noise.array, img_pos.x, img_pos.y, cutout_size
                     )
-                    # seg, _, _ = get_cutout(
-                    #     seg_map, det_obj["x"], det_obj["y"], cutout_size
-                    # )
-                    # wgt = fast_uberseg(seg, wgt_, det_obj["number"])
+                    if do_uberseg:
+                        seg, _, _ = get_cutout(
+                            seg_map, det_obj["x"], det_obj["y"], cutout_size
+                        )
+                        wgt = fast_uberseg(seg, wgt, det_obj["number"])
 
-                    # jac = ngmix.Jacobian(
-                    #     row=(cutout_size - 1) / 2.0 - dy,
-                    #     col=(cutout_size - 1) / 2.0 - dx,
-                    #     wcs=exp.wcs.local(world_pos=obj_world_pos),
-                    # )
                     jac = ngmix.Jacobian(
                         row=dx,
                         col=dy,
-                        # wcs=exp.wcs.local(world_pos=obj_world_pos),
                         wcs=exp.wcs.local(img_pos),
                     )
                     all_exp_dxy.append([dx, dy])
@@ -740,15 +690,7 @@ class MetaCoadd(SimpleCoadd):
                     psf_jac = ngmix.Jacobian(
                         row=(psf_img.shape[0] - 1) / 2.0,
                         col=(psf_img.shape[1] - 1) / 2.0,
-                        # wcs=exp_psf.wcs.local(world_pos=obj_world_pos),
                         wcs=exp_psf.wcs,
-                        # wcs=exp_psf.wcs.local(
-                        #     world_pos=self.coaddimage.world_coadd_center
-                        # ),
-                        # wcs=exp.wcs.local(world_pos=obj_world_pos),
-                        # wcs=exp.wcs.local(
-                        #     world_pos=self.coaddimage.world_coadd_center
-                        # ),
                     )
                     psf_obs = ngmix.Observation(
                         image=psf_img,
@@ -764,80 +706,26 @@ class MetaCoadd(SimpleCoadd):
                         psf=psf_obs,
                     )
 
-                    # plt.figure()
-                    # plt.imshow(exp.image.array, origin="lower")
-                    # plt.plot(img_pos.x, img_pos.y, "rx")
-                    # plt.colorbar()
-                    # plt.xlim(75, 100)
-                    # plt.ylim(75, 100)
-                    # plt.show()
-
-                    # plt.figure()
-                    # plt.imshow(obs.image, origin="lower")
-                    # plt.plot(obs.jacobian.col0, obs.jacobian.row0, "rx")
-                    # plt.colorbar()
-                    # plt.axvline(25, c="k", ls="--")
-                    # plt.axhline(25, c="k", ls="--")
-                    # plt.xlim(20, 30)
-                    # plt.ylim(20, 30)
-                    # plt.title(f"{mcal_key}")
-                    # plt.show()
-
                     # Deals with color correction
                     if self._do_psf_sed_corr:
-                        # exp_wcs = exp.wcs.local(world_pos=obj_world_pos)
-                        # pix = exp_wcs.toWorld(galsim.Pixel(scale=1))
                         wcs_loc = exp.wcs.local(img_pos)
                         pix_loc = wcs_loc.toWorld(galsim.Pixel(scale=1))
                         final_psf_ = galsim.Convolve(final_psf[i][j], pix_loc)
 
-                        # psf_corr_obs = ngmix.Observation(
-                        #     image=final_psf_img,
-                        #     jacobian=psf_jac,
-                        # )
-
-                        # obs.meta["psf_real"] = {
-                        #     mcal_key: psf_corr_obs,
-                        # }
-                        # obs.meta["psf_deconv"] = psf_obs
                         exp_wcs = exp.wcs.local(
                             world_pos=self.coaddimage.world_coadd_center
                         )
                         pix = exp_wcs.toWorld(galsim.Pixel(scale=1))
-                        tmp = galsim.Convolve(psf_reconv, pix)  # .withFlux(1)
-                        # tmp = galsim.Gaussian(fwhm=0.28).withFlux(1)
+                        tmp = galsim.Convolve(psf_reconv, pix)
+
                         tmp -= final_psf_
-                        # tmp -= final_psf[i][j]
-                        # tmp_img = tmp.drawImage(
-                        #     nx=img.shape[0],
-                        #     ny=img.shape[1],
-                        #     wcs=exp.wcs.local(world_pos=obj_world_pos),
-                        #     method="no_pixel",
-                        #     center=(dx, dy),
-                        # ).array
-                        obs.meta["psf_resi"] = {mcal_key: tmp}  # _img
-                        # obs.meta["psf_resi"] = None
-                        # obs.meta["psf_deconv"] = self._psf_corr_dict[i][j][
-                        #     "psf_deconv"
-                        # ]
+                        obs.meta["psf_resi"] = {mcal_key: tmp}
                     obs_list.append(obs)
             mb_obs.append(obs_list)
             all_mb_obs.append(mb_obs)
             res = fitter.go(mb_obs, mcal_key=mcal_key)
-            # res = fitter.go(obs)
-            # res = boot.go(mb_obs[0][0])
             res["g1"] = res["g"][0]
             res["g2"] = res["g"][1]
-
-            # res["g1"] = res["e"][0]
-            # res["g2"] = res["e"][1]
-            # res["Tpsf"] = 2 * (0.28 / 2.355) ** 2
-
-            # g1_, g2_, _ = ngmix.moments.mom2g(
-            #     *ngmix.moments.e2mom(*res["e"], res["T"])
-            # )
-            # res["g1"] = g1_
-            # res["g2"] = g2_
 
             all_shape_cat.append(res)
         self.all_mb_obs[mcal_key] = all_mb_obs
