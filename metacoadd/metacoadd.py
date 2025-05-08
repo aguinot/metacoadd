@@ -427,25 +427,25 @@ class MetaCoadd(SimpleCoadd):
 
         self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
 
-        self._init_metacal()
+        mcal_mbobs = self.get_mcal(self.mcal_config["types"])
 
         all_sep_cat = {}
         all_shape_cat = {}
         all_seg_map = {}
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
-            mb_obs = self.get_mcal(mcal_key)
-
             mcal_coadd_image, mcal_mb_explist, mcal_mb_explist_psf = (
-                self._get_resamp(mb_obs)
+                self._get_resamp(mcal_mbobs[mcal_key])
             )
 
             self.make_coadds(
                 mcal_coadd_image.mb_explist, mcal_key, do_multiband=True
             )
+
             all_sep_cat[mcal_key], all_seg_map[mcal_key] = self.get_cat(
                 mcal_key, do_multiband=True
             )
+
             all_shape_cat[mcal_key] = self.get_shape_cat(
                 mcal_mb_explist,
                 mcal_mb_explist_psf,
@@ -453,6 +453,7 @@ class MetaCoadd(SimpleCoadd):
                 all_seg_map[mcal_key],
                 mcal_key,
             )
+
             final_cat[mcal_key] = self.build_output_cat(
                 all_sep_cat[mcal_key], all_shape_cat[mcal_key]
             )
@@ -462,60 +463,55 @@ class MetaCoadd(SimpleCoadd):
         self.all_seg_map = all_seg_map
         return final_cat
 
-    def _init_metacal(self):
+    def get_mcal(self, mcal_types):
         if self._do_psf_sed_corr:
             self._psf_corr_dict = []
-        self.mcal_makers = []
-        for i, obs_list in enumerate(self.mbobs):
-            self.mcal_makers.append([])
-            if self._do_psf_sed_corr:
-                self._psf_corr_dict.append([])
-            for j, obs in enumerate(obs_list):
-                obs_rng = np.random.RandomState(self.rng.randint(2**32))
-                if self.mcal_config["use_noise_image"]:
-                    noise_obs = _replace_image_with_noise(obs)
-                else:
-                    noise_obs = ngmix.simobs.simulate_obs(
-                        gmix=None, obs=obs, rng=obs_rng
+
+        if self.mcal_config["use_noise_image"]:
+            noise_mbobs = _replace_image_with_noise(self.mbobs)
+        else:
+            noise_obs = ngmix.simobs.simulate_obs(
+                gmix=None, obs=self.mbobs, rng=self.rng
+            )
+        _rotate_obs_image_square(noise_mbobs, k=1)
+
+        mcal_mbobs = {}
+        for mcal_type in mcal_types:
+            mcal_mbobs_ = ngmix.MultiBandObsList()
+            for i, obs_list in enumerate(self.mbobs):
+                mcal_obs_list = ngmix.ObsList()
+                if self._do_psf_sed_corr and mcal_type == "noshear":
+                    self._psf_corr_dict.append([])
+                for j, obs in enumerate(obs_list):
+                    obs_rng = np.random.RandomState(self.rng.randint(2**32))
+
+                    mcal_maker = MetacalFitGaussPSFUnderRes(
+                        obs,
+                        self.mcal_config["step"],
+                        obs_rng,
                     )
-                _rotate_obs_image_square(noise_obs, k=1)
-                mcal_maker = MetacalFitGaussPSFUnderRes(
-                    obs,
-                    self.mcal_config["step"],
-                    obs_rng,
-                )
-                mcal_maker_noise = MetacalFitGaussPSFUnderRes(
-                    noise_obs,
-                    self.mcal_config["step"],
-                    obs_rng,
-                )
-                self.mcal_makers[i].append(
-                    {"img": mcal_maker, "noise": mcal_maker_noise}
-                )
-                if self._do_psf_sed_corr:
-                    self._psf_corr_dict[i].append(
-                        {
-                            "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
-                        }
+                    mcal_maker_noise = MetacalFitGaussPSFUnderRes(
+                        noise_mbobs[i][j],
+                        self.mcal_config["step"],
+                        obs_rng,
                     )
 
-    def get_mcal(self, mcal_type):
-        mcal_mbobs = ngmix.MultiBandObsList()
-        for i, obs_list in enumerate(self.mbobs):
-            mcal_obs_list = ngmix.ObsList()
-            for j, obs in enumerate(obs_list):
-                mcal_obs = self.mcal_makers[i][j]["img"].get_obs_galshear(
-                    mcal_type
-                )
-                noise_obs = self.mcal_makers[i][j]["noise"].get_obs_galshear(
-                    mcal_type
-                )
-                _rotate_obs_image_square(noise_obs, k=3)
+                    if self._do_psf_sed_corr and mcal_type == "noshear":
+                        self._psf_corr_dict[i].append(
+                            {
+                                "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
+                            }
+                        )
 
-                _doadd_single_obs(mcal_obs, noise_obs)
+                    mcal_obs = mcal_maker.get_obs_galshear(mcal_type)
+                    noise_obs = mcal_maker_noise.get_obs_galshear(mcal_type)
+                    _rotate_obs_image_square(noise_obs, k=3)
 
-                mcal_obs_list.append(mcal_obs)
-            mcal_mbobs.append(mcal_obs_list)
+                    _doadd_single_obs(mcal_obs, noise_obs)
+
+                    mcal_obs_list.append(mcal_obs)
+                mcal_mbobs_.append(mcal_obs_list)
+            mcal_mbobs[mcal_type] = mcal_mbobs_
         return mcal_mbobs
 
     def _get_resamp(self, mb_obs):
