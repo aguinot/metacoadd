@@ -10,9 +10,12 @@ import ngmix
 
 from astropy.io import fits
 from astropy.wcs import WCS
+
 from reproject import reproject_interp, reproject_adaptive, reproject_exact
+
+from lanczos.resample import resample_with_wcs
+
 import sep
-# from scipy import ndimage
 
 from .utils import shift_wcs, _exp2obs
 from .swarp_wrapper import reproject_swarp
@@ -869,6 +872,13 @@ class CoaddImage:
                     image_kinds=image_kinds,
                     swarp_config=resamp_config,
                 )
+            elif resamp_algo == "lanczos":
+                resamp_img, footprint = resample_with_wcs(
+                    self.coadd_wcs.astropy,
+                    input[1],
+                    [inp for inp in input[0]],
+                )
+                resamp_img = np.array(resamp_img)
 
         resamp_img[np.isnan(resamp_img)] = 0
 
