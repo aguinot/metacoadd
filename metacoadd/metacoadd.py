@@ -475,14 +475,17 @@ class MetaCoadd(SimpleCoadd):
         self.coaddimage.setup_coadd_metacal(self.mcal_config["types"])
         print("time setup coadd:", time() - ts)
 
+        ts = time()
         # mcal_mbobs = self.get_mcal_(self.mcal_config["types"])
         # print("size of mcal_mbobs:", getsize(mcal_mbobs))
-        ts = time()
         self._init_metacal()
         print("time init metacal:", time() - ts)
 
-        all_sep_cat = {}
-        all_shape_cat = {}
+        if True:
+            return None
+
+        # all_sep_cat = {}
+        # all_shape_cat = {}
         final_cat = {}
         ts_loop = time()
         print("#####")
@@ -495,7 +498,10 @@ class MetaCoadd(SimpleCoadd):
                 # self._get_resamp(mcal_mbobs[mcal_key])
                 self._get_resamp(mb_obs)
             )
+            print("size of mb_obs:", getsize(mb_obs))
             print("size of resamp:", getsize(mcal_coadd_image))
+            print("size of mcal_mb_explist:", getsize(mcal_mb_explist))
+            print("size of mcal_mb_explist_psf:", getsize(mcal_mb_explist_psf))
             print("time get resamp:", time() - ts)
 
             ts = time()
@@ -505,31 +511,33 @@ class MetaCoadd(SimpleCoadd):
             print("time make coadds:", time() - ts)
 
             ts = time()
-            all_sep_cat[mcal_key], seg_map = self.get_cat(
+            all_sep_cat, seg_map = self.get_cat(
                 mcal_key, do_multiband=True
             )
             print("time get cat:", time() - ts)
 
             ts = time()
-            all_shape_cat[mcal_key] = self.get_shape_cat(
+            all_shape_cat = self.get_shape_cat(
                 mcal_mb_explist,
                 mcal_mb_explist_psf,
-                all_sep_cat[mcal_key],
+                all_sep_cat,
                 seg_map,
                 mcal_key,
             )
             print(
-                "time get shape cat:", time() - ts, len(all_sep_cat[mcal_key])
+                "time get shape cat:", time() - ts, len(all_sep_cat)
             )
+            print("size of all_shape_cat:", getsize(all_shape_cat))
 
             ts = time()
             final_cat[mcal_key] = self.build_output_cat(
-                all_sep_cat[mcal_key], all_shape_cat[mcal_key]
+                all_sep_cat, all_shape_cat
             )
             print("time build output cat:", time() - ts)
+            print(f"size of final_cat {mcal_key}:", getsize(final_cat[mcal_key]))
+            print("size of final_cat:", getsize(final_cat))
             print(f"class size after loop {mcal_key}:", getsize(self))
             print("#####")
-        print("size of mb_obs:", getsize(mb_obs))
         print("time loop:", time() - ts_loop)
 
         print("class size after go:", getsize(self))
@@ -541,9 +549,11 @@ class MetaCoadd(SimpleCoadd):
         #     self.psf_mb_explist,
         #     use_resamp=False,
         # )
+        print("size of mbobs before:", getsize(self.mbobs))
         if self._do_psf_sed_corr:
             self._psf_corr_dict = []
         self.mcal_makers = []
+        all_psf_size = []
         for i, obs_list in enumerate(self.mbobs):
             self.mcal_makers.append([])
             if self._do_psf_sed_corr:
@@ -576,6 +586,12 @@ class MetaCoadd(SimpleCoadd):
                             "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
                         }
                     )
+                    all_psf_size.append(getsize(mcal_maker.psf_int_nopix_inv))
+        print("size of mcal_maker:", getsize(mcal_maker))
+        print("size of mcal_maker_noise:", getsize(mcal_maker_noise))
+        print("size of mbobs after:", getsize(self.mbobs))
+        print("size of psf_corr_dict:", getsize(self._psf_corr_dict))
+        print("size of psf_int_nopix_inv:", np.sum(all_psf_size))
 
     def get_mcal(self, mcal_type):
         mcal_mbobs = ngmix.MultiBandObsList()
@@ -744,6 +760,9 @@ class MetaCoadd(SimpleCoadd):
             self.coaddimage.mb_image[mcal_key].array[non_zero_weights] /= (
                 self.coaddimage.mb_weight[mcal_key].array[non_zero_weights]
             )
+        print(f"size of coaddimage after {mcal_key}:", getsize(self.coaddimage))
+        print("size of border_image:", getsize(border_image))
+        print("size of non_zero_weights:", getsize(non_zero_weights))
 
     def get_cat(self, mcal_key, do_multiband=True):
         if do_multiband:
@@ -868,6 +887,7 @@ class MetaCoadd(SimpleCoadd):
             mb_obs.append(obs_list)
             ts = time()
             res = fitter.go(mb_obs, mcal_key=mcal_key)
+            res = {k: v for k, v in res.items()}
             all_shape_time.append(time() - ts)
             res["g1"] = res["g"][0]
             res["g2"] = res["g"][1]
