@@ -13,12 +13,10 @@ import numpy as np
 import pyfftw
 from numba import njit, objmode
 
-from metacoadd.moments.galsim_admom_nb import find_ellipmom2, find_ellipmom1
-
-import matplotlib.pyplot as plt
+from metacoadd.moments.galsim_admom_nb import find_ellipmom2
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def _check_exp(pixels, w_data):
     w_sum = 0
     for pixel in pixels:
@@ -27,7 +25,7 @@ def _check_exp(pixels, w_data):
     return w_sum
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def shearmult(e1_a, e2_a, e1_b, e2_b):
     dotp = e1_a * e1_b + e2_a * e2_b
     factor = (1.0 - sqrt(1 - e1_b * e1_b - e2_b * e2_b)) / (
@@ -43,7 +41,7 @@ def shearmult(e1_a, e2_a, e1_b, e2_b):
     return e1_out, e2_out
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
     cosheta_p = 1 / sqrt(1 - e1_psf * e1_psf - e2_psf * e2_psf)
     cosheta_g = 1 / sqrt(1 - e1_gal * e1_gal - e2_gal * e2_gal)
@@ -64,7 +62,7 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
     return e1_new, e2_new
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def get_corrected_mom3(e1, e2, SB):
     """ """
 
@@ -75,7 +73,7 @@ def get_corrected_mom3(e1, e2, SB):
     return xx, yy, xy
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def goodFFTSize(N):
     if N <= 2:
         return 2
@@ -89,7 +87,7 @@ def goodFFTSize(N):
     return Nk
 
 
-@njit(fastmath=True, cache=False)
+@njit(fastmath=True, cache=True)
 def fast_convolve_image1(
     image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)
 ):
@@ -193,9 +191,7 @@ def get_resi_img(
     xx_f = xx_gal - xx_psf
     yy_f = yy_gal - yy_psf
     xy_f = xy_gal - xy_psf
-    # xx_f = xx_gal
-    # yy_f = yy_gal
-    # xy_f = xy_gal
+
     if xx_f <= obs.jacobian.area:
         xx_f = obs.jacobian.area
     if yy_f <= obs.jacobian.area:
@@ -340,14 +336,6 @@ def get_true_resi_img(
     obs_deconv_psf=None,
     psf_resi=None,
 ):
-    # nsig_rg = 3.0
-    # nsig_rg2 = 3.6
-
-    # x_gal_min, y_gal_min = 0, 0
-    # x_gal_max, y_gal_max = obs.image.shape
-    # x_psf_min, y_psf_min = 0, 0
-    # x_psf_max, y_psf_max = obs.psf.image.shape
-
     # Approx deconv
     xx_f = xx_gal - xx_psf
     yy_f = yy_gal - yy_psf
@@ -357,101 +345,7 @@ def get_true_resi_img(
     if yy_f <= obs.jacobian.area:
         yy_f = obs.jacobian.area
 
-    # Get fgauss bounds
-    # fgauss_xmin = x_gal_min - x_psf_max
-    # fgauss_xmax = x_gal_max - x_psf_min
-    # fgauss_ymin = y_gal_min - y_psf_max
-    # fgauss_ymax = y_gal_max - y_psf_min
-    # fgauss_xctr = obs.jacobian.row0 - obs.psf.jacobian.row0
-    # fgauss_yctr = obs.jacobian.col0 - obs.psf.jacobian.col0
-    # fgauss_xsig = np.sqrt(xx_f / obs.jacobian.area)
-    # fgauss_ysig = np.sqrt(yy_f / obs.jacobian.area)
-    # if fgauss_xmin < fgauss_xctr - nsig_rg * fgauss_xsig:
-    #     fgauss_xmin = int(floor(fgauss_xctr - nsig_rg * fgauss_xsig))
-    # if fgauss_xmax > fgauss_xctr + nsig_rg * fgauss_xsig:
-    #     fgauss_xmax = int(ceil(fgauss_xctr + nsig_rg * fgauss_xsig))
-    # if fgauss_ymin < fgauss_yctr - nsig_rg * fgauss_ysig:
-    #     fgauss_ymin = int(floor(fgauss_yctr - nsig_rg * fgauss_ysig))
-    # if fgauss_ymax > fgauss_yctr + nsig_rg * fgauss_ysig:
-    #     fgauss_ymax = int(ceil(fgauss_yctr + nsig_rg * fgauss_ysig))
-    # f_dim_x = fgauss_xmax - fgauss_xmin
-    # f_dim_y = fgauss_ymax - fgauss_ymin
-    # f_dim_x += 1
-    # f_dim_y += 1
-
-    # gal_shif_x = obs.jacobian.row0 - x_gal_max / 2 + x0_gal
-    # gal_shif_y = obs.jacobian.col0 - y_gal_max / 2 + y0_gal
-    # psf_shif_x = obs.psf.jacobian.row0 - x_psf_max / 2 + x0_psf
-    # psf_shif_y = obs.psf.jacobian.col0 - y_psf_max / 2 + y0_psf
-    # f_row0 = f_dim_x / 2 + gal_shif_x + psf_shif_x
-    # f_col0 = f_dim_y / 2 + gal_shif_y + psf_shif_y
-    # f_jac = ngmix.Jacobian(
-    #     row=f_row0, col=f_col0, wcs=obs.jacobian.get_galsim_wcs()
-    # )
-
-    # Get PSF bounds
-    # p_xmin = int(
-    #     floor(
-    #         obs.psf.jacobian.row0
-    #         - nsig_rg2 * sqrt(xx_gal / obs.jacobian.area)
-    #         - nsig_rg * fgauss_xsig
-    #     )
-    # )
-    # p_xmax = int(
-    #     ceil(
-    #         obs.psf.jacobian.row0
-    #         + nsig_rg2 * sqrt(xx_gal / obs.jacobian.area)
-    #         + nsig_rg * fgauss_xsig
-    #     )
-    # )
-    # p_ymin = int(
-    #     floor(
-    #         obs.psf.jacobian.col0
-    #         - nsig_rg2 * sqrt(yy_gal / obs.jacobian.area)
-    #         - nsig_rg * fgauss_ysig
-    #     )
-    # )
-    # p_ymax = int(
-    #     ceil(
-    #         obs.psf.jacobian.col0
-    #         + nsig_rg2 * sqrt(yy_gal / obs.jacobian.area)
-    #         + nsig_rg * fgauss_ysig
-    #     )
-    # )
-    # if x_psf_min >= p_xmin:
-    #     p_xmin = x_psf_min
-    # if x_psf_max <= p_xmax:
-    #     p_xmax = x_psf_max
-    # if y_psf_min >= p_ymin:
-    #     p_ymin = y_psf_min
-    # if y_psf_max <= p_ymax:
-    #     p_ymax = y_psf_max
-
     g1, g2, T = ngmix.moments.mom2g(yy_f, xy_f, xx_f)
-    # pars_fgauss = np.zeros(6)
-    # pars_fgauss[2] = g1
-    # pars_fgauss[3] = g2
-    # pars_fgauss[4] = T
-    # pars_fgauss[5] = flux_gal
-    # gmix_fgauss = ngmix.GMixModel(pars_fgauss, "gauss")
-    # fgauss_img = gmix_fgauss.make_image(
-    #     (f_dim_x, f_dim_y), f_jac, fast_exp=True
-    # )
-    # fgauss_img *= flux_gal / np.sum(fgauss_img)
-
-    # PSF_resid_img = (
-    #     -obs_real_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
-    #     + obs_deconv_psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1]
-    # )
-
-    # out_image_img = obs.image.copy()
-    # fast_convolve_image1(
-    #     fgauss_img,
-    #     PSF_resid_img,
-    #     out_image_img,
-    #     orig_img1=(fgauss_xmin, fgauss_ymin),
-    #     orig_img2=(p_xmin, p_ymin),
-    # )
 
     if psf_resi is not None:
         import galsim
@@ -460,24 +354,13 @@ def get_true_resi_img(
             galsim.Gaussian(sigma=np.sqrt(T / 2))
             .shear(g1=g1, g2=g2)
             .withFlux(flux_gal)
-            # .shift(
-            #     dy=-(obs.jacobian.col0 - obs.image.shape[0] / 2) * 0.11,
-            #     dx=-(obs.jacobian.row0 - obs.image.shape[1] / 2) * 0.11,
-            # )
         )
         wcs_loc = obs.jacobian.get_galsim_wcs()
-        pix_scale = np.sqrt(wcs_loc.pixelArea())
         f_conv = galsim.Convolve(
-            # galsim.Convolve(f, wcs_loc.toWorld(galsim.Pixel(1))),
             f,
             psf_resi,
-            # galsim.Convolve(
-            #     galsim.Gaussian(fwhm=0.3), wcs_loc.toWorld(galsim.Pixel(1))
-            # ),
         )
-        # print(obs.jacobian.col0, obs.jacobian.row0)
         row_shift, col_shift = obs.jacobian.get_rowcol(y0_gal, x0_gal)
-        # print(row_shift, col_shift)
         nrow, ncol = obs.image.shape
         canonical_center = (np.array((ncol, nrow)) - 1.0) / 2.0
         offset = (col_shift, row_shift) - canonical_center
@@ -490,113 +373,6 @@ def get_true_resi_img(
         )
         out_image_img2 = obs.image.copy()
         out_image_img2 += f_conv_img.array
-        # out_image_img2 -= f_conv_img.array
-
-        # psf_resi_img = psf_resi.drawImage(
-        #     nx=obs.image.shape[0],
-        #     ny=obs.image.shape[1],
-        #     wcs=wcs_loc,
-        #     method="no_pixel",
-        #     center=(obs.jacobian.col0, obs.jacobian.row0),
-        # )
-        # f_img = f.drawImage(
-        #     nx=obs.image.shape[0],
-        #     ny=obs.image.shape[1],
-        #     wcs=wcs_loc,
-        #     method="no_pixel",
-        #     # center=(obs.jacobian.col0, obs.jacobian.row0),
-        # )
-        # print("f_img sum", np.sum(f_img.array))
-        # print("psf_resi_img sum", np.sum(psf_resi_img.array))
-
-        if False:
-            print(x0_gal / pix_scale, y0_gal / pix_scale)
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            im = axes[0].imshow(obs.image, origin="lower")
-            axes[0].plot(obs.jacobian.col0, obs.jacobian.row0, "k+")
-            axes[0].plot(
-                (obs.image.shape[1] - 1) / 2,
-                (obs.image.shape[1] - 1) / 2,
-                "rx",
-            )
-            axes[0].plot(
-                (obs.image.shape[1] - 1) / 2 + x0_gal / pix_scale,
-                (obs.image.shape[1] - 1) / 2 + y0_gal / pix_scale,
-                "o",
-                color="purple",
-                markerfacecolor="none",
-            )
-            plt.colorbar(im, ax=axes[0])
-            axes[0].set_title("obs")
-            axes[0].set_xlim(15, 35)
-            axes[0].set_ylim(15, 35)
-            im = axes[1].imshow(f_conv_img.array, origin="lower")
-            axes[1].plot(obs.jacobian.col0, obs.jacobian.row0, "k+")
-            axes[1].plot(
-                (obs.image.shape[1] - 1) / 2,
-                (obs.image.shape[1] - 1) / 2,
-                "rx",
-            )
-            axes[1].plot(
-                (obs.image.shape[1] - 1) / 2 + x0_gal / pix_scale,
-                (obs.image.shape[1] - 1) / 2 + y0_gal / pix_scale,
-                "o",
-                color="purple",
-                markerfacecolor="none",
-            )
-            plt.colorbar(im, ax=axes[1])
-            axes[1].set_title("f_conv")
-            axes[1].set_xlim(15, 35)
-            axes[1].set_ylim(15, 35)
-            im = axes[2].imshow(out_image_img2, origin="lower")
-            axes[2].plot(obs.jacobian.col0, obs.jacobian.row0, "k+")
-            axes[2].plot(
-                (obs.image.shape[1] - 1) / 2,
-                (obs.image.shape[1] - 1) / 2,
-                "rx",
-            )
-            axes[2].plot(
-                (obs.image.shape[1] - 1) / 2 + x0_gal / pix_scale,
-                (obs.image.shape[1] - 1) / 2 + y0_gal / pix_scale,
-                "o",
-                color="purple",
-                markerfacecolor="none",
-            )
-            plt.colorbar(im, ax=axes[2])
-            axes[2].set_title("out_img")
-            axes[2].set_xlim(15, 35)
-            axes[2].set_ylim(15, 35)
-            plt.show()
-
-        # fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-        # im = axes[0].imshow(obs.image, origin="lower")
-        # plt.colorbar(im, ax=axes[0])
-        # axes[0].set_title("obs")
-        # im = axes[1].imshow(f_conv_img.array, origin="lower")
-        # plt.colorbar(im, ax=axes[1])
-        # axes[1].set_title("f_conv")
-        # im = axes[2].imshow(psf_resi_img.array, origin="lower")
-        # plt.colorbar(im, ax=axes[2])
-        # axes[2].set_title("psf_resi")
-        # im = axes[3].imshow(f_img.array, origin="lower")
-        # plt.colorbar(im, ax=axes[3])
-        # axes[3].set_title("f")
-        # plt.show()
-
-        # fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-        # im = axes[0].imshow(out_image_img - obs.image, origin="lower")
-        # plt.colorbar(im, ax=axes[0])
-        # axes[0].set_title("PSF resi ReGauss")
-        # im = axes[1].imshow(out_image_img2 - obs.image, origin="lower")
-        # plt.colorbar(im, ax=axes[1])
-        # axes[1].set_title("PSF resi Galsim")
-        # im = axes[2].imshow(
-        #     (out_image_img2 - obs.image) - (out_image_img - obs.image),
-        #     origin="lower",
-        # )
-        # plt.colorbar(im, ax=axes[2])
-        # axes[2].set_title("PSF resi Galsim - ReGauss")
-        # plt.show()
 
     return out_image_img2
 
@@ -637,59 +413,9 @@ def regauss(
     guess = fitter._generate_guess(obs, guess_fwhm)
     find_ellipmom2(obs.pixels, guess, res_gal, fitter.conf)
     x0_gal, y0_gal, xx_gal, xy_gal, yy_gal = res_gal[0]["pars"][:5]
-    # ###
-    # res_gal = fitter._get_am_result()
-    # Mxx, Mxy, Myy = ngmix.moments.e2mom(0, 0, np.sqrt(0.3 / 2))
-    # x0 = 0.0
-    # y0 = 0.0
-    # find_ellipmom1(
-    #     obs.pixels,
-    #     x0,
-    #     y0,
-    #     Mxx,
-    #     Mxy,
-    #     Myy,
-    #     res_gal[0],
-    #     fitter.conf,
-    #     False,
-    # )
-    # Bx, By, Cxx, Cxy, Cyy, Amp, rho4 = res_gal[0]["sums"]
-    # two_psi = np.atan2(2 * Mxy, Mxx - Myy)
-    # semi_a2 = 0.5 * (
-    #     (Mxx + Myy) + (Mxx - Myy) * np.cos(two_psi)
-    # ) + Mxy * np.sin(two_psi)
-    # semi_b2 = Mxx + Myy - semi_a2
-    # shiftscale = sqrt(semi_b2)
-    # dx = 2.0 * Bx / (Amp * shiftscale)
-    # dy = 2.0 * By / (Amp * shiftscale)
-    # dxx = 4 * (Cxx / Amp - 0.5 * Mxx) / semi_b2
-    # dxy = 4 * (Cxy / Amp - 0.5 * Mxy) / semi_b2
-    # dyy = 4 * (Cyy / Amp - 0.5 * Myy) / semi_b2
-    # x0 += dx * shiftscale
-    # y0 += dy * shiftscale
-    # Mxx += dxx * semi_b2
-    # Mxy += dxy * semi_b2
-    # Myy += dyy * semi_b2
-    # A = Amp
-    # rho4 /= Amp
-    # res_gal[0]["pars"][0] = x0
-    # res_gal[0]["pars"][1] = y0
-    # res_gal[0]["pars"][2] = Mxx
-    # res_gal[0]["pars"][3] = Mxy
-    # res_gal[0]["pars"][4] = Myy
-    # res_gal[0]["pars"][5] = A * rho4
-    # res_gal[0]["pars"][6] = rho4
-    # # res_gal[0]["pars"][0] = res_gal[0]["sums"][0] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][1] = res_gal[0]["sums"][1] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][2] = res_gal[0]["sums"][2] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][3] = res_gal[0]["sums"][3] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][4] = res_gal[0]["sums"][4] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][6] = res_gal[0]["sums"][6] / res_gal[0]["sums"][5]
-    # # res_gal[0]["pars"][5] = res_gal[0]["sums"][5] * res_gal[0]["pars"][6]
-    # x0_gal, y0_gal, xx_gal, xy_gal, yy_gal = res_gal[0]["pars"][:5]
-    # print("mom1:", *res_gal[0]["pars"])
-    # print()
-    # ###
+    if res_gal[0]["flags"] != 0:
+        res[:] = res_gal[0][:]
+        return
 
     T_gal = xx_gal + yy_gal
 
@@ -709,11 +435,6 @@ def regauss(
     )
     # Correct for PSF residuals
     if psf_real is None and psf_resi is None:
-        # print(
-        #     "before:",
-        #     (xx_gal - yy_gal) / (xx_gal + yy_gal),
-        #     (2 * xy_gal) / (xx_gal + yy_gal),
-        # )
         resi_img = get_resi_img(
             obs,
             xx_gal,
@@ -742,43 +463,7 @@ def regauss(
         )
         res_resi = fitter._get_am_result()
         find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
-        # ###
-        # Mxx_w, Mxy_w, Myy_w = ngmix.moments.e2mom(0, 0, np.sqrt(0.3 / 2))
-        # find_ellipmom1(
-        #     resi_obs.pixels,
-        #     # x0_gal,
-        #     # y0_gal,
-        #     0.0,
-        #     0.0,
-        #     Mxx_w,
-        #     Mxy_w,
-        #     Myy_w,
-        #     res_resi[0],
-        #     fitter.conf,
-        #     True,
-        # )
-        # res_resi[0]["pars"][0] = res_resi[0]["sums"][0]
-        # res_resi[0]["pars"][1] = res_resi[0]["sums"][1]
-        # res_resi[0]["pars"][2] = (
-        #     res_resi[0]["sums"][2] / res_resi[0]["sums"][5]
-        # )
-        # res_resi[0]["pars"][3] = (
-        #     res_resi[0]["sums"][3] / res_resi[0]["sums"][5]
-        # )
-        # res_resi[0]["pars"][4] = (
-        #     res_resi[0]["sums"][4] / res_resi[0]["sums"][5]
-        # )
-        # res_resi[0]["pars"][5] = res_resi[0]["sums"][5]
-        # res_resi[0]["pars"][6] = (
-        #     res_resi[0]["sums"][6] / res_resi[0]["sums"][5]
-        # )
-        # ###
         xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
-        # print(
-        #     "after:",
-        #     (xx_gal - yy_gal) / (xx_gal + yy_gal),
-        #     (2 * xy_gal) / (xx_gal + yy_gal),
-        # )
 
         T_gal = xx_gal + yy_gal
         e1_gal = (xx_gal - yy_gal) / T_gal
@@ -788,26 +473,9 @@ def regauss(
         e1_bj, e2_bj = bj_nullPSF(
             T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
         )
-        # print(
-        #     "bj corr",
-        #     T_psf / T_gal,
-        #     e1_gal,
-        #     e2_gal,
-        #     rho4gal,
-        #     e1_psf,
-        #     e2_psf,
-        #     e1_bj,
-        #     e2_bj,
-        # )
         xx_final, yy_final, xy_final = get_corrected_mom3(
             e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
         )
-        # print(
-        #     "after 2:",
-        #     (xx_final - yy_final) / (xx_final + yy_final),
-        #     (2 * xy_final) / (xx_final + yy_final),
-        # )
-        # print()
     else:
         resi_img = get_true_resi_img(
             obs,
@@ -832,68 +500,6 @@ def regauss(
         res_resi = fitter._get_am_result()
         find_ellipmom2(resi_obs.pixels, guess_resi, res_resi, fitter.conf)
         xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
-        # print("RESI mom2:", *res_resi[0]["pars"])
-        # ###
-        # res_resi = fitter._get_am_result()
-        # Mxx, Mxy, Myy = ngmix.moments.e2mom(0, 0, np.sqrt(0.3 / 2))
-        # x0 = 0.0
-        # y0 = 0.0
-        # find_ellipmom1(
-        #     resi_obs.pixels,
-        #     x0,
-        #     y0,
-        #     Mxx,
-        #     Mxy,
-        #     Myy,
-        #     res_resi[0],
-        #     fitter.conf,
-        #     True,
-        # )
-        # Bx, By, Cxx, Cxy, Cyy, Amp, rho4 = res_resi[0]["sums"]
-        # two_psi = np.atan2(2 * Mxy, Mxx - Myy)
-        # semi_a2 = 0.5 * (
-        #     (Mxx + Myy) + (Mxx - Myy) * np.cos(two_psi)
-        # ) + Mxy * np.sin(two_psi)
-        # semi_b2 = Mxx + Myy - semi_a2
-        # shiftscale = sqrt(semi_b2)
-        # dx = 2.0 * Bx / (Amp * shiftscale)
-        # dy = 2.0 * By / (Amp * shiftscale)
-        # dxx = 4 * (Cxx / Amp - 0.5 * Mxx) / semi_b2
-        # dxy = 4 * (Cxy / Amp - 0.5 * Mxy) / semi_b2
-        # dyy = 4 * (Cyy / Amp - 0.5 * Myy) / semi_b2
-        # x0 += dx * shiftscale
-        # y0 += dy * shiftscale
-        # Mxx += dxx * semi_b2
-        # Mxy += dxy * semi_b2
-        # Myy += dyy * semi_b2
-        # A = Amp
-        # rho4 /= Amp
-        # res_resi[0]["pars"][0] = x0
-        # res_resi[0]["pars"][1] = y0
-        # res_resi[0]["pars"][2] = Mxx
-        # res_resi[0]["pars"][3] = Mxy
-        # res_resi[0]["pars"][4] = Myy
-        # res_resi[0]["pars"][5] = A * rho4
-        # res_resi[0]["pars"][6] = rho4
-        # # res_resi[0]["pars"][0] = res_resi[0]["sums"][0]
-        # # res_resi[0]["pars"][1] = res_resi[0]["sums"][1]
-        # # res_resi[0]["pars"][2] = (
-        # #     res_resi[0]["sums"][2] / res_resi[0]["sums"][5]
-        # # )
-        # # res_resi[0]["pars"][3] = (
-        # #     res_resi[0]["sums"][3] / res_resi[0]["sums"][5]
-        # # )
-        # # res_resi[0]["pars"][4] = (
-        # #     res_resi[0]["sums"][4] / res_resi[0]["sums"][5]
-        # # )
-        # # res_resi[0]["pars"][5] = res_resi[0]["sums"][5]
-        # # res_resi[0]["pars"][6] = (
-        # #     res_resi[0]["sums"][6] / res_resi[0]["sums"][5]
-        # # )
-        # xx_gal, xy_gal, yy_gal = res_resi[0]["pars"][2:5]
-        # print("RESI mom1:", *res_resi[0]["pars"])
-        # print()
-        # ###
 
         T_gal = xx_gal + yy_gal
         e1_gal = (xx_gal - yy_gal) / T_gal
@@ -906,6 +512,10 @@ def regauss(
         xx_final, yy_final, xy_final = get_corrected_mom3(
             e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
         )
+    if np.isnan(xx_final) or np.isnan(yy_final) or np.isnan(xy_final):
+        # NOTE: Probably not the best flags
+        res["flags"] = ngmix.flags.LOW_DET
+        return
 
     res["pars"][0] = res_resi[0]["pars"][0]
     res["pars"][1] = res_resi[0]["pars"][1]
@@ -925,7 +535,7 @@ def regauss(
     res["sums_cov"] = res_resi[0]["sums_cov"]
 
     # Propagate the rest of the results from the last adaptive moment run
-    res["flags"] = res_resi[0]["flags"]
+    res["flags"] = res_resi[0]["flags"]  # | res_gal[0]["flags"]
     res["numiter"] = res_resi[0]["numiter"]
     res["nimage"] = res_resi[0]["nimage"]
     res["npix"] = res_resi[0]["npix"]

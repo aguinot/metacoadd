@@ -11,7 +11,7 @@ import numpy as np
 from numba import njit
 
 
-@njit(fastmath=True)
+@njit(fastmath=True, cache=True)
 def find_ellipmom1(pixels, x0, y0, Mxx, Mxy, Myy, res, conf, do_cov=False):
     F = res["F"]
 
@@ -69,7 +69,7 @@ def find_ellipmom1(pixels, x0, y0, Mxx, Mxy, Myy, res, conf, do_cov=False):
                         res["sums_cov"][i, j] += w2 * var * F[i] * F[j]
 
 
-@njit(fastmath=True)
+@njit(fastmath=True, cache=True)
 def find_ellipmom2(
     pixels,
     guess,
@@ -84,6 +84,8 @@ def find_ellipmom2(
     convergence_factor = 1.0
     shiftscale0 = 0.0
 
+    pix_scale = np.sqrt(np.mean(pixels["area"]))
+
     x0, y0, Mxx, Mxy, Myy, _ = guess
     x00 = x0
     y00 = y0
@@ -97,8 +99,8 @@ def find_ellipmom2(
             res["flags"] = ngmix.flags.NONPOS_FLUX
 
         two_psi = atan2(2 * Mxy, Mxx - Myy)
-        semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + Mxy * sin(
-            two_psi
+        semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + (
+            Mxy * sin(two_psi)
         )
         semi_b2 = Mxx + Myy - semi_a2
 
@@ -159,14 +161,14 @@ def find_ellipmom2(
         Mxy += dxy * semi_b2
         Myy += dyy * semi_b2
 
-        if (abs(x0 - x00) > conf["shiftmax"]) | (
-            abs(y0 - y00) > conf["shiftmax"]
+        if (abs(x0 - x00) > conf["shiftmax"] * pix_scale) | (
+            abs(y0 - y00) > conf["shiftmax"] * pix_scale
         ):
             res["flags"] = ngmix.flags.CEN_SHIFT
 
         res["numiter"] = i + 1
 
-        if convergence_factor < conf["tol"]:
+        if convergence_factor < conf["tol"]:  # | (res["flags"] != 0):
             if not do_cov:
                 do_cov = True
                 continue
@@ -185,7 +187,7 @@ def find_ellipmom2(
             res["flags"] = ngmix.flags.MAXITER
 
 
-@njit
+@njit(cache=True)
 def clear_result(res):
     """
     clear some fields in the result structure

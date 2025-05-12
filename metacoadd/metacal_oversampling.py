@@ -18,7 +18,6 @@ from ngmix.metacal.convenience import (
     _replace_image_with_noise,
     _rotate_obs_image_square,
     _doadd_single_obs,
-    # _make_metacal_mb_obs_list_dict,
     _init_mb_obs_list_dict,
     _init_obs_list_dict,
 )
@@ -27,11 +26,8 @@ from ngmix.observation import (
     ObsList,
     MultiBandObsList,
 )
-from ngmix.metacal.metacal import _get_ellip_dilation
 from ngmix.gexceptions import GMixRangeError
 import logging
-
-from .moments.galsim_admom import GAdmomFitter
 
 
 logger = logging.getLogger(__name__)

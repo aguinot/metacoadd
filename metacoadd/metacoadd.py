@@ -1,5 +1,4 @@
 import copy
-# from time import time
 
 import numpy as np
 
@@ -18,49 +17,6 @@ from .metacal_oversampling import MetacalFitGaussPSFUnderRes
 from .detect import get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
 from .uberseg import fast_uberseg
-
-from memory_profiler import profile
-import sys
-
-import sys
-from numbers import Number
-from collections import deque
-from collections.abc import Set, Mapping
-
-
-ZERO_DEPTH_BASES = (str, bytes, Number, range, bytearray)
-
-
-def getsize(obj_0):
-    """Recursively iterate to sum size of object & members."""
-    _seen_ids = set()
-
-    def inner(obj):
-        obj_id = id(obj)
-        if obj_id in _seen_ids:
-            return 0
-        _seen_ids.add(obj_id)
-        size = sys.getsizeof(obj)
-        if isinstance(obj, ZERO_DEPTH_BASES):
-            pass  # bypass remaining control flow and return
-        elif isinstance(obj, (tuple, list, Set, deque)):
-            size += sum(inner(i) for i in obj)
-        elif isinstance(obj, Mapping) or hasattr(obj, "items"):
-            size += sum(
-                inner(k) + inner(v) for k, v in getattr(obj, "items")()
-            )
-        # Check for custom object instances - may subclass above too
-        if hasattr(obj, "__dict__"):
-            size += inner(vars(obj))
-        if hasattr(obj, "__slots__"):  # can have __slots__ with __dict__
-            size += sum(
-                inner(getattr(obj, s))
-                for s in obj.__slots__
-                if hasattr(obj, s)
-            )
-        return size
-
-    return inner(obj_0)
 
 
 TEST_METADETECT_CONFIG = {
@@ -182,6 +138,8 @@ _available_method = ["weighted"]
 SHAPE_CAT_DTYPE = [
     ("regauss_flags", np.int32),
     ("regauss_nimage", np.int32),
+    ("regauss_dx", np.float64),
+    ("regauss_dy", np.float64),
     ("regauss_flux", np.float64),
     ("regauss_flux_err", np.float64),
     ("regauss_T", np.float64),
@@ -388,7 +346,8 @@ class SimpleCoadd:
             input_reproj,
             "classic",
             image_kinds=["border"],
-            resamp_algo="swarp",
+            # resamp_algo="swarp",
+            resamp_algo="lanczos",
         )
 
         return border_resamp[0]
@@ -473,8 +432,6 @@ class MetaCoadd(SimpleCoadd):
         # mcal_mbobs = self.get_mcal_(self.mcal_config["types"])
         self._init_metacal()
 
-        # all_sep_cat = {}
-        # all_shape_cat = {}
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
             mb_obs = self.get_mcal(mcal_key)
@@ -513,7 +470,6 @@ class MetaCoadd(SimpleCoadd):
         if self._do_psf_sed_corr:
             self._psf_corr_dict = []
         self.mcal_makers = []
-        all_psf_size = []
         for i, obs_list in enumerate(self.mbobs):
             self.mcal_makers.append([])
             if self._do_psf_sed_corr:
@@ -546,7 +502,6 @@ class MetaCoadd(SimpleCoadd):
                             "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
                         }
                     )
-                    all_psf_size.append(getsize(mcal_maker.psf_int_nopix_inv))
 
     def get_mcal(self, mcal_type):
         mcal_mbobs = ngmix.MultiBandObsList()
@@ -669,7 +624,11 @@ class MetaCoadd(SimpleCoadd):
                 )
         for i, exp_list in enumerate(mb_explist):
             for exp in exp_list:
-                if self._do_border:
+                # NOTE: border is diasabled for now as it leads to issues.
+                # Will need to review that in the future, maybe the footprint
+                # returned by the resampling should be used.
+                # if self._do_border:
+                if False:
                     border_image = galsim.Image(
                         self._get_border(exp),
                         bounds=exp.image_resamp.bounds,
@@ -688,19 +647,21 @@ class MetaCoadd(SimpleCoadd):
                         # NOTE: check for the presence of a 'weight' for the
                         # weighted average coadding
                         self.coaddimage.image[i][mcal_key][b] += (
-                            exp.image_resamp * exp.weight_resamp * border_image
+                            exp.image_resamp[b]
+                            * exp.weight_resamp[b]
+                            * border_image[b]
                         )
                         self.coaddimage.weight[i][mcal_key][b] += (
-                            exp.weight_resamp * border_image
+                            exp.weight_resamp[b] * border_image[b]
                         )
                         if do_multiband:
                             self.coaddimage.mb_image[mcal_key][b] += (
-                                exp.image_resamp
-                                * exp.weight_resamp
-                                * border_image
+                                exp.image_resamp[b]
+                                * exp.weight_resamp[b]
+                                * border_image[b]
                             )
                             self.coaddimage.mb_weight[mcal_key][b] += (
-                                exp.weight_resamp * border_image
+                                exp.weight_resamp[b] * border_image[b]
                             )
             non_zero_weights = np.where(
                 self.coaddimage.weight[i][mcal_key].array != 0
@@ -826,7 +787,7 @@ class MetaCoadd(SimpleCoadd):
                         tmp -= final_psf_
                         obs.meta["psf_resi"] = {mcal_key: tmp}
                     obs_list.append(obs)
-            mb_obs.append(obs_list)
+                mb_obs.append(obs_list)
             res = fitter.go(mb_obs, mcal_key=mcal_key)
             res = {k: v for k, v in res.items()}
             res["g1"] = res["g"][0]
@@ -846,76 +807,13 @@ class MetaCoadd(SimpleCoadd):
                 final_cat[i][key] = sep_obj[key]
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
-                    final_cat[i][key] = all_shape_cat[i][
-                        key.split("regauss_")[1]
-                    ]
+                    shape_key = key.split("regauss_")[1]
+                    if shape_key == "dx":
+                        final_cat[i][key] = all_shape_cat[i]["pars"][0]
+                    elif shape_key == "dy":
+                        final_cat[i][key] = all_shape_cat[i]["pars"][1]
+                    else:
+                        final_cat[i][key] = all_shape_cat[i][shape_key]
                 except:
                     continue
         return final_cat
-
-
-def _make_ml_prior(rng, scale, nband):
-    """make the prior for the fitter.
-
-    Parameters
-    ----------
-    rng: np.random.RandomState
-        The random number generator
-    scale: float
-        Pixel scale
-    nband: int
-        number of bands
-    """
-    g_prior = ngmix.priors.GPriorBA(sigma=0.3, rng=rng)
-    cen_prior = ngmix.priors.CenPrior(
-        cen1=0,
-        cen2=0,
-        sigma1=scale,
-        sigma2=scale,
-        rng=rng,
-    )
-    T_prior = ngmix.priors.TwoSidedErf(
-        minval=-10.0,
-        width_at_min=0.03,
-        maxval=1.0e6,
-        width_at_max=1.0e5,
-        rng=rng,
-    )
-    F_prior = ngmix.priors.TwoSidedErf(
-        minval=-1.0e4,
-        width_at_min=1.0,
-        maxval=1.0e9,
-        width_at_max=0.25e8,
-        rng=rng,
-    )
-    F_prior = [F_prior] * nband
-
-    prior = ngmix.joint_prior.PriorSimpleSep(
-        cen_prior=cen_prior,
-        g_prior=g_prior,
-        T_prior=T_prior,
-        F_prior=F_prior,
-    )
-
-    return prior
-
-
-def get_gauss_psf_runner(rng):
-    psf_guesser = ngmix.guessers.SimplePSFGuesser(
-        rng=rng,
-        guess_from_moms=True,
-    )
-    psf_fitter = ngmix.fitting.Fitter(
-        model="gauss",
-        fit_pars={
-            "maxfev": 2000,
-            "xtol": 1.0e-5,
-            "ftol": 1.0e-5,
-        },
-    )
-    psf_runner = ngmix.runners.PSFRunner(
-        fitter=psf_fitter,
-        guesser=psf_guesser,
-        ntry=2,
-    )
-    return psf_runner

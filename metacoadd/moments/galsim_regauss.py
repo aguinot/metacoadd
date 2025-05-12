@@ -243,7 +243,6 @@ class ReGaussFitter(GAdmomFitter):
             res = res_[0]
             res_psf = res_psf_[0]
             if res["flags"] != 0:
-                rg_res[0]["flags"] |= res["flags"]
                 continue
             rg_res[0]["flags"] |= res["flags"]
             rg_res[0]["wsum"] += res["wsum"]
@@ -255,14 +254,13 @@ class ReGaussFitter(GAdmomFitter):
             wsum2 += res["wsum"] ** 2
             k += 1
         if k > 0:
-            # rg_res[0]["wsum"] /= k
             rg_res[0]["wnorm"] /= rg_res[0]["wsum"]
             rg_res[0]["sums"] /= rg_res[0]["wsum"]
             rg_res[0]["sums_cov"] /= wsum2
             rg_res[0]["pars"] /= rg_res[0]["wsum"]
             rg_res[0]["pars_psf"] /= rg_res[0]["wsum"]
-
-        rg_res[0]["nimage"] = k
+        else:
+            rg_res[0]["flags"] = 2**16
 
         return rg_res
 
@@ -476,7 +474,6 @@ def get_result(ares, jac_area, wgt_norm):
 
             else:
                 res["flags"] |= ngmix.flags.NONPOS_SIZE
-
         else:
             res["flags"] |= ngmix.flags.NONPOS_FLUX
 
