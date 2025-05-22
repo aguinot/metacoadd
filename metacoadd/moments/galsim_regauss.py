@@ -28,7 +28,7 @@ from .galsim_regauss_nb import (
     find_ellipmom2,
     regauss,
 )
-from .ngmix_admom_nb import get_mom_var
+from .galsim_admom_nb import get_mom_var
 
 DEFAULT_SAFE_CHECK = 0.99
 
