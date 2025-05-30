@@ -16,6 +16,7 @@ from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
 from .metacal_oversampling import MetacalFitGaussPSFUnderRes
 from .detect import get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
+from .moments.galsim_admom import GAdmomFitter
 from .uberseg import fast_uberseg
 
 
@@ -699,10 +700,13 @@ class MetaCoadd(SimpleCoadd):
         do_uberseg=False,
     ):
         fitter = ReGaussFitter(guess_fwhm=0.3)
+        psf_fitter = GAdmomFitter(guess_fwhm=0.3)
 
         psf_reconv = galsim.Gaussian(fwhm=0.3)
 
         all_shape_cat = []
+        T_psf_avg = 0.0
+        W_psf = 0.0
         for det_obj in sep_cat:
             mb_obs = ngmix.MultiBandObsList()
             for i, (explist, explist_psf) in enumerate(
@@ -721,7 +725,7 @@ class MetaCoadd(SimpleCoadd):
                     )
                     if cutout_size % 2 == 0:
                         cutout_size += 1
-                    cutout_size = min(31, cutout_size)
+                    cutout_size = max(31, cutout_size)
 
                     img, dx, dy = get_cutout(
                         exp.image.array, img_pos.x, img_pos.y, cutout_size
@@ -757,6 +761,14 @@ class MetaCoadd(SimpleCoadd):
                         jacobian=psf_jac,
                     )
 
+                    # Fit the PSF
+                    psf_res = psf_fitter.go(psf_obs)
+                    gm = psf_res.get_gmix()
+                    psf_obs.set_gmix(gm)
+                    w_psf = np.median(wgt)
+                    T_psf_avg += psf_res["T"] * w_psf
+                    W_psf += w_psf
+
                     obs = ngmix.Observation(
                         image=img,
                         weight=wgt,
@@ -785,13 +797,14 @@ class MetaCoadd(SimpleCoadd):
                         tmp = galsim.Convolve(psf_reconv, pix)
 
                         tmp -= final_psf_
-                        obs.meta["psf_resi"] = {mcal_key: tmp}
+                        obs.meta["psf_resi"] = tmp
                     obs_list.append(obs)
                 mb_obs.append(obs_list)
-            res = fitter.go(mb_obs, mcal_key=mcal_key)
+            res = fitter.go(mb_obs)
             res = {k: v for k, v in res.items()}
             res["g1"] = res["g"][0]
             res["g2"] = res["g"][1]
+            res["Tpsf"] = T_psf_avg / W_psf
 
             all_shape_cat.append(res)
         return all_shape_cat
