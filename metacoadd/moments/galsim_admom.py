@@ -51,7 +51,9 @@ class GAdmomResult(dict):
             raise RuntimeError("cannot create gmix, fit failed")
 
         pars = self["pars"].copy()
-        pars[5] = 1.0
+        pars[5] = (
+            self["pars"][6] * self["pars"][5] / self._obs.jacobian.scale**2
+        )
 
         T = pars[2] + pars[4]
         e1 = (pars[4] - pars[2]) / T
@@ -62,7 +64,7 @@ class GAdmomResult(dict):
         pars[3] = g2
         pars[4] = T
 
-        return GMixModel(pars[:-1], "gauss")
+        return GMixModel(pars[:6], "gauss")
 
     def make_image(self):
         """
@@ -214,6 +216,7 @@ class GAdmomFitter:
                 psf_moments=psf_moments,
             )
         except GMixRangeError:
+            # NOTE: Probably need another flag for this
             ares["flags"] = ngmix.flags.GMIX_RANGE_ERROR
 
         result = get_result(ares, scale**2, ares["wnorm"][0])
@@ -267,9 +270,9 @@ class GAdmomFitter:
         pars[0 : 0 + 2] = rng.uniform(
             low=-0.5 * scale, high=0.5 * scale, size=2
         )
-        pars[2] = fwhm2  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        pars[2] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
         pars[3] = rng.uniform(low=-1e-3, high=1e-3)
-        pars[4] = fwhm2  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        pars[4] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
         # pars[5:] = 1.0
 
         return pars
