@@ -470,6 +470,8 @@ def get_result(ares, jac_area, wgt_norm):
     res["flagstr"] = ngmix.flags.get_flags_str(res["flags"])
     res["flux_flagstr"] = ngmix.flags.get_flags_str(res["flux_flags"])
     res["T_flagstr"] = ngmix.flags.get_flags_str(res["T_flags"])
+    res["g1"], res["g2"] = e1e2_to_g1g2(res["e1"], res["e2"])
+    res["g"] = np.array([res["g1"], res["g2"]])
 
     return res
 
