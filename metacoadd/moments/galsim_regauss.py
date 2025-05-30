@@ -144,9 +144,8 @@ class ReGaussFitter(GAdmomFitter):
                 self._get_am_tmp,
                 self.conf,
             )
-        except GMixRangeError:
-            # NOTE: Probably need another flag for this
-            ares["flags"] = ngmix.flags.GMIX_RANGE_ERROR
+        except:
+            ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])
 

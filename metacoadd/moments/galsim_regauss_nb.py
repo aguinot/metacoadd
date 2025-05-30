@@ -1011,7 +1011,7 @@ def regauss(
                     xx_f,
                     yy_f,
                     xy_f,
-                    flux_gal,
+                    flux_gal[nb],
                     obs.meta["psf_resi"],
                 )
             resi_obs = obs.copy()

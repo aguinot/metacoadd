@@ -215,9 +215,8 @@ class GAdmomFitter:
                 self.conf,
                 psf_moments=psf_moments,
             )
-        except GMixRangeError:
-            # NOTE: Probably need another flag for this
-            ares["flags"] = ngmix.flags.GMIX_RANGE_ERROR
+        except:
+            ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])
 
