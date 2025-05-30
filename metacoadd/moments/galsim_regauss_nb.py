@@ -941,7 +941,6 @@ def regauss(
     resarray,
     tmp_func,
     confarray,
-    psf_resi=None,
 ):
     pixels_list = []
     band_tracker = []
@@ -992,7 +991,7 @@ def regauss(
     for nb, obslits in enumerate(mbobs):
         for obs in obslits:
             psf_pars = obs.psf.gmix.get_full_pars()
-            if psf_resi is None:
+            if "psf_resi" not in obs.meta.keys():
                 resi_img = get_resi_img(
                     obs,
                     xx_f,
@@ -1013,7 +1012,7 @@ def regauss(
                     yy_f,
                     xy_f,
                     flux_gal,
-                    psf_resi,
+                    obs.meta["psf_resi"],
                 )
             resi_obs = obs.copy()
             resi_obs.set_image(resi_img, update_pixels=True)

@@ -8,7 +8,6 @@ This implementation is modified to allowed post-metacalibration PSF correction.
 
 import ngmix
 from ngmix.observation import Observation, ObsList, MultiBandObsList
-from ngmix.gmix.gmix_nb import GMIX_LOW_DETVAL
 from ngmix.gexceptions import GMixRangeError
 
 from .galsim_admom import (
