@@ -14,7 +14,7 @@ from ngmix.metacal.convenience import (
 
 from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
 from .metacal_oversampling import MetacalFitGaussPSFUnderRes
-from .detect import get_cutout, get_cat, DET_CAT_DTYPE
+from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
 from .moments.galsim_admom import GAdmomFitter
 from .uberseg import fast_uberseg
@@ -684,7 +684,7 @@ class MetaCoadd(SimpleCoadd):
                 self.coaddimage.mb_image[mcal_key].array,
                 self.coaddimage.mb_weight[mcal_key].array,
                 thresh=1.5,
-                # thresh=1e4,
+                # thresh=1e3,
                 wcs=self.coaddimage.mb_image[mcal_key].wcs.astropy,
             )
 
@@ -699,8 +699,9 @@ class MetaCoadd(SimpleCoadd):
         mcal_key,
         do_uberseg=False,
     ):
-        fitter = ReGaussFitter(guess_fwhm=0.3)
-        psf_fitter = GAdmomFitter(guess_fwhm=0.3)
+        scale_sq = self.coaddimage.coadd_pixel_scale**2
+        fitter = ReGaussFitter(guess_fwhm=0.6)
+        psf_fitter = GAdmomFitter(guess_fwhm=0.6)
 
         psf_reconv = galsim.Gaussian(fwhm=0.3)
 
@@ -708,6 +709,20 @@ class MetaCoadd(SimpleCoadd):
         T_psf_avg = 0.0
         W_psf = 0.0
         for det_obj in sep_cat:
+            # cutout_size = np.int64(
+            #     np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
+            # )
+            cutout_size = get_cutout_size(
+                det_obj["xx"],
+                det_obj["xy"],
+                det_obj["yy"],
+                n_sigma=5.0,
+            )
+            cutout_size = np.int64(np.ceil(cutout_size))
+            if cutout_size % 2 == 0:
+                cutout_size += 1
+            cutout_size = max(31, cutout_size)
+
             mb_obs = ngmix.MultiBandObsList()
             for i, (explist, explist_psf) in enumerate(
                 zip(mcal_mb_explist, mcal_mb_explist_psf)
@@ -720,12 +735,6 @@ class MetaCoadd(SimpleCoadd):
                         0,
                     )
                     img_pos = galsim.PositionD(x, y)
-                    cutout_size = np.int64(
-                        np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
-                    )
-                    if cutout_size % 2 == 0:
-                        cutout_size += 1
-                    cutout_size = max(31, cutout_size)
 
                     img, dx, dy = get_cutout(
                         exp.image.array, img_pos.x, img_pos.y, cutout_size
@@ -800,7 +809,17 @@ class MetaCoadd(SimpleCoadd):
                         obs.meta["psf_resi"] = tmp
                     obs_list.append(obs)
                 mb_obs.append(obs_list)
-            res = fitter.go(mb_obs)
+            # Get guess from sep moments
+            guess = np.array(
+                [
+                    0.0,
+                    0.0,
+                    det_obj["xx"] * scale_sq,
+                    det_obj["xy"] * scale_sq,
+                    det_obj["yy"] * scale_sq,
+                ]
+            )
+            res = fitter.go(mb_obs, guess=guess)
             res = {k: v for k, v in res.items()}
             res["g1"] = res["g"][0]
             res["g2"] = res["g"][1]
