@@ -1,12 +1,17 @@
 import copy
 
+from math import sqrt
+
 import numpy as np
+import numba as nb
 
 import sep
 
 from astropy.wcs import WCS
 
 from sf_tools.image.stamp import FetchStamps
+
+from scipy.stats import median_abs_deviation as mad
 
 DES_KERNEL = np.array(
     [
@@ -78,13 +83,16 @@ DES_KERNEL = np.array(
 
 DET_CAT_DTYPE = [
     ("number", np.int64),
+    ("npix", np.int64),
     ("ra", np.float64),
     ("dec", np.float64),
     ("x", np.float64),
     ("y", np.float64),
     ("a", np.float64),
     ("b", np.float64),
-    ("npix", np.int64),
+    ("xx", np.float64),
+    ("yy", np.float64),
+    ("xy", np.float64),
     ("elongation", np.float64),
     ("ellipticity", np.float64),
     ("kronrad", np.float64),
@@ -108,6 +116,21 @@ DET_CAT_DTYPE = [
 #     vign = fs.scan()[0].astype(np.float64)
 
 #     return vign, dx, dy
+
+
+@nb.njit(fastmath=True, cache=True)
+def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
+    # Compute trace and determinant
+    trace = Qxx + Qyy
+
+    # Compute eigenvalues analytically for symmetric 2x2 matrix
+    temp = sqrt((Qxx - Qyy) ** 2 + 4 * Qxy**2)
+    lam1 = 0.5 * (trace + temp)
+    lam2 = 0.5 * (trace - temp)
+
+    lam_max = max(lam1, lam2)
+
+    return 2.0 * n_sigma * sqrt(lam_max)
 
 
 def get_cutout(img, x, y, stamp_size):
@@ -153,6 +176,7 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     mask_rms[m] = 0
 
     rms = np.median(np.sqrt(1 / weight[m]))
+    # rms = mad(img, scale="normal", axis=(0, 1))
 
     if (header is not None) and (wcs is not None):
         raise ValueError("Only one of header or wcs can be provided.")
@@ -165,8 +189,8 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
         err=rms,
         segmentation_map=True,
         minarea=5,
-        # deblend_nthresh=32,
-        deblend_cont=0.00001,
+        deblend_nthresh=32,
+        deblend_cont=0.005,
         filter_type="conv",
         filter_kernel=DES_KERNEL,
     )
@@ -246,13 +270,16 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     out = get_output_cat(n_obj)
 
     out["number"] = seg_id
+    out["npix"] = obj["npix"]
     out["ra"] = ra
     out["dec"] = dec
     out["x"] = obj["x"]
     out["y"] = obj["y"]
     out["a"] = obj["a"]
     out["b"] = obj["b"]
-    out["npix"] = obj["npix"]
+    out["xx"] = obj["x2"]
+    out["yy"] = obj["y2"]
+    out["xy"] = obj["xy"]
     out["elongation"] = obj["a"] / obj["b"]
     out["ellipticity"] = 1.0 - obj["b"] / obj["a"]
     out["kronrad"] = kronrads
