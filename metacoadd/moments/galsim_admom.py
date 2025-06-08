@@ -115,6 +115,7 @@ class GAdmomFitter:
     """
 
     kind = "admom"
+    _fwhm2sig_sq = 5.545177444479562
 
     def __init__(
         self,
@@ -205,18 +206,18 @@ class GAdmomFitter:
             scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
         )
 
-        try:
-            find_ellipmom2(
-                pixels_list,
-                band_tracker,
-                guess,
-                ares,
-                atmp,
-                self.conf,
-                psf_moments=psf_moments,
-            )
-        except:
-            ares["flags"] = 2**16
+        # try:
+        find_ellipmom2(
+            pixels_list,
+            band_tracker,
+            guess,
+            ares,
+            atmp,
+            self.conf,
+            psf_moments=psf_moments,
+        )
+        # except:
+        #     ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])
 
@@ -265,13 +266,15 @@ class GAdmomFitter:
         rng = self._get_rng()
 
         pars = np.zeros(5, dtype=np.float64)
-        fwhm2 = guess_fwhm * guess_fwhm
-        pars[0 : 0 + 2] = rng.uniform(
-            low=-0.5 * scale, high=0.5 * scale, size=2
-        )
-        pars[2] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
-        pars[3] = rng.uniform(low=-1e-3, high=1e-3)
-        pars[4] = fwhm2 * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        half_T = guess_fwhm * guess_fwhm / self._fwhm2sig_sq
+        # pars[0 : 0 + 2] = rng.uniform(
+        #     low=-0.5 * scale, high=0.5 * scale, size=2
+        # )
+        pars[0] = 0
+        pars[1] = 0
+        pars[2] = half_T  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        pars[3] = 0  # rng.uniform(low=-1e-3, high=1e-3)
+        pars[4] = half_T  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
         # pars[5:] = 1.0
 
         return pars
@@ -331,7 +334,6 @@ def get_result(ares, jac_area, wgt_norm):
     res["flux_mean"] = np.nan
 
     if res["flags"] == 0:
-        res["T"] = res["pars"][2] + res["pars"][4]
         try:
             flux_eff, flux_eff_var, flux_weights, flux_vars = (
                 compute_effective_flux(
@@ -339,13 +341,17 @@ def get_result(ares, jac_area, wgt_norm):
                     res["sums_cov"][6:, 6:],
                 )
             )
-            res["flux_mean"] = flux_eff / (res["wsum"])
+            if any(flux_vars < 0):
+                res["T_flags"] |= ngmix.flags.NONPOS_VAR
+            else:
+                res["T"] = res["pars"][2] + res["pars"][4]
 
-            # Also store per-band flux in pars if needed
-            res["pars"][6 : 6 + n_bands] = res["sums"][6:] / res["wsum"]
+                res["flux_mean"] = flux_eff / (res["wsum"])
+
+                # Also store per-band flux in pars if needed
+                res["pars"][6 : 6 + n_bands] = res["sums"][6:] / res["wsum"]
         except np.linalg.LinAlgError:
-            # NOTE: need to update to a better flag
-            res["T_flags"] |= ngmix.flags.LM_SINGULAR_MATRIX
+            res["T_flags"] |= ngmix.flags.NONPOS_VAR
 
     if res["flags"] == 0 and res["T"] > GMIX_LOW_DETVAL:
         pnorm = res["pars"][5]

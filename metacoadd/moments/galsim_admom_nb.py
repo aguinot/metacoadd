@@ -180,7 +180,8 @@ def find_ellipmom2(
     resarray,
     tmparray,
     confarray,
-    psf_moments=None,
+    psf_moments=None,  # These are the true PSF moments
+    # fixed_psf_components=None,  # Add [Mxx_fixed, Mxy_fixed, Myy_fixed] here
 ):
     """ """
 
@@ -197,6 +198,26 @@ def find_ellipmom2(
     x00 = x0
     y00 = y0
     do_cov = False
+
+    # Prepare the effective PSF moments for deconvolution
+    psf_moms_for_ellipmom1 = None
+    fixed_psf_components = np.array([0.0, 0.0, 0.0])
+    if psf_moments is not None:  # true_psf_moments are provided
+        fixed_psf_components = np.array([0.0121, 0.0, 0.0121])
+        if fixed_psf_components is not None:
+            # Calculate M_psf_effective = M_psf_true - M_psf_fixed for each observation
+            psf_moms_for_ellipmom1 = psf_moments - fixed_psf_components
+            # for true_psf_obs_i in psf_moments:
+            #     # Ensure fixed_psf_components is a NumPy array for element-wise subtraction
+            #     psf_moms_for_ellipmom1.append(
+            #         true_psf_obs_i
+            #         - np.array(fixed_psf_components, dtype=np.float64)
+            #     )
+        else:
+            # Original behavior: deconvolve by the true PSF
+            psf_moms_for_ellipmom1 = psf_moments
+    # If psf_moments is None, psf_moms_for_ellipmom1 remains None (no PSF deconvolution)
+
     for i in range(conf["maxiter"]):
         clear_result(res)
         clear_tmp(tmp)
@@ -212,13 +233,14 @@ def find_ellipmom2(
             tmp,
             conf,
             do_cov,
-            psf_moments=psf_moments,
+            psf_moments=psf_moms_for_ellipmom1,  # Pass the effective PSF moments
         )
         Bx, By, Cxx, Cxy, Cyy, rho4 = res["sums"][:6]
         Amps = res["sums"][6:]
         if do_cov:
             Amp, _, _, _ = compute_effective_flux(
-                Amps, res["sums_cov"][6:, 6:]
+                Amps,
+                res["sums_cov"][6:, 6:],
             )
         else:
             Amp = sum(Amps)
@@ -303,9 +325,9 @@ def find_ellipmom2(
             # rho4 /= Amp
             res["pars"][0] = x0
             res["pars"][1] = y0
-            res["pars"][2] = Mxx
-            res["pars"][3] = Mxy
-            res["pars"][4] = Myy
+            res["pars"][2] = Mxx - fixed_psf_components[0]
+            res["pars"][3] = Mxy - fixed_psf_components[1]
+            res["pars"][4] = Myy - fixed_psf_components[2]
             res["pars"][5] = rho4
             res["pars"][6:] = Amps * rho4
             break
@@ -526,6 +548,8 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
         start += n_obs_b
 
     # Fill in covariance terms between shared and flux, and between fluxes
+    # NOTE: This part is problematic so we don't include the cross-band flux covariances.
+    # It needs to be revisited in the future
     for b1 in range(N_bands):
         J1 = J_flux[b1]
 
@@ -536,8 +560,9 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
         # Flux-flux covariances (cross-band terms)
         for b2 in range(N_bands):
             # if b1 != b2:
-            J2 = J_flux[b2]
-            Sigma_M[6 + b1, 6 + b2] += J1 @ Sigma_shared_joint @ J2.T
+            if b1 == b2:
+                J2 = J_flux[b2]
+                Sigma_M[6 + b1, 6 + b2] += J1 @ Sigma_shared_joint @ J2.T
 
     res["sums"][:6] = x_shared_joint
     res["sums"][6:] = F_b
