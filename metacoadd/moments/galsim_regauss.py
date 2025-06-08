@@ -23,6 +23,8 @@ from .galsim_regauss_nb import (
     regauss,
 )
 
+from numpy import ndarray
+
 DEFAULT_SAFE_CHECK = 0.99
 
 
@@ -99,7 +101,7 @@ class ReGaussFitter(GAdmomFitter):
 
         self.rng = rng
 
-    def go(self, obs):
+    def go(self, obs, guess=None):
         """
         run re-gauss
         parameters
@@ -132,9 +134,16 @@ class ReGaussFitter(GAdmomFitter):
                     )
         ares = self._get_am_result(nband)
         scale = mb_obs[0][0].jacobian.scale
-        guess = self._get_guess(
-            scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
-        )
+        if guess is None:
+            guess = self._get_guess(
+                scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
+            )
+        if isinstance(guess, float):
+            guess = self._get_guess(scale=scale, nband=nband, guess_fwhm=guess)
+        if not isinstance(guess, ndarray):
+            raise ValueError(
+                "guess must be a float or a numpy.ndarray of shape 5"
+            )
 
         try:
             regauss(
@@ -144,7 +153,7 @@ class ReGaussFitter(GAdmomFitter):
                 self._get_am_tmp,
                 self.conf,
             )
-        except:
+        except Exception as e:
             ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])

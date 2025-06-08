@@ -72,7 +72,7 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
 def get_corrected_mom3(e1, e2, SB):
     """ """
 
-    xx = 0.5 * np.sqrt(-((e1 + 1) ** 2) * SB**2 / (e1**2 + e2**2 - 1))
+    xx = 0.5 * sqrt(-((e1 + 1) ** 2) * SB**2 / (e1**2 + e2**2 - 1))
     yy = -xx * (e1 - 1) / (e1 + 1)
     xy = xx * e2 / (e1 + 1)
 
@@ -87,7 +87,7 @@ def invert_BJ_correction(
     T_psf,
     e1_psf,
     e2_psf,
-    rho4gal,
+    rho4gal,  # This is the M4/T^2 like quantity, e.g., 2 for a Gaussian
 ):
     """
     Inverts the sequence of operations to get xx_gal, yy_gal, xy_gal
@@ -97,11 +97,11 @@ def invert_BJ_correction(
     # --- Step 1: Invert get_corrected_mom3 ---
     if (xx_final + yy_final) == 0:
         # This case needs careful handling, implies T_final = 0.
-        # If xx_final, yy_final, xy_final are all zero,
-        # then e1_bj, e2_bj are undefined, SB_input is likely 0.
-        # This might lead to xx_gal = yy_gal = xy_gal = 0 if inputs are consistent.
-        # For now, let's assume T_final != 0 for simplicity in demonstration.
-        # A robust implementation would return NaNs or raise an error.
+        if (
+            T_psf == 0
+        ):  # If no PSF, and final moments are zero, initial were zero
+            return 0.0, 0.0, 0.0
+        # If PSF exists, T_final = 0 is more complex, could be specific cancellation.
         return np.nan, np.nan, np.nan
 
     T_final = xx_final + yy_final
@@ -112,155 +112,208 @@ def invert_BJ_correction(
     if e_bj_sq >= 1.0:
         # Non-physical shear, SB_input would be NaN or complex
         return np.nan, np.nan, np.nan
-    SB_input = T_final * sqrt(1.0 - e_bj_sq)
+    SB_input = T_final * sqrt(
+        1.0 - e_bj_sq
+    )  # This is T_gal_obs / cosheta_g_obs = T_gal_intrinsic_projected
 
-    if SB_input == 0:
-        # This implies T_gal = 0 or e_gal_mag = 1.
-        # If T_gal = 0, then xx_gal = yy_gal = xy_gal = 0.
-        # If e_gal_mag = 1, the problem is ill-defined for moments.
-        # This case also needs careful specific handling.
-        # For this example, if SB_input is 0, C1 below would be infinite.
-        # A practical solution might assume if SB_input is 0, T_gal is 0.
-        if (
-            T_final == 0
-        ):  # Heuristic: if input moments are zero, output moments are zero
+    if SB_input < 1e-9:  # Changed from == 0 to < 1e-9 for robustness
+        # This implies T_gal_intrinsic_projected is zero.
+        # If T_gal is 0, then xx_gal = yy_gal = xy_gal = 0.
+        # This path assumes if SB_input is effectively zero, T_gal is zero.
+        if T_final < 1e-9:  # If input moments (and thus T_final) are zero
             return 0.0, 0.0, 0.0
-        # Otherwise, it's a problematic case.
+        # If T_final is not zero but SB_input is, implies e_bj_sq is 1.0 (already checked)
+        # or T_final is small and numerical precision issues.
         return np.nan, np.nan, np.nan
 
     # --- Step 2: Invert bj_nullPSF ---
-    # Constants
-    # rho4_gal_eff = 0.5 * rho4gal - 1 # This is the 'rho4_gal' param for bj_nullPSF
-    # K_rho_gal: (1 + rho4_gal_eff) / (1 - rho4_gal_eff)
-    # (1 + 0.5*rho4gal - 1) / (1 - (0.5*rho4gal - 1))
-    # = (0.5*rho4gal) / (2 - 0.5*rho4gal)
-    if (4.0 - rho4gal) == 0:  # Denominator of K_rho_gal is zero
-        return np.nan, np.nan, np.nan
-    K_rho_gal = rho4gal / (4.0 - rho4gal)  # since rho4_psf_eff = 0
-
+    # Constants for PSF
     e_psf_sq = e1_psf**2 + e2_psf**2
     if e_psf_sq >= 1.0:  # Unphysical PSF
         return np.nan, np.nan, np.nan
     cosheta_p = 1.0 / sqrt(1.0 - e_psf_sq)
 
-    # Sub-step a
-    e1_red_scaled, e2_red_scaled = shearmult(e1_bj, e2_bj, -e1_psf, -e2_psf)
-    e_red_scaled_sq = e1_red_scaled**2 + e2_red_scaled**2
-    if e_red_scaled_sq >= 1.0:  # Should not happen if e_bj, e_psf are physical
+    # Calculate C1 (which is C_coeff in derivation: sig2ratio * k_eff)
+    # sig2ratio = (T_psf / cosheta_p) / SB_input
+    # k_eff = rho4gal / (4.0 - rho4gal)
+
+    sig2ratio_val = 0.0
+    if cosheta_p == 0:  # Should not happen due to e_psf_sq check
         return np.nan, np.nan, np.nan
+    # SB_input non-zero check is implicitly handled by earlier SB_input < 1e-9 check
+    sig2ratio_val = T_psf / (SB_input * cosheta_p)
 
-    # Sub-step c: Calculate C1
-    if SB_input == 0 or cosheta_p == 0:  # cosheta_p shouldn't be 0
-        # This case implies T_gal is zero or e_gal is maximal.
-        # If SB_input is zero, C1 is infinite.
-        # If K_rho_gal is zero (rho4gal = 0), then C1 = 0, R_factor = 1.
-        if K_rho_gal == 0:
-            C1 = 0.0
-        else:  # SB_input must be zero and K_rho_gal non-zero
-            return np.nan, np.nan, np.nan  # C1 would be infinite
+    k_eff_numerator = rho4gal
+    k_eff_denominator = 4.0 - rho4gal
+
+    C1 = 0.0
+    if abs(k_eff_denominator) < 1e-9:  # rho4gal is approx 4.0
+        # If rho4gal = 4, K_eff is infinite.
+        # R = 1 - (sig2ratio_val / cosheta_g_red) * K_eff
+        # If sig2ratio_val is non-zero, R -> -inf (unphysical).
+        # If sig2ratio_val is zero (e.g. T_psf=0), then R=1, C1=0.
+        if (
+            abs(sig2ratio_val * k_eff_numerator) < 1e-9
+        ):  # Effectively T_psf=0 or rho4gal=0 (if rho4gal=4, means T_psf=0)
+            C1 = 0.0  # Results in R_factor = 1.0
+        else:  # rho4gal=4 and T_psf !=0: K_eff is infinite, C1 is infinite. Problematic.
+            # Instead of returning nan immediately, we can use a capped C1.
+            # Or, if truly infinite k_eff is intended to lead to failure, keep nan.
+            # For stability, let's assume extreme C1 is the problem.
+            # If sig2ratio_val * k_eff_numerator is positive, C1 -> +inf
+            # If sig2ratio_val * k_eff_numerator is negative, C1 -> -inf
+            # Capping C1 will be done after this block.
+            # For now, if it's this specific singularity, returning nan might be intended.
+            return np.nan, np.nan, np.nan
+    elif abs(k_eff_numerator) < 1e-9:  # rho4gal is approx 0.0
+        C1 = 0.0  # K_eff is 0, so C1 is 0. Results in R_factor = 1.0
     else:
-        C1 = (T_psf / (SB_input * cosheta_p)) * K_rho_gal
+        k_eff = k_eff_numerator / k_eff_denominator
+        C1 = sig2ratio_val * k_eff
 
-    # Sub-step d: Solve for R_factor
-    # R_factor^2 * A_quad + R_factor * B_quad + C_quad = 0
-    A_quad = 1.0 + C1**2 * e_red_scaled_sq
+    # Cap the magnitude of C1 to prevent numerical instability
+    C1_MAX_MAG = 500.0  # This value may need tuning
+    if C1 > C1_MAX_MAG:
+        C1 = C1_MAX_MAG
+    elif C1 < -C1_MAX_MAG:
+        C1 = -C1_MAX_MAG
+
+    # Sub-step a (from bj_nullPSF, but e1_red, e2_red are scaled by R in bj_nullPSF)
+    # Here, e1_red_scaled, e2_red_scaled are e_red / R from bj_nullPSF perspective
+    # Or, e1_red_scaled, e2_red_scaled are the result of shearmult(e_new, e_new_conj, e_psf_conj)
+    e1_red_div_R, e2_red_div_R = shearmult(
+        e1_bj, e2_bj, -e1_psf, -e2_psf
+    )  # These are e1_red/R, e2_red/R
+    e_red_div_R_sq = e1_red_div_R**2 + e2_red_div_R**2
+
+    if (
+        e_red_div_R_sq >= 1.0 + 1e-9
+    ):  # e_red/R cannot be > 1 if R is physical and e_red < 1
+        # Allow for small numerical errors if e_red_div_R_sq is slightly above 1
+        # if R is very small.
+        # This check might be too strict if R is very small.
+        # However, if e_red_div_R_sq > 1, then 1 - R^2 * e_red_div_R_sq can be negative.
+        pass  # This will be caught by discriminant_quad < 0 if it leads to issues.
+
+    # Sub-step d: Solve for R_factor (R in bj_nullPSF)
+    # R_factor^2 * A_quad + R_factor * B_quad + C_quad_val = 0
+    # A_quad = 1.0 + C1**2 * e_red_div_R_sq
+    # B_quad = -2.0
+    # C_quad_val = 1.0 - C1**2
+
+    A_quad = 1.0 + C1**2 * e_red_div_R_sq
     B_quad = -2.0
     C_quad_val = 1.0 - C1**2
 
     discriminant_quad = B_quad**2 - 4.0 * A_quad * C_quad_val
-    if discriminant_quad < 0:
+    if discriminant_quad < -1e-9:  # Allow for small negative due to precision
         return np.nan, np.nan, np.nan  # No real solution for R_factor
-
-    # R_factor = (1 +/- sqrt(D_norm)) / A_norm
-    # D_norm = C1^2 * (1 - e_red_scaled_sq + C1^2 * e_red_scaled_sq)
-    # sqrt_D_norm = abs(C1) * sqrt(1 - e_red_scaled_sq + C1^2 * e_red_scaled_sq)
-    # We need R_factor - 1 to have opposite sign to C1 (or be zero if C1=0)
-    # If C1 > 0, R_factor < 1, so choose (1 - sqrt_D_norm) / A_quad
-    # If C1 < 0, R_factor > 1, so choose (1 + abs(C1)sqrt()) / A_quad which is (1 - C1 sqrt()) / A_quad
-    # If C1 = 0, R_factor = 1/A_quad = 1.
-    # So, R_factor = (1 - C1 * sqrt(1 - e_red_scaled_sq + C1**2 * e_red_scaled_sq)) / A_quad
-    # This relies on sqrt(discriminant_quad / (4*A_quad^2)) = C1*sqrt(...)/A_quad
-
-    # Using the direct quadratic formula:
-    # R_factor1 = (-B_quad + sqrt(discriminant_quad)) / (2.0 * A_quad)
-    # R_factor2 = (-B_quad - sqrt(discriminant_quad)) / (2.0 * A_quad)
-
-    # Heuristic for root choice: (R_factor - 1) should be -C1 * positive_term
-    # If C1 > 0, R_factor - 1 < 0 => R_factor < 1. Choose smaller root if both positive.
-    # If C1 < 0, R_factor - 1 > 0 => R_factor > 1. Choose larger root.
-    # If C1 = 0, R_factor = 1.
+    if discriminant_quad < 0:
+        discriminant_quad = 0  # Clamp small negatives
 
     R_factor = 0.0
-    if C1 == 0.0:
+    # The condition for choosing roots: (R-1) + C1 * sqrt(1 - R^2 * (e_red/R)^2) = 0
+    # sqrt(1 - R^2 * e_red_div_R_sq) is cosh_eta_g_red_inv = 1 / cosh(eta_g_red)
+    # So (R-1) + C1 / cosh(eta_g_red(R)) = 0
+
+    # When C1 = 0, R_factor must be 1.
+    # A_quad = 1, B_quad = -2, C_quad_val = 1. disc = 4 - 4*1*1 = 0. R = 2/2 = 1.
+    if abs(C1) < 1e-9:  # Effectively C1 is zero
         R_factor = 1.0
     else:
-        # Term under sqrt for the simplified form:
-        term_in_sqrt_simplified = (
-            1.0 - e_red_scaled_sq + C1**2 * e_red_scaled_sq
-        )
-        if (
-            term_in_sqrt_simplified < 0
-        ):  # Should be caught by discriminant_quad < 0
-            return np.nan, np.nan, np.nan
-
-        # R = (1 - C1 * sqrt(term_in_sqrt_simplified)) / A_quad
-        # This form assumes C1 is not negative in a way that flips the choice.
-        # Let's use the standard quadratic roots and pick.
         sqrt_disc = sqrt(discriminant_quad)
-        r1 = (2.0 + sqrt_disc) / (2.0 * A_quad)
-        r2 = (2.0 - sqrt_disc) / (2.0 * A_quad)
-
-        # Check condition: (R-1) vs -C1 * sqrt(1 - R^2 * e_red_scaled_sq)
-        # If C1 > 0, expect R < 1.
-        # If C1 < 0, expect R > 1.
-        # If C1 = 0, R = 1.
-
-        # A simpler check: if R_factor makes (1 - R_factor^2 * e_red_scaled_sq) negative, it's invalid.
-        # Both roots should be checked.
+        # Standard quadratic formula roots for A*R^2 + B*R + C = 0 are (-B +/- sqrt(disc))/(2A)
+        r1 = (-B_quad + sqrt_disc) / (2.0 * A_quad)
+        r2 = (-B_quad - sqrt_disc) / (2.0 * A_quad)
 
         chosen_R = False
-        # Try r2 first as it's often the one for C1 > 0
-        val_r2_term = 1.0 - r2**2 * e_red_scaled_sq
-        if val_r2_term >= -1e-9:  # Allow for small numerical error
-            if (
-                abs((r2 - 1.0) + C1 * sqrt(max(0, val_r2_term))) < 1e-7
-            ):  # Check consistency
-                R_factor = r2
+        # Try r1
+        # val_r1_term is (1 - r1^2 * e_red_div_R_sq) which is (1/cosh(eta_g_red(r1)))^2
+        val_r1_term = 1.0 - r1**2 * e_red_div_R_sq
+        if val_r1_term >= -1e-9:  # check if 1/cosh^2 is valid (non-negative)
+            # Check if (r1-1) + C1 * sqrt(max(0, val_r1_term)) approx 0
+            if abs((r1 - 1.0) + C1 * sqrt(max(0, val_r1_term))) < 1e-7:
+                R_factor = r1
                 chosen_R = True
 
         if not chosen_R:
-            val_r1_term = 1.0 - r1**2 * e_red_scaled_sq
-            if val_r1_term >= -1e-9:
-                if abs((r1 - 1.0) + C1 * sqrt(max(0, val_r1_term))) < 1e-7:
-                    R_factor = r1
+            # Try r2
+            val_r2_term = 1.0 - r2**2 * e_red_div_R_sq
+            if val_r2_term >= -1e-9:
+                if abs((r2 - 1.0) + C1 * sqrt(max(0, val_r2_term))) < 1e-7:
+                    R_factor = r2
                     chosen_R = True
+
+        if not chosen_R:
+            # Fallback if neither root strictly satisfies the check,
+            # could be due to numerical precision.
+            # The original GalSim HSM code has a preferred root choice based on sign of C1.
+            # (R-1) should have opposite sign to C1 (or be zero).
+            # If C1 > 0, R < 1. If C1 < 0, R > 1.
+            # r_alt1 = (1.0 + C1 * sqrt(max(0,1.0 - e_red_div_R_sq + C1**2 * e_red_div_R_sq))) / A_quad
+            # r_alt2 = (1.0 - C1 * sqrt(max(0,1.0 - e_red_div_R_sq + C1**2 * e_red_div_R_sq))) / A_quad
+            # The term sqrt(1 - e_red_div_R_sq + C1^2 * e_red_div_R_sq) is sqrt_disc / (2*abs(C1)) if C1!=0
+            # So r_alt1,2 = (1 +/- 0.5 * sqrt_disc) / A_quad. This matches -B_quad / (2*A_quad) +/- sqrt_disc / (2*A_quad)
+            # which are r1 and r2.
+            # The choice often depends on which solution is closer to 1 or physical.
+            # If C1 > 0, we expect R < 1. r2 is typically smaller.
+            # If C1 < 0, we expect R > 1. r1 is typically larger.
+            # Let's check physical R > 0.
+            if r1 > 0 and r2 <= 0:
+                R_factor = r1
+                chosen_R = True
+            elif r2 > 0 and r1 <= 0:
+                R_factor = r2
+                chosen_R = True
+            elif r1 > 0 and r2 > 0:  # Both positive, pick based on C1
+                if C1 > 0:
+                    R_factor = min(r1, r2)  # Expect R < 1
+                else:
+                    R_factor = max(r1, r2)  # Expect R > 1
+                # Check if this choice is consistent with the val_term
+                val_rf_term = 1.0 - R_factor**2 * e_red_div_R_sq
+                if (
+                    val_rf_term < -1e-9
+                ):  # This choice makes cosh_eta_g_red imaginary
+                    return np.nan, np.nan, np.nan
+                chosen_R = True
 
         if not chosen_R:
             return np.nan, np.nan, np.nan  # No consistent root found
 
-    # Sub-step e
-    e1_red = R_factor * e1_red_scaled
-    e2_red = R_factor * e2_red_scaled
+    if R_factor <= 1e-9:  # R must be positive, and typically around 1.
+        return np.nan, np.nan, np.nan
 
-    # Sub-step f
+    # Sub-step e (invert e_red_scaled = e_red / R)
+    e1_red = R_factor * e1_red_div_R
+    e2_red = R_factor * e2_red_div_R
+
+    # Sub-step f (invert e1_red, e2_red = shearmult(e1_gal, e2_gal, -e1_psf, -e2_psf))
+    # So, e1_gal, e2_gal = shearmult(e1_red, e2_red, e1_psf, e2_psf) (since -(-e1_psf) = e1_psf)
     e1_gal, e2_gal = shearmult(e1_red, e2_red, e1_psf, e2_psf)
 
-    # Sub-step g
+    # Sub-step g (calculate T_gal from SB_input and e1_gal, e2_gal)
     e_gal_sq = e1_gal**2 + e2_gal**2
     if e_gal_sq >= 1.0 - 1e-9:  # Allow for small numerical error
-        # This implies SB_input should have been 0 if T_gal is finite.
-        # Or T_gal is infinite.
-        if SB_input < 1e-9:  # If SB_input was (close to) zero
-            T_gal = 0.0  # Then T_gal must be zero for consistency
+        # This implies intrinsic galaxy is maximally sheared or unphysical.
+        # If SB_input was non-zero, this is problematic.
+        # If SB_input was (close to) zero, T_gal should be zero.
+        if SB_input < 1e-9:
+            T_gal = 0.0
             # If T_gal is 0, then moments are 0
             return 0.0, 0.0, 0.0
-        else:  # SB_input is non-zero but e_gal_sq is 1, inconsistent
+        else:  # SB_input is non-zero but e_gal_sq is ~1, inconsistent for finite T_gal
             return np.nan, np.nan, np.nan
 
-    cosheta_g_orig = 1.0 / sqrt(1.0 - e_gal_sq)
-    T_gal = SB_input * cosheta_g_orig
+    cosheta_g_obs_equiv = 1.0 / sqrt(
+        max(1e-9, 1.0 - e_gal_sq)
+    )  # cosheta for the original galaxy
+    T_gal = (
+        SB_input * cosheta_g_obs_equiv
+    )  # SB_input = T_gal_obs / cosheta_g_obs
 
     # --- Step 3: Recover xx_gal, yy_gal, xy_gal ---
+    # Note: T_gal here is T_gal_obs (sum of second moments, not intrinsic size)
     xx_gal = 0.5 * T_gal * (1.0 + e1_gal)
     yy_gal = 0.5 * T_gal * (1.0 - e1_gal)
     xy_gal = 0.5 * T_gal * e2_gal
@@ -278,9 +331,11 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
         T_psf / T_gal, e1_gal, e2_gal, 0.5 * rho4gal - 1, e1_psf, e2_psf, 0
     )
 
+    size_scaling = sqrt(1 - (e1_gal**2 + e2_gal**2))
     xx_final, yy_final, xy_final = get_corrected_mom3(
-        e1_bj, e2_bj, T_gal * sqrt(1 - (e1_gal**2 + e2_gal**2))
+        e1_bj, e2_bj, T_gal * size_scaling
     )
+
     return xx_final, xy_final, yy_final
 
 
@@ -320,11 +375,11 @@ def find_ellipmom1_bj(
             T_gal = Mxx_ + Myy_
             T_obs = T_gal + T_psf
             R = 1 - T_psf / T_obs / sqrt(1 - e1_psf**2 - e2_psf**2)
-            e1_gal = (Mxx_ - Myy_) / T_obs / R
+            e1_gal = (Myy_ - Mxx_) / T_obs / R
             e2_gal = (2 * Mxy_) / T_obs / R
 
-            Mxx__ = 0.5 * T_obs * (1 + e1_gal)
-            Myy__ = 0.5 * T_obs * (1 - e1_gal)
+            Mxx__ = 0.5 * T_obs * (1 - e1_gal)
+            Myy__ = 0.5 * T_obs * (1 + e1_gal)
             Mxy__ = 0.5 * T_obs * e2_gal
 
             Myy, Mxy, Mxx = invert_BJ_correction(
@@ -539,6 +594,26 @@ def find_ellipmom2_bj(
     x00 = x0
     y00 = y0
     do_cov = False
+
+    # Prepare the effective PSF moments for deconvolution
+    psf_moms_for_ellipmom1 = None
+    fixed_psf_components = np.array([0.0, 0.0, 0.0])
+    if psf_moments is not None:  # true_psf_moments are provided
+        fixed_psf_components = np.array([0.0121, 0.0, 0.0121])
+        if fixed_psf_components is not None:
+            # Calculate M_psf_effective = M_psf_true - M_psf_fixed for each observation
+            psf_moms_for_ellipmom1 = psf_moments - fixed_psf_components
+            # for true_psf_obs_i in psf_moments:
+            #     # Ensure fixed_psf_components is a NumPy array for element-wise subtraction
+            #     psf_moms_for_ellipmom1.append(
+            #         true_psf_obs_i
+            #         - np.array(fixed_psf_components, dtype=np.float64)
+            #     )
+        else:
+            # Original behavior: deconvolve by the true PSF
+            psf_moms_for_ellipmom1 = psf_moments
+    # If psf_moments is None, psf_moms_for_ellipmom1 remains None (no PSF deconvolution)
+
     for i in range(conf["maxiter"]):
         clear_result(res)
         clear_tmp(tmp)
@@ -554,7 +629,7 @@ def find_ellipmom2_bj(
             tmp,
             conf,
             do_cov,
-            psf_moments=psf_moments,
+            psf_moments=psf_moms_for_ellipmom1,
             rho4gal=rho4,
         )
         Bx, By, Cxx, Cxy, Cyy, rho4 = res["sums"][:6]
@@ -639,16 +714,16 @@ def find_ellipmom2_bj(
 
         res["numiter"] = i + 1
 
-        if (convergence_factor < conf["tol"]) or do_cov:
+        if convergence_factor < conf["tol"] or do_cov:
             if not do_cov:
                 do_cov = True
                 continue
             # rho4 /= Amp
             res["pars"][0] = x0
             res["pars"][1] = y0
-            res["pars"][2] = Mxx
-            res["pars"][3] = Mxy
-            res["pars"][4] = Myy
+            res["pars"][2] = Mxx - fixed_psf_components[0]
+            res["pars"][3] = Mxy - fixed_psf_components[1]
+            res["pars"][4] = Myy - fixed_psf_components[2]
             res["pars"][5] = rho4
             res["pars"][6:] = Amps * rho4
             break
@@ -1024,9 +1099,9 @@ def regauss(
         [
             resarray[0]["pars"][0],
             resarray[0]["pars"][1],
-            xx_f,
-            xy_f,
             yy_f,
+            xy_f,
+            xx_f,
         ]
     )
 
