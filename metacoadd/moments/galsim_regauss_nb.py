@@ -15,6 +15,7 @@ from numba import njit, objmode
 
 from .galsim_admom_nb import (
     find_ellipmom2,
+    get_damped_intrinsic_moments,
     combine_multiband_observations_array,
     clear_result,
     clear_tmp,
@@ -22,7 +23,7 @@ from .galsim_admom_nb import (
 )
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def _check_exp(pixels, w_data):
     w_sum = 0
     for pixel in pixels:
@@ -31,7 +32,7 @@ def _check_exp(pixels, w_data):
     return w_sum
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def shearmult(e1_a, e2_a, e1_b, e2_b):
     dotp = e1_a * e1_b + e2_a * e2_b
     factor = (1.0 - sqrt(1 - e1_b * e1_b - e2_b * e2_b)) / (
@@ -47,7 +48,7 @@ def shearmult(e1_a, e2_a, e1_b, e2_b):
     return e1_out, e2_out
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
     cosheta_p = 1 / sqrt(1 - e1_psf * e1_psf - e2_psf * e2_psf)
     cosheta_g = 1 / sqrt(1 - e1_gal * e1_gal - e2_gal * e2_gal)
@@ -68,7 +69,7 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
     return e1_new, e2_new
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def get_corrected_mom3(e1, e2, SB):
     """ """
 
@@ -79,7 +80,7 @@ def get_corrected_mom3(e1, e2, SB):
     return xx, yy, xy
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def invert_BJ_correction(
     yy_final,
     xx_final,
@@ -97,11 +98,6 @@ def invert_BJ_correction(
     # --- Step 1: Invert get_corrected_mom3 ---
     if (xx_final + yy_final) == 0:
         # This case needs careful handling, implies T_final = 0.
-        if (
-            T_psf == 0
-        ):  # If no PSF, and final moments are zero, initial were zero
-            return 0.0, 0.0, 0.0
-        # If PSF exists, T_final = 0 is more complex, could be specific cancellation.
         return np.nan, np.nan, np.nan
 
     T_final = xx_final + yy_final
@@ -147,29 +143,30 @@ def invert_BJ_correction(
     k_eff_denominator = 4.0 - rho4gal
 
     C1 = 0.0
-    if abs(k_eff_denominator) < 1e-9:  # rho4gal is approx 4.0
-        # If rho4gal = 4, K_eff is infinite.
-        # R = 1 - (sig2ratio_val / cosheta_g_red) * K_eff
-        # If sig2ratio_val is non-zero, R -> -inf (unphysical).
-        # If sig2ratio_val is zero (e.g. T_psf=0), then R=1, C1=0.
-        if (
-            abs(sig2ratio_val * k_eff_numerator) < 1e-9
-        ):  # Effectively T_psf=0 or rho4gal=0 (if rho4gal=4, means T_psf=0)
-            C1 = 0.0  # Results in R_factor = 1.0
-        else:  # rho4gal=4 and T_psf !=0: K_eff is infinite, C1 is infinite. Problematic.
-            # Instead of returning nan immediately, we can use a capped C1.
-            # Or, if truly infinite k_eff is intended to lead to failure, keep nan.
-            # For stability, let's assume extreme C1 is the problem.
-            # If sig2ratio_val * k_eff_numerator is positive, C1 -> +inf
-            # If sig2ratio_val * k_eff_numerator is negative, C1 -> -inf
-            # Capping C1 will be done after this block.
-            # For now, if it's this specific singularity, returning nan might be intended.
-            return np.nan, np.nan, np.nan
-    elif abs(k_eff_numerator) < 1e-9:  # rho4gal is approx 0.0
-        C1 = 0.0  # K_eff is 0, so C1 is 0. Results in R_factor = 1.0
-    else:
-        k_eff = k_eff_numerator / k_eff_denominator
-        C1 = sig2ratio_val * k_eff
+    if np.isfinite(k_eff_numerator) and np.isfinite(k_eff_denominator):
+        if abs(k_eff_denominator) < 1e-9:  # rho4gal is approx 4.0
+            # If rho4gal = 4, K_eff is infinite.
+            # R = 1 - (sig2ratio_val / cosheta_g_red) * K_eff
+            # If sig2ratio_val is non-zero, R -> -inf (unphysical).
+            # If sig2ratio_val is zero (e.g. T_psf=0), then R=1, C1=0.
+            if (
+                abs(sig2ratio_val * k_eff_numerator) < 1e-9
+            ):  # Effectively T_psf=0 or rho4gal=0 (if rho4gal=4, means T_psf=0)
+                C1 = 0.0  # Results in R_factor = 1.0
+            else:  # rho4gal=4 and T_psf !=0: K_eff is infinite, C1 is infinite. Problematic.
+                # Instead of returning nan immediately, we can use a capped C1.
+                # Or, if truly infinite k_eff is intended to lead to failure, keep nan.
+                # For stability, let's assume extreme C1 is the problem.
+                # If sig2ratio_val * k_eff_numerator is positive, C1 -> +inf
+                # If sig2ratio_val * k_eff_numerator is negative, C1 -> -inf
+                # Capping C1 will be done after this block.
+                # For now, if it's this specific singularity, returning nan might be intended.
+                return np.nan, np.nan, np.nan
+        elif abs(k_eff_numerator) < 1e-9:  # rho4gal is approx 0.0
+            C1 = 0.0  # K_eff is 0, so C1 is 0. Results in R_factor = 1.0
+        else:
+            k_eff = k_eff_numerator / k_eff_denominator
+            C1 = sig2ratio_val * k_eff
 
     # Cap the magnitude of C1 to prevent numerical instability
     C1_MAX_MAG = 500.0  # This value may need tuning
@@ -321,7 +318,7 @@ def invert_BJ_correction(
     return xx_gal, xy_gal, yy_gal
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
     T_gal = xx_gal + yy_gal
     e1_gal = (xx_gal - yy_gal) / T_gal
@@ -339,7 +336,7 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
     return xx_final, xy_final, yy_final
 
 
-@njit(fastmath=True, cache=False)
+@njit(cache=False)
 def find_ellipmom1_bj(
     pixels_list,
     band_tracker,
@@ -367,34 +364,40 @@ def find_ellipmom1_bj(
     band_ind = 0
     n_list = len(pixels_list)
     for i_list in range(n_list):
-        if psf_moments is not None:
-            T_psf = psf_moments[i_list][0] + psf_moments[i_list][2]
-            e1_psf = (psf_moments[i_list][2] - psf_moments[i_list][0]) / T_psf
-            e2_psf = 2 * psf_moments[i_list][1] / T_psf
+        T_psf = psf_moments[i_list][0] + psf_moments[i_list][2]
+        e1_psf = (psf_moments[i_list][2] - psf_moments[i_list][0]) / T_psf
+        e2_psf = 2 * psf_moments[i_list][1] / T_psf
 
-            T_gal = Mxx_ + Myy_
-            T_obs = T_gal + T_psf
-            R = 1 - T_psf / T_obs / sqrt(1 - e1_psf**2 - e2_psf**2)
-            e1_gal = (Myy_ - Mxx_) / T_obs / R
-            e2_gal = (2 * Mxy_) / T_obs / R
+        T_gal = Mxx_ + Myy_
+        T_obs = T_gal + T_psf
+        R = 1 - T_psf / T_obs / sqrt(1 - e1_psf**2 - e2_psf**2)
+        e1_gal = (Myy_ - Mxx_) / T_obs / R
+        e2_gal = (2 * Mxy_) / T_obs / R
 
-            Mxx__ = 0.5 * T_obs * (1 - e1_gal)
-            Myy__ = 0.5 * T_obs * (1 + e1_gal)
-            Mxy__ = 0.5 * T_obs * e2_gal
+        Mxx__ = 0.5 * T_obs * (1 - e1_gal)
+        Myy__ = 0.5 * T_obs * (1 + e1_gal)
+        Mxy__ = 0.5 * T_obs * e2_gal
 
-            Myy, Mxy, Mxx = invert_BJ_correction(
-                Mxx__,
-                Myy__,
-                Mxy__,
-                T_psf,
-                e1_psf,
-                e2_psf,
-                rho4gal,
-            )
-        else:
-            Mxx = Mxx_
-            Mxy = Mxy_
-            Myy = Myy_
+        Myy, Mxy, Mxx = invert_BJ_correction(
+            Mxx__,
+            Myy__,
+            Mxy__,
+            T_psf,
+            e1_psf,
+            e2_psf,
+            rho4gal,
+        )
+
+        if (
+            (not np.isfinite(Mxx))
+            | (not np.isfinite(Myy))
+            | (not np.isfinite(Mxy))
+        ):
+            tracking += 1
+            if tracking == band_tracker[band_ind]:
+                band_ind += 1
+                tracking = 0
+            continue
 
         # We need to compute the normalization before without the PSF correction
         detM = Mxx * Myy - Mxy * Mxy
@@ -495,59 +498,57 @@ def find_ellipmom1_bj(
 
         if not do_cov:
             tmp_sums[:6] /= tmp_sums[6 + band_ind]
-            if psf_moments is not None:
-                new_yy, new_xy, new_xx = BJ_correction(
-                    tmp_sums[2] * 2,
-                    tmp_sums[3] * 2,
-                    tmp_sums[4] * 2,
-                    tmp_sums[5],
-                    e1_psf,
-                    e2_psf,
-                    T_psf,
-                )
-                T_BJ = new_xx + new_yy
+            new_yy, new_xy, new_xx = BJ_correction(
+                tmp_sums[2] * 2,
+                tmp_sums[3] * 2,
+                tmp_sums[4] * 2,
+                tmp_sums[5],
+                e1_psf,
+                e2_psf,
+                T_psf,
+            )
+            T_BJ = new_xx + new_yy
 
-                T_gal = T_BJ - T_psf
-                R = 1 - T_psf / T_BJ / sqrt(1 - e1_psf**2 - e2_psf**2)
-                e1_gal = (new_yy - new_xx) / T_gal * R
-                e2_gal = (2 * new_xy) / T_gal * R
+            T_gal = T_BJ - T_psf
+            R = 1 - T_psf / T_BJ / sqrt(1 - e1_psf**2 - e2_psf**2)
+            e1_gal = (new_yy - new_xx) / T_gal * R
+            e2_gal = (2 * new_xy) / T_gal * R
 
-                new_xx = 0.5 * T_gal * (1 - e1_gal)
-                new_yy = 0.5 * T_gal * (1 + e1_gal)
-                new_xy = 0.5 * T_gal * e2_gal
-                e1_gal = (new_yy - new_xx) / T_gal
-                e2_gal = (2 * new_xy) / T_gal
+            new_xx = 0.5 * T_gal * (1 - e1_gal)
+            new_yy = 0.5 * T_gal * (1 + e1_gal)
+            new_xy = 0.5 * T_gal * e2_gal
+            e1_gal = (new_yy - new_xx) / T_gal
+            e2_gal = (2 * new_xy) / T_gal
 
-                tmp_sums[2:5] = new_xx, new_xy, new_yy
-                tmp_sums[2:5] /= 2
+            tmp_sums[2:5] = new_xx, new_xy, new_yy
+            tmp_sums[2:5] /= 2
 
             res["sums"][:] += tmp_sums * ivar_sum
             flux_weights[band_ind] += ivar_sum
         else:
             tmp["sums"][i_list][:6] /= tmp["sums"][i_list][6]
-            if psf_moments is not None:
-                new_yy, new_xy, new_xx = BJ_correction(
-                    tmp["sums"][i_list][2] * 2,
-                    tmp["sums"][i_list][3] * 2,
-                    tmp["sums"][i_list][4] * 2,
-                    tmp["sums"][i_list][5],
-                    e1_psf,
-                    e2_psf,
-                    T_psf,
-                )
-                T_BJ = new_xx + new_yy
+            new_yy, new_xy, new_xx = BJ_correction(
+                tmp["sums"][i_list][2] * 2,
+                tmp["sums"][i_list][3] * 2,
+                tmp["sums"][i_list][4] * 2,
+                tmp["sums"][i_list][5],
+                e1_psf,
+                e2_psf,
+                T_psf,
+            )
+            T_BJ = new_xx + new_yy
 
-                T_gal = T_BJ - T_psf
-                R = 1 - T_psf / T_BJ / sqrt(1 - e1_psf**2 - e2_psf**2)
-                e1_gal = (new_yy - new_xx) / T_gal * R
-                e2_gal = (2 * new_xy) / T_gal * R
+            T_gal = T_BJ - T_psf
+            R = 1 - T_psf / T_BJ / sqrt(1 - e1_psf**2 - e2_psf**2)
+            e1_gal = (new_yy - new_xx) / T_gal * R
+            e2_gal = (2 * new_xy) / T_gal * R
 
-                new_xx = 0.5 * T_gal * (1 - e1_gal)
-                new_yy = 0.5 * T_gal * (1 + e1_gal)
-                new_xy = 0.5 * T_gal * e2_gal
+            new_xx = 0.5 * T_gal * (1 - e1_gal)
+            new_yy = 0.5 * T_gal * (1 + e1_gal)
+            new_xy = 0.5 * T_gal * e2_gal
 
-                tmp["sums"][i_list][2:5] = new_xx, new_xy, new_yy
-                tmp["sums"][i_list][2:5] /= 2
+            tmp["sums"][i_list][2:5] = new_xx, new_xy, new_yy
+            tmp["sums"][i_list][2:5] /= 2
             tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
@@ -562,12 +563,15 @@ def find_ellipmom1_bj(
         )
         res["s2n"] = snr
     else:
-        res["sums"][:] /= np.sum(flux_weights)
+        if np.sum(flux_weights) != 0:
+            res["sums"][:] /= np.sum(flux_weights)
+        else:
+            res["sums"][:] = np.nan
 
     res["wsum"] /= n_list
 
 
-@njit(fastmath=True, cache=False)
+@njit(cache=False)
 def find_ellipmom2_bj(
     pixels_list,
     band_tracker,
@@ -600,6 +604,7 @@ def find_ellipmom2_bj(
     fixed_psf_components = np.array([0.0, 0.0, 0.0])
     if psf_moments is not None:  # true_psf_moments are provided
         fixed_psf_components = np.array([0.0121, 0.0, 0.0121])
+        # fixed_psf_components = np.array([0.0, 0.0, 0.0])
         if fixed_psf_components is not None:
             # Calculate M_psf_effective = M_psf_true - M_psf_fixed for each observation
             psf_moms_for_ellipmom1 = psf_moments - fixed_psf_components
@@ -653,7 +658,10 @@ def find_ellipmom2_bj(
         if semi_b2 <= 0:
             res["flags"] = ngmix.flags.NONPOS_SIZE
 
-        shiftscale = sqrt(semi_b2)
+        if semi_b2 <= 0:
+            shiftscale = np.nan
+        else:
+            shiftscale = sqrt(semi_b2)
         if res["numiter"] == 0:
             shiftscale0 = shiftscale
 
@@ -667,22 +675,32 @@ def find_ellipmom2_bj(
             dx = conf["bound_correct_wt"]
         if dx < -conf["bound_correct_wt"]:
             dx = -conf["bound_correct_wt"]
+        if not np.isfinite(dx):
+            dx = conf["bound_correct_wt"]
         if dy > conf["bound_correct_wt"]:
             dy = conf["bound_correct_wt"]
         if dy < -conf["bound_correct_wt"]:
             dy = -conf["bound_correct_wt"]
+        if not np.isfinite(dy):
+            dy = conf["bound_correct_wt"]
         if dxx > conf["bound_correct_wt"]:
             dxx = conf["bound_correct_wt"]
         if dxx < -conf["bound_correct_wt"]:
             dxx = -conf["bound_correct_wt"]
+        if not np.isfinite(dxx):
+            dxx = conf["bound_correct_wt"]
         if dxy > conf["bound_correct_wt"]:
             dxy = conf["bound_correct_wt"]
         if dxy < -conf["bound_correct_wt"]:
             dxy = -conf["bound_correct_wt"]
+        if not np.isfinite(dxy):
+            dxy = conf["bound_correct_wt"]
         if dyy > conf["bound_correct_wt"]:
             dyy = conf["bound_correct_wt"]
         if dyy < -conf["bound_correct_wt"]:
             dyy = -conf["bound_correct_wt"]
+        if not np.isfinite(dyy):
+            dyy = conf["bound_correct_wt"]
 
         if abs(dx) > abs(dy):
             convergence_factor = abs(dx)
@@ -714,16 +732,27 @@ def find_ellipmom2_bj(
 
         res["numiter"] = i + 1
 
-        if convergence_factor < conf["tol"] or do_cov:
+        if convergence_factor < conf["tol"]:  # or do_cov:
             if not do_cov:
                 do_cov = True
                 continue
+            Mxx_corr, Mxy_corr, Myy_corr = get_damped_intrinsic_moments(
+                Mxx,
+                Mxy,
+                Myy,
+                fixed_psf_components,
+                conf["lambda_ell"],
+                conf["min_T_abs"],
+            )
             # rho4 /= Amp
             res["pars"][0] = x0
             res["pars"][1] = y0
-            res["pars"][2] = Mxx - fixed_psf_components[0]
-            res["pars"][3] = Mxy - fixed_psf_components[1]
-            res["pars"][4] = Myy - fixed_psf_components[2]
+            # res["pars"][2] = Mxx - fixed_psf_components[0]
+            # res["pars"][3] = Mxy - fixed_psf_components[1]
+            # res["pars"][4] = Myy - fixed_psf_components[2]
+            res["pars"][2] = Mxx_corr
+            res["pars"][3] = Mxy_corr
+            res["pars"][4] = Myy_corr
             res["pars"][5] = rho4
             res["pars"][6:] = Amps * rho4
             break
@@ -1051,6 +1080,13 @@ def regauss(
     )
 
     x0_f, y0_f, yy_f, xy_f, xx_f = resarray[0]["pars"][:5]
+
+    # if abs(xx_f) < 1e-3:
+    #     xx_f = 1e-3
+    # if abs(yy_f) < 1e-3:
+    #     yy_f = 1e-3
+    # # if abs(xy_f) < 1e-3:
+    # #     xy_f = 0.0
     if resarray[0]["flags"] != 0:
         return
 

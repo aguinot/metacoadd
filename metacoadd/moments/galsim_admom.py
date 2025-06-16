@@ -25,6 +25,8 @@ DEFAULT_SHIFTMAX = 5.0  # pixels
 DEFAULT_TOL = 1.0e-6
 DEFAULT_MAX_MOMENT_NSIG2 = 25
 DEFAULT_BOUND_CORRECT_WT = 0.25
+DEFAULT_LAMBDA_ELL = 1e-6  # This parameter is used for the damping to regularize moments of small objects
+DEFAULT_MIN_T_ABS = 2e-3  # # This parameter is used to avoid negative T values in moments measurement
 
 
 class GAdmomResult(dict):
@@ -126,6 +128,8 @@ class GAdmomFitter:
         tol=DEFAULT_TOL,
         max_moment_nsig2=DEFAULT_MAX_MOMENT_NSIG2,
         bound_correct_wt=DEFAULT_BOUND_CORRECT_WT,
+        lambda_ell=DEFAULT_LAMBDA_ELL,
+        min_T_abs=DEFAULT_MIN_T_ABS,
         rng=None,
     ):
         self.guess_fwhm = guess_fwhm
@@ -136,6 +140,8 @@ class GAdmomFitter:
             tol=tol,
             max_moment_nsig2=max_moment_nsig2,
             bound_correct_wt=bound_correct_wt,
+            lambda_ell=lambda_ell,
+            min_T_abs=min_T_abs,
         )
 
         self.rng = rng
@@ -236,6 +242,8 @@ class GAdmomFitter:
         tol,
         max_moment_nsig2,
         bound_correct_wt,
+        lambda_ell,
+        min_T_abs,
     ):  # noqa
         dt = np.dtype(_Gadmom_conf_dtype, align=True)
         conf = np.zeros(1, dtype=dt)
@@ -245,6 +253,8 @@ class GAdmomFitter:
         conf["tol"] = tol
         conf["max_moment_nsig2"] = max_moment_nsig2
         conf["bound_correct_wt"] = bound_correct_wt
+        conf["lambda_ell"] = lambda_ell
+        conf["min_T_abs"] = min_T_abs
 
         self.conf = conf
 
@@ -514,4 +524,6 @@ _Gadmom_conf_dtype = [
     ("tol", "f8"),
     ("max_moment_nsig2", "f8"),
     ("bound_correct_wt", "f8"),
+    ("lambda_ell", "f8"),
+    ("min_T_abs", "f8"),
 ]
