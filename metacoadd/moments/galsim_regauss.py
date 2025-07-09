@@ -16,6 +16,8 @@ from .galsim_admom import (
     DEFAULT_MAXITER,
     DEFAULT_SHIFTMAX,
     DEFAULT_TOL,
+    DEFAULT_LAMBDA_ELL,
+    DEFAULT_MIN_T_ABS,
 )
 from .galsim_admom import GAdmomFitter, GAdmomResult, get_result
 from .galsim_regauss_nb import (
@@ -88,6 +90,8 @@ class ReGaussFitter(GAdmomFitter):
         tol=DEFAULT_TOL,
         max_moment_nsig2=DEFAULT_MAX_MOMENT_NSIG2,
         bound_correct_wt=DEFAULT_BOUND_CORRECT_WT,
+        lambda_ell=DEFAULT_LAMBDA_ELL,
+        min_T_abs=DEFAULT_MIN_T_ABS,
         rng=None,
     ):
         self.guess_fwhm = guess_fwhm
@@ -97,6 +101,8 @@ class ReGaussFitter(GAdmomFitter):
             tol=tol,
             max_moment_nsig2=max_moment_nsig2,
             bound_correct_wt=bound_correct_wt,
+            lambda_ell=lambda_ell,
+            min_T_abs=min_T_abs,
         )
 
         self.rng = rng
