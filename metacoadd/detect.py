@@ -183,8 +183,11 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     elif header is not None:
         wcs = WCS(header)
 
+    # NOTE: Sometimes we end up with a non-zero background, I don't know why..
+    bkg = sep.Background(img, mask=mask_rms)
+
     obj, seg = sep.extract(
-        img,
+        img - bkg.globalback,
         thresh,
         err=rms,
         segmentation_map=True,
