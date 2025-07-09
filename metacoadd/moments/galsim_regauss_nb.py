@@ -761,7 +761,7 @@ def find_ellipmom2_bj(
             res["flags"] = ngmix.flags.MAXITER
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def goodFFTSize(N):
     if N <= 2:
         return 2
@@ -775,7 +775,7 @@ def goodFFTSize(N):
     return Nk
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def fast_convolve_image1(
     image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)
 ):

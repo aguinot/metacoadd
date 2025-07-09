@@ -11,7 +11,7 @@ import numpy as np
 from numba import njit
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def find_ellipmom1(
     pixels_list,
     band_tracker,
@@ -172,7 +172,7 @@ def find_ellipmom1(
     res["wsum"] /= n_list
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def find_ellipmom2(
     pixels_list,
     band_tracker,
@@ -453,7 +453,7 @@ def get_damped_intrinsic_moments(
     return Mxx_int, Mxy_int, Myy_int  # , status_flag
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def compute_effective_flux(fluxes, flux_cov):
     """
     Compute effective flux, its variance, and optional cross-covariances
@@ -496,7 +496,7 @@ def compute_effective_flux(fluxes, flux_cov):
     return F_eff, F_eff_var, weights, 1 / flux_weights
 
 
-@njit(fastmath=True, cache=True)
+@njit(cache=True)
 def compute_flux_cross_covs(flux_weights, target_covs):
     """
     Compute effective flux, its variance, and optional cross-covariances
