@@ -1,4 +1,5 @@
 import copy
+import re
 
 import numpy as np
 
@@ -136,13 +137,13 @@ TEST_METADETECT_CONFIG = {
 _available_method = ["weighted"]
 
 
-SHAPE_CAT_DTYPE = [
+_SHAPE_CAT_DTYPE = [
     ("regauss_flags", np.int32),
     ("regauss_nimage", np.int32),
     ("regauss_dx", np.float64),
     ("regauss_dy", np.float64),
-    ("regauss_flux", np.float64),
-    ("regauss_flux_err", np.float64),
+    # ("regauss_flux", np.float64),
+    # ("regauss_flux_err", np.float64),
     ("regauss_T", np.float64),
     ("regauss_T_err", np.float64),
     ("regauss_Tr", np.float64),
@@ -417,7 +418,6 @@ class MetaCoadd(SimpleCoadd):
             "2p": galsim.Shear(g1=0, g2=step),
             "noshear": galsim.Shear(g1=0, g2=0),
         }
-        self._bandpass = roman.getBandpasses()["Y106"]
         self._true_psf = psf_true
 
     # @profile
@@ -829,6 +829,10 @@ class MetaCoadd(SimpleCoadd):
         return all_shape_cat
 
     def build_output_cat(self, all_sep_cat, all_shape_cat):
+        SHAPE_CAT_DTYPE = _SHAPE_CAT_DTYPE.copy()
+        for i in range(self.coaddimage.mb_explist.nband):
+            SHAPE_CAT_DTYPE.append(("regauss_flux_" + str(i), np.float64))
+            SHAPE_CAT_DTYPE.append(("regauss_flux_err_" + str(i), np.float64))
         final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
         final_cat = np.zeros(
             len(all_sep_cat),
@@ -844,6 +848,14 @@ class MetaCoadd(SimpleCoadd):
                         final_cat[i][key] = all_shape_cat[i]["pars"][0]
                     elif shape_key == "dy":
                         final_cat[i][key] = all_shape_cat[i]["pars"][1]
+                    elif "flux_err" in shape_key:
+                        flux_ind = int(re.findall(r"\d+", shape_key)[0])
+                        final_cat[i][key] = all_shape_cat[i]["flux_err"][
+                            flux_ind
+                        ]
+                    elif "flux" in shape_key:
+                        flux_ind = int(re.findall(r"\d+", shape_key)[0])
+                        final_cat[i][key] = all_shape_cat[i]["flux"][flux_ind]
                     else:
                         final_cat[i][key] = all_shape_cat[i][shape_key]
                 except:
