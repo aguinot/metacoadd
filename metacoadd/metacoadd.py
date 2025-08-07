@@ -14,11 +14,14 @@ from ngmix.metacal.convenience import (
 )
 
 from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
-from .metacal_oversampling import MetacalFitGaussPSFUnderRes
+from .metacal_oversampling import MetacalFixGaussPSFUnderRes
 from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
 from .moments.galsim_admom import GAdmomFitter
 from .uberseg import fast_uberseg
+
+import matplotlib.pyplot as plt
+import os
 
 
 TEST_METADETECT_CONFIG = {
@@ -484,12 +487,12 @@ class MetaCoadd(SimpleCoadd):
                         gmix=None, obs=obs, rng=obs_rng
                     )
                 _rotate_obs_image_square(noise_obs, k=1)
-                mcal_maker = MetacalFitGaussPSFUnderRes(
+                mcal_maker = MetacalFixGaussPSFUnderRes(
                     obs,
                     self.mcal_config["step"],
                     obs_rng,
                 )
-                mcal_maker_noise = MetacalFitGaussPSFUnderRes(
+                mcal_maker_noise = MetacalFixGaussPSFUnderRes(
                     noise_obs,
                     self.mcal_config["step"],
                     obs_rng,
@@ -550,12 +553,12 @@ class MetaCoadd(SimpleCoadd):
                 for j, obs in enumerate(obs_list):
                     obs_rng = np.random.RandomState(self.rng.randint(2**32))
 
-                    mcal_maker = MetacalFitGaussPSFUnderRes(
+                    mcal_maker = MetacalFixGaussPSFUnderRes(
                         obs,
                         self.mcal_config["step"],
                         obs_rng,
                     )
-                    mcal_maker_noise = MetacalFitGaussPSFUnderRes(
+                    mcal_maker_noise = MetacalFixGaussPSFUnderRes(
                         noise_mbobs[i][j],
                         self.mcal_config["step"],
                         obs_rng,
@@ -705,10 +708,17 @@ class MetaCoadd(SimpleCoadd):
 
         psf_reconv = galsim.Gaussian(fwhm=0.3)
 
+        print("###############################################")
+        print("Running shape measurement for", mcal_key)
+        print("###############################################")
+
+        self.all_obs = []
         all_shape_cat = []
         T_psf_avg = 0.0
         W_psf = 0.0
+        k = 0
         for det_obj in sep_cat:
+            print("### Processing object", det_obj["number"], "###")
             # cutout_size = np.int64(
             #     np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
             # )
@@ -819,6 +829,32 @@ class MetaCoadd(SimpleCoadd):
                     det_obj["yy"] * scale_sq,
                 ]
             )
+            self.all_obs.append(mb_obs)
+
+            # main_dir = "/Users/aguinot/Documents/roman/test_metacoadd/plots/"
+            # obj_dir = os.path.join(main_dir, mcal_key + "_obj_" + str(k))
+            # if not os.path.exists(obj_dir):
+            #     os.makedirs(obj_dir)
+            # for i, obs_list in enumerate(mb_obs):
+            #     for j, obs in enumerate(obs_list):
+            #         plt.figure(figsize=(10, 10))
+            #         img = obs.image
+            #         m = np.median(img)
+            #         s = np.std(img)
+            #         plt.imshow(
+            #             img,
+            #             origin="lower",
+            #             cmap="gist_stern",
+            #             vmin=max(m - 5 * s, np.min(img)),
+            #             vmax=m + 5 * s,
+            #         )
+            #         plt.colorbar()
+            #         plt.savefig(
+            #             f"{obj_dir}/{mcal_key}_obj_{k}_img_{i}_{j}.png"
+            #         )
+            #         plt.clf()
+            #         plt.close()
+
             res = fitter.go(mb_obs, guess=guess)
             res = {k: v for k, v in res.items()}
             res["g1"] = res["g"][0]
@@ -826,6 +862,8 @@ class MetaCoadd(SimpleCoadd):
             res["Tpsf"] = T_psf_avg / W_psf
 
             all_shape_cat.append(res)
+            k += 1
+        print()
         return all_shape_cat
 
     def build_output_cat(self, all_sep_cat, all_shape_cat):

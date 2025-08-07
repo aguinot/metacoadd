@@ -33,8 +33,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
-    def __init__(self, obs, step, rng=None):
+class MetacalFixGaussPSFUnderRes(MetacalGaussPSF):
+    def __init__(self, obs, step, fwhm_target=0.3, rng=None):
         """
         Parameters
         ----------
@@ -45,6 +45,7 @@ class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
             using the noise field in the observations
         """
         self.step = step
+        self.fwhm_target = fwhm_target
         super().__init__(obs=obs, rng=rng)
 
     def get_obs_galshear(self, mcal_type):
@@ -74,7 +75,14 @@ class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
 
         type = "gal_shear"
 
-        newpsf_image, newpsf_obj = self.get_target_psf(shear, type)
+        if mcal_type == "noshear":
+            newpsf_image, newpsf_obj = self.get_target_psf(
+                # We need to dilate the PSF even for noshear
+                Shape(self.step, 0.0),
+                type,
+            )
+        else:
+            newpsf_image, newpsf_obj = self.get_target_psf(shear, type)
 
         # if mcal_type == "noshear":
         #     unsheared_image = self.get_target_image(newpsf_obj, shear=None)
@@ -118,6 +126,7 @@ class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
                 nx=nx,
                 ny=ny,
                 wcs=self.get_wcs(),
+                method="no_pixel",  # pixel is already in psf
             )
         except RuntimeError as err:
             # argh, galsim uses generic exceptions
@@ -165,13 +174,13 @@ class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
         key = self._get_psf_key(shear, doshear)
         if len(self._psf_cache) == 0 or "True" in key:
             if key not in self._psf_cache:
-                psf_grown = galsim.Gaussian(fwhm=0.3)
+                psf_grown_ = galsim.Gaussian(fwhm=self.fwhm_target)
+                psf_grown = galsim.Convolve(psf_grown_, self.pixel)
 
                 psf_bounds = self.psf_image.bounds
 
                 try:
-                    psf_grown_ = galsim.Convolve(psf_grown, self.pixel)
-                    psf_grown_image = psf_grown_.drawImage(
+                    psf_grown_image = psf_grown.drawImage(
                         bounds=psf_bounds,
                         method="no_pixel",  # pixel is already in psf
                         wcs=self.get_psf_wcs(),
@@ -255,6 +264,73 @@ class MetacalFitGaussPSFUnderRes(MetacalGaussPSF):
         wcs_psf = self.get_psf_wcs()
         self.pixel_psf = wcs_psf.toWorld(galsim.Pixel(scale=1))
         self.pixel_psf_inv = galsim.Deconvolve(self.pixel_psf)
+
+
+class MetacalFitGaussPSFUnderRes(
+    MetacalFixGaussPSFUnderRes, MetacalFitGaussPSF
+):
+    def __init__(self, obs, step, rng=None):
+        """
+        Parameters
+        ----------
+        obs: ngmix Observation
+            The observation to use for metacal
+        rng: numpy.random.RandomState, optional
+            Random state for generating noise fields.  Not needed if metacal if
+            using the noise field in the observations
+        """
+        super().__init__(obs=obs, step=step, rng=rng)
+        self._do_psf_fit()
+
+    def get_target_psf(self, shear, type):
+        """
+        get image and galsim object for the dilated, possibly sheared, psf
+
+        parameters
+        ----------
+        shear: ngmix.Shape
+            The applied shear
+        type: string
+            Type of psf target.  For type='gal_shear', the psf is just dilated
+            to deal with noise amplification.  For type='psf_shear' the psf is
+            also sheared for calculating Rpsf
+
+        returns
+        -------
+        image, galsim object
+        """
+
+        _check_shape(shear)
+
+        if type == "psf_shear":
+            doshear = True
+        else:
+            doshear = False
+
+        key = self._get_psf_key(shear, doshear)
+        if len(self._psf_cache) == 0 or "True" in key:
+            if key not in self._psf_cache:
+                psf_grown = self._get_dilated_psf(shear=shear, doshear=doshear)
+
+                psf_bounds = self.psf_image.bounds
+
+                try:
+                    # psf_grown_ = galsim.Convolve(psf_grown, self.pixel)
+                    psf_grown_image = psf_grown.drawImage(
+                        bounds=psf_bounds,
+                        method="no_pixel",  # pixel is already in psf
+                        wcs=self.get_psf_wcs(),
+                    )
+                except RuntimeError as err:
+                    # argh, galsim uses generic exceptions
+                    raise GMixRangeError(f"galsim error: '{str(err)}'")
+
+                self._psf_cache[key] = (psf_grown_image, psf_grown)
+        else:
+            key = list(self._psf_cache)[0]
+
+        psf_grown_image, psf_grown = self._psf_cache[key]
+        return psf_grown_image.copy(), psf_grown
 
 
 class MetacalBootstrapper:
@@ -487,8 +563,8 @@ def _get_all_metacal(
                 m = MetacalGaussPSF(obs=obs, rng=rng)
             elif psf == "fitgauss":
                 m = MetacalFitGaussPSF(obs=obs, rng=rng)
-            elif psf == "fitgauss_UR":
-                m = MetacalFitGaussPSFUnderRes(obs=obs, rng=rng)
+            elif psf == "fixgauss_UR":
+                m = MetacalFixGaussPSFUnderRes(obs=obs, rng=rng)
             else:
                 m = MetacalAnalyticPSF(obs=obs, psf=psf, rng=rng)
 

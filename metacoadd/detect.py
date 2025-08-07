@@ -257,7 +257,8 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     good_snr = (fluxes > 0) & (fluxerrs > 0)
     snr[good_snr] = fluxes[good_snr] / fluxerrs[good_snr]
 
-    ra, dec = wcs.all_pix2world(obj["x"], obj["y"], 0)
+    if wcs is not None:
+        ra, dec = wcs.all_pix2world(obj["x"], obj["y"], 0)
 
     # Build the equivalent to IMAFLAGS_ISO
     # But you only know if the object is flagged or not, you don't get the flag
@@ -274,8 +275,6 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
 
     out["number"] = seg_id
     out["npix"] = obj["npix"]
-    out["ra"] = ra
-    out["dec"] = dec
     out["x"] = obj["x"]
     out["y"] = obj["y"]
     out["a"] = obj["a"]
@@ -293,5 +292,8 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     out["flags"] = obj["flag"]
     out["flux_flags"] = krflags | flags | flags_rad
     out["ext_flags"] = ext_flags
+    if wcs is not None:
+        out["ra"] = ra
+        out["dec"] = dec
 
     return out, seg
