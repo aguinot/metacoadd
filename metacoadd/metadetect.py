@@ -11,10 +11,9 @@ from ngmix.metacal.convenience import (
     _doadd_single_obs,
 )
 
-from .metacal_oversampling import MetacalFitGaussPSFUnderRes
+from .metacal_utils import MetacalFitGaussPSFUnderRes
 from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
 from .uberseg import fast_uberseg
-from .moments.galsim_admom import GAdmomFitter
 
 
 _SHAPE_CAT_DTYPE = [
@@ -57,15 +56,15 @@ class MetaDetect:
     ----------
     """
 
-    # @profile
     def __init__(
         self,
         mbobs,
         rng,
-        coadd_method="weighted",
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
-        psf_true=None,
+        detect_thresh=1500,
+        gal_runner=None,
+        psf_runner=None,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -76,25 +75,27 @@ class MetaDetect:
             "fixnoise": True,
         }
 
+        self._detect_thresh = detect_thresh
+
+        if not isinstance(gal_runner, ngmix.runners.RunnerBase):
+            raise ValueError(
+                "gal_runner must be an instance of ngmix.runners.RunnerBase"
+            )
+        self.gal_runner = gal_runner
+        if not isinstance(psf_runner, ngmix.runners.RunnerBase):
+            raise ValueError(
+                "psf_runner must be an instance of ngmix.runners.RunnerBase"
+            )
+        self.psf_runner = psf_runner
+
         # # Set observations
         self.mbobs = mbobs
 
-        # Set mcal shear dict
-        self._shear_dict = {
-            "1m": galsim.Shear(g1=-step, g2=0),
-            "1p": galsim.Shear(g1=step, g2=0),
-            "2m": galsim.Shear(g1=0, g2=-step),
-            "2p": galsim.Shear(g1=0, g2=step),
-            "noshear": galsim.Shear(g1=0, g2=0),
-        }
-        self._true_psf = psf_true
-
-    # @profile
     def go(
         self,
     ):
         """
-        Run the coaddition process.
+        Run metadetect.
         """
 
         # mcal_mbobs = self.get_mcal_(self.mcal_config["types"])
@@ -117,14 +118,11 @@ class MetaDetect:
                 all_sep_cat, all_shape_cat
             )
 
+            del mb_obs, all_sep_cat, seg_map, all_shape_cat
+
         return final_cat
 
     def _init_metacal(self):
-        # mbobs = exp2obs(
-        #     self.coaddimage.mb_explist,
-        #     self.psf_mb_explist,
-        #     use_resamp=False,
-        # )
         self.mcal_makers = []
         for i, obs_list in enumerate(self.mbobs):
             self.mcal_makers.append([])
@@ -175,66 +173,12 @@ class MetaDetect:
             mcal_mbobs.append(mcal_obs_list)
         return mcal_mbobs
 
-    def get_mcal_(self, mcal_types):
-        if self._do_psf_sed_corr:
-            self._psf_corr_dict = []
-
-        if self.mcal_config["use_noise_image"]:
-            noise_mbobs = _replace_image_with_noise(self.mbobs)
-        else:
-            noise_obs = ngmix.simobs.simulate_obs(
-                gmix=None, obs=self.mbobs, rng=self.rng
-            )
-        _rotate_obs_image_square(noise_mbobs, k=1)
-
-        mcal_mbobs = {}
-        for mcal_type in mcal_types:
-            mcal_mbobs_ = ngmix.MultiBandObsList()
-            for i, obs_list in enumerate(self.mbobs):
-                mcal_obs_list = ngmix.ObsList()
-                if self._do_psf_sed_corr and mcal_type == "noshear":
-                    self._psf_corr_dict.append([])
-                for j, obs in enumerate(obs_list):
-                    obs_rng = np.random.RandomState(self.rng.randint(2**32))
-
-                    mcal_maker = MetacalFitGaussPSFUnderRes(
-                        obs,
-                        self.mcal_config["step"],
-                        obs_rng,
-                    )
-                    mcal_maker_noise = MetacalFitGaussPSFUnderRes(
-                        noise_mbobs[i][j],
-                        self.mcal_config["step"],
-                        obs_rng,
-                    )
-
-                    if self._do_psf_sed_corr and mcal_type == "noshear":
-                        self._psf_corr_dict[i].append(
-                            {
-                                "psf_int_nopix_inv": mcal_maker.psf_int_nopix_inv,
-                            }
-                        )
-
-                    mcal_obs = mcal_maker.get_obs_galshear(mcal_type)
-                    noise_obs = mcal_maker_noise.get_obs_galshear(mcal_type)
-                    _rotate_obs_image_square(noise_obs, k=3)
-
-                    _doadd_single_obs(mcal_obs, noise_obs)
-
-                    mcal_obs_list.append(mcal_obs)
-                mcal_mbobs_.append(mcal_obs_list)
-            mcal_mbobs[mcal_type] = mcal_mbobs_
-
-        # del mbobs
-        return mcal_mbobs
-
     def get_cat(self, mb_obs, do_multiband=True):
         if do_multiband:
             cat, seg_map = get_cat(
                 np.copy(mb_obs[0][0].image),
                 np.copy(mb_obs[0][0].weight),
-                thresh=1500,
-                # thresh=1e3,
+                thresh=self._detect_thresh,
                 wcs=None,
             )
 
@@ -245,16 +189,8 @@ class MetaDetect:
         in_mbobs,
         sep_cat,
         seg_map,
-        mcal_key,
         do_uberseg=False,
     ):
-        # scale_sq = self.coaddimage.coadd_pixel_scale**2
-        scale_sq = in_mbobs[0][0].jacobian.area
-
-        # fitter = ReGaussFitter(guess_fwhm=0.6)
-        # fitter = GAdmomFitter(guess_fwhm=0.6)
-        fitter = ngmix.gaussmom.GaussMom(fwhm=1.2)
-        psf_fitter = GAdmomFitter(guess_fwhm=0.6)
 
         self.all_obs = []
         all_shape_cat = []
@@ -310,7 +246,7 @@ class MetaDetect:
                     )
 
                     # Fit the PSF
-                    psf_res = psf_fitter.go(obs.psf)
+                    psf_res = self.psf_runner.go(obs.psf)
                     w_psf = np.median(wgt)
                     T_psf_avg += psf_res["T"] * w_psf
                     W_psf += w_psf
@@ -325,19 +261,9 @@ class MetaDetect:
                     obs_list.append(newobs)
                 mb_obs.append(obs_list)
 
-            # Get guess from sep moments
-            guess = np.array(
-                [
-                    0.0,
-                    0.0,
-                    det_obj["xx"] * scale_sq,
-                    det_obj["xy"] * scale_sq,
-                    det_obj["yy"] * scale_sq,
-                ]
-            )
             self.all_obs.append(mb_obs)
 
-            res = fitter.go(newobs)  # , guess=guess)
+            res = self.gal_runner.go(newobs)
             res = {k: v for k, v in res.items()}
             # res["g1"] = res["g"][0]
             # res["g2"] = res["g"][1]

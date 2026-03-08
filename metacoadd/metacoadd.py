@@ -14,7 +14,7 @@ from ngmix.metacal.convenience import (
 )
 
 from .exposure import CoaddImage, Exposure, ExpList, MultiBandExpList, exp2obs
-from .metacal_oversampling import MetacalFixGaussPSFUnderRes
+from .metacal_utils import MetacalFixGaussPSFUnderRes
 from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
 from .moments.galsim_admom import GAdmomFitter
