@@ -222,13 +222,13 @@ class MetaDetect:
                     img_pos = galsim.PositionD(x, y)
 
                     img, dx, dy = get_cutout(
-                        np.copy(obs.image), img_pos.x, img_pos.y, cutout_size
+                        obs.image, img_pos.x, img_pos.y, cutout_size
                     )
                     wgt, _, _ = get_cutout(
-                        np.copy(obs.weight), img_pos.x, img_pos.y, cutout_size
+                        obs.weight, img_pos.x, img_pos.y, cutout_size
                     )
                     noise, _, _ = get_cutout(
-                        np.copy(obs.noise), img_pos.x, img_pos.y, cutout_size
+                        obs.noise, img_pos.x, img_pos.y, cutout_size
                     )
                     if do_uberseg:
                         seg, _, _ = get_cutout(
@@ -246,10 +246,11 @@ class MetaDetect:
                     )
 
                     # Fit the PSF
-                    psf_res = self.psf_runner.go(obs.psf)
-                    w_psf = np.median(wgt)
-                    T_psf_avg += psf_res["T"] * w_psf
-                    W_psf += w_psf
+                    if k == 0:
+                        psf_res = self.psf_runner.go(obs.psf)
+                        w_psf = np.median(wgt)
+                        T_psf_avg += psf_res["T"] * w_psf
+                        W_psf += w_psf
 
                     newobs = ngmix.Observation(
                         image=img,
