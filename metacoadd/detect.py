@@ -9,8 +9,6 @@ import sep
 
 from astropy.wcs import WCS
 
-from sf_tools.image.stamp import FetchStamps
-
 from scipy.stats import median_abs_deviation as mad
 
 DES_KERNEL = np.array(

@@ -7,8 +7,9 @@ metadetect
 ngmix
 esutil
 pyfftw
+git+https://github.com/aguinot/lanczos.git
 
 # Needed by metadetect
-meds
-des-sxdes
-sep
+# meds
+# des-sxdes
+# sep

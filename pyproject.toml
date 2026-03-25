@@ -23,7 +23,8 @@ dependencies = [
     "reproject>=0.12",
     "ngmix @ git+https://github.com/esheldon/ngmix.git",
     "esutil",
-    "pyfftw>=0.12"
+    "pyfftw>=0.12",
+    "lanczos @ git+https://github.com/aguinot/lanczos.git"
 ]
 
 [project.urls]
