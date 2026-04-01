@@ -2,41 +2,32 @@ import re
 
 import numpy as np
 
-import galsim
-
 import ngmix
-from ngmix.metacal.convenience import (
-    _replace_image_with_noise,
-    _rotate_obs_image_square,
-    _doadd_single_obs,
-)
-
-from .metacal_utils import MetacalFitGaussPSFUnderRes
-from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
-from .uberseg import fast_uberseg
+from .metacal_new import MetacalFitGaussPSF
+from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 
 
-_SHAPE_CAT_DTYPE = [
-    ("wmom_flags", np.int32),
-    ("wmom_nimage", np.int32),
-    ("wmom_dx", np.float64),
-    ("wmom_dy", np.float64),
-    # ("wmom_flux", np.float64),
-    # ("wmom_flux_err", np.float64),
-    ("wmom_T", np.float64),
-    ("wmom_T_err", np.float64),
-    ("wmom_Tr", np.float64),
-    ("wmom_Tpsf", np.float64),
-    ("wmom_rho4", np.float64),
-    ("wmom_rho4_err", np.float64),
-    ("wmom_s2n", np.float64),
-    ("wmom_e1", np.float64),
-    ("wmom_e2", np.float64),
-    ("wmom_e1err", np.float64),
-    ("wmom_e2err", np.float64),
-    ("wmom_g1", np.float64),
-    ("wmom_g2", np.float64),
-]
+def get_shape_cat_dtype(runner_name):
+    dtype = [
+        (f"{runner_name}_flags", np.int32),
+        (f"{runner_name}_nimage", np.int32),
+        (f"{runner_name}_dx", np.float64),
+        (f"{runner_name}_dy", np.float64),
+        (f"{runner_name}_T", np.float64),
+        (f"{runner_name}_T_err", np.float64),
+        (f"{runner_name}_Tr", np.float64),
+        (f"{runner_name}_Tpsf", np.float64),
+        (f"{runner_name}_rho4", np.float64),
+        (f"{runner_name}_rho4_err", np.float64),
+        (f"{runner_name}_s2n", np.float64),
+        (f"{runner_name}_e1", np.float64),
+        (f"{runner_name}_e2", np.float64),
+        (f"{runner_name}_e1err", np.float64),
+        (f"{runner_name}_e2err", np.float64),
+        (f"{runner_name}_g1", np.float64),
+        (f"{runner_name}_g2", np.float64),
+    ]
+    return dtype
 
 
 class MetaDetect:
@@ -63,28 +54,47 @@ class MetaDetect:
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
         detect_thresh=1500,
-        gal_runner=None,
+        coadd_multiband=True,
+        gal_runners=None,
         psf_runner=None,
+        mcal_config={},
     ):
         self.rng = rng
         self.mcal_config = {
             "step": step,
             "types": types,
-            "psf": "fitgauss_UR",
+            # "psf": "fitgauss_UR",
+            "psf": "fitgauss",
             "use_noise_image": True,
             "fixnoise": True,
+            "has_pixel": False,
         }
+        if not isinstance(mcal_config, dict):
+            raise ValueError("mcal_config must be a dictionary")
+        self.mcal_config.update(mcal_config)
 
         self._detect_thresh = detect_thresh
+        self._coadd_multiband = coadd_multiband
 
-        if not isinstance(gal_runner, ngmix.runners.RunnerBase):
+        if isinstance(gal_runners, dict):
+            for _, runner in gal_runners.items():
+                if not isinstance(runner, ngmix.runners.RunnerBase):
+                    raise ValueError(
+                        "All gal_runners must be instances of ngmix.runners.RunnerBase"
+                    )
+        elif isinstance(gal_runners, ngmix.runners.RunnerBase):
+            gal_runners = {"default": gal_runners}
+        else:
             raise ValueError(
-                "gal_runner must be an instance of ngmix.runners.RunnerBase"
+                "gal_runners must be either a dict of ngmix.runners.RunnerBase "
+                "or a single ngmix.runners.RunnerBase instance. "
+                f"Got {type(gal_runners)}"
             )
-        self.gal_runner = gal_runner
+        self.gal_runners = gal_runners
         if not isinstance(psf_runner, ngmix.runners.RunnerBase):
             raise ValueError(
-                "psf_runner must be an instance of ngmix.runners.RunnerBase"
+                "psf_runner must be an instance of ngmix.runners.RunnerBase. "
+                f"Got {type(psf_runner)}"
             )
         self.psf_runner = psf_runner
 
@@ -98,20 +108,23 @@ class MetaDetect:
         Run metadetect.
         """
 
-        # mcal_mbobs = self.get_mcal_(self.mcal_config["types"])
         self._init_metacal()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
             mb_obs = self.get_mcal(mcal_key)
+            # mb_obs = mcal_mbobs[mcal_key]
 
-            all_sep_cat, seg_map = self.get_cat(mb_obs, do_multiband=True)
+            T_psf = self.get_T_psf(mb_obs)
+
+            all_sep_cat, seg_map = self.get_cat(mb_obs)
 
             all_shape_cat = self.get_shape_cat(
                 mb_obs,
                 all_sep_cat,
                 seg_map,
                 mcal_key,
+                T_psf,
             )
 
             final_cat[mcal_key] = self.build_output_cat(
@@ -128,59 +141,60 @@ class MetaDetect:
             self.mcal_makers.append([])
             for j, obs in enumerate(obs_list):
                 obs_rng = np.random.RandomState(self.rng.randint(2**32))
-                if self.mcal_config["fixnoise"]:
-                    if self.mcal_config["use_noise_image"]:
-                        noise_obs = _replace_image_with_noise(obs)
-                    else:
-                        noise_obs = ngmix.simobs.simulate_obs(
-                            gmix=None, obs=obs, rng=obs_rng
-                        )
-                    _rotate_obs_image_square(noise_obs, k=1)
-                mcal_maker = MetacalFitGaussPSFUnderRes(
+                mcal_maker = MetacalFitGaussPSF(
                     obs,
-                    self.mcal_config["step"],
-                    obs_rng,
+                    step=self.mcal_config["step"],
+                    has_pixel=self.mcal_config["has_pixel"],
+                    fixnoise=self.mcal_config["fixnoise"],
+                    rng=obs_rng,
                 )
-                if self.mcal_config["fixnoise"]:
-                    mcal_maker_noise = MetacalFitGaussPSFUnderRes(
-                        noise_obs,
-                        self.mcal_config["step"],
-                        obs_rng,
-                    )
-                else:
-                    mcal_maker_noise = None
-                self.mcal_makers[i].append(
-                    {"img": mcal_maker, "noise": mcal_maker_noise}
-                )
+                self.mcal_makers[i].append(mcal_maker)
 
     def get_mcal(self, mcal_type):
         mcal_mbobs = ngmix.MultiBandObsList()
         for i, obs_list in enumerate(self.mbobs):
             mcal_obs_list = ngmix.ObsList()
-            for j, obs in enumerate(obs_list):
-                mcal_obs = self.mcal_makers[i][j]["img"].get_obs_galshear(
-                    mcal_type
-                )
-                if self.mcal_config["fixnoise"]:
-                    noise_obs = self.mcal_makers[i][j][
-                        "noise"
-                    ].get_obs_galshear(mcal_type)
-                    _rotate_obs_image_square(noise_obs, k=3)
-
-                    _doadd_single_obs(mcal_obs, noise_obs)
-
+            for j, _ in enumerate(obs_list):
+                mcal_obs = self.mcal_makers[i][j].get_obs_galshear(mcal_type)
                 mcal_obs_list.append(mcal_obs)
             mcal_mbobs.append(mcal_obs_list)
         return mcal_mbobs
 
-    def get_cat(self, mb_obs, do_multiband=True):
-        if do_multiband:
-            cat, seg_map = get_cat(
-                np.copy(mb_obs[0][0].image),
-                np.copy(mb_obs[0][0].weight),
-                thresh=self._detect_thresh,
-                wcs=None,
-            )
+    def get_T_psf(self, mb_obs):
+
+        T_psf_avg = 0.0
+        W_psf = 0.0
+        for obslist in mb_obs:
+            for obs in obslist:
+                psf_res = self.psf_runner.go(obs.psf)
+                w_psf = np.median(obs.weight[obs.weight != 0])
+                T_psf_avg += psf_res["T"] * w_psf
+                W_psf += w_psf
+        return T_psf_avg / W_psf
+
+    def get_coadd_multiband(self, mb_obs):
+
+        img_final = np.zeros_like(mb_obs[0][0].image)
+        weight_final = np.zeros_like(mb_obs[0][0].weight)
+        for obslist in mb_obs:
+            img_final += obslist[0].image * obslist[0].weight
+            weight_final += obslist[0].weight
+        img_final[weight_final != 0] /= weight_final[weight_final != 0]
+
+        return img_final, weight_final
+
+    def get_cat(self, mb_obs):
+        if self._coadd_multiband:
+            img, weight = self.get_coadd_multiband(mb_obs)
+        else:
+            img = np.copy(mb_obs[0][0].image)
+            weight = np.copy(mb_obs[0][0].weight)
+        cat, seg_map = get_cat(
+            img,
+            weight,
+            thresh=self._detect_thresh,
+            wcs=None,
+        )
 
         return cat, seg_map
 
@@ -189,98 +203,51 @@ class MetaDetect:
         in_mbobs,
         sep_cat,
         seg_map,
+        T_psf,
         do_uberseg=False,
     ):
 
         self.all_obs = []
-        all_shape_cat = []
-        T_psf_avg = 0.0
-        W_psf = 0.0
+        all_shape_cat = {name: [] for name in self.gal_runners}
         k = 0
         for det_obj in sep_cat:
-            # cutout_size = np.int64(
-            #     np.ceil(np.sqrt(det_obj["npix"] / np.pi) * 2)
-            # )
-            cutout_size = get_cutout_size(
-                det_obj["xx"],
-                det_obj["xy"],
-                det_obj["yy"],
-                n_sigma=5.0,
+            cutout_size = 101
+
+            mb_obs = get_stamp_mbobs(
+                in_mbobs,
+                det_obj,
+                min_stamp_size=cutout_size,
+                max_stamp_size=cutout_size,
+                do_uberseg=do_uberseg,
+                seg_map=seg_map,
             )
-            cutout_size = np.int64(np.ceil(cutout_size))
-            if cutout_size % 2 == 0:
-                cutout_size += 1
-            # cutout_size = max(31, cutout_size)
-            cutout_size = 31
-
-            mb_obs = ngmix.MultiBandObsList()
-            for i, obslist in enumerate(in_mbobs):
-                obs_list = ngmix.ObsList()
-                for j, obs in enumerate(obslist):
-                    x = det_obj["x"]
-                    y = det_obj["y"]
-                    img_pos = galsim.PositionD(x, y)
-
-                    img, dx, dy = get_cutout(
-                        obs.image, img_pos.x, img_pos.y, cutout_size
-                    )
-                    wgt, _, _ = get_cutout(
-                        obs.weight, img_pos.x, img_pos.y, cutout_size
-                    )
-                    noise, _, _ = get_cutout(
-                        obs.noise, img_pos.x, img_pos.y, cutout_size
-                    )
-                    if do_uberseg:
-                        seg, _, _ = get_cutout(
-                            seg_map, det_obj["x"], det_obj["y"], cutout_size
-                        )
-                        wgt = fast_uberseg(seg, wgt, det_obj["number"])
-
-                    jac = ngmix.Jacobian(
-                        row=dx,
-                        col=dy,
-                        dudrow=obs.jacobian.get_dudrow(),
-                        dudcol=obs.jacobian.get_dudcol(),
-                        dvdrow=obs.jacobian.get_dvdrow(),
-                        dvdcol=obs.jacobian.get_dvdcol(),
-                    )
-
-                    # Fit the PSF
-                    if k == 0:
-                        psf_res = self.psf_runner.go(obs.psf)
-                        w_psf = np.median(wgt)
-                        T_psf_avg += psf_res["T"] * w_psf
-                        W_psf += w_psf
-
-                    newobs = ngmix.Observation(
-                        image=img,
-                        weight=wgt,
-                        jacobian=jac,
-                        noise=noise,
-                        psf=obs.psf,
-                    )
-                    obs_list.append(newobs)
-                mb_obs.append(obs_list)
 
             self.all_obs.append(mb_obs)
 
-            res = self.gal_runner.go(newobs)
-            res = {k: v for k, v in res.items()}
-            # res["g1"] = res["g"][0]
-            # res["g2"] = res["g"][1]
-            res["g1"] = res["e"][0]
-            res["g2"] = res["e"][1]
-            res["Tpsf"] = T_psf_avg / W_psf
+            for name, runner in self.gal_runners.items():
+                res = runner.go(mb_obs[0][0])
+                res = {k: v for k, v in res.items()}
+                if "g" in res:
+                    res["g1"] = res["g"][0]
+                    res["g2"] = res["g"][1]
+                elif "e" in res:
+                    res["g1"] = res["e"][0]
+                    res["g2"] = res["e"][1]
+                res["Tpsf"] = T_psf
 
-            all_shape_cat.append(res)
+                all_shape_cat[name].append(res)
             k += 1
         return all_shape_cat
 
     def build_output_cat(self, all_sep_cat, all_shape_cat):
-        SHAPE_CAT_DTYPE = _SHAPE_CAT_DTYPE.copy()
-        for i in range(len(self.mbobs)):
-            SHAPE_CAT_DTYPE.append(("wmom_flux_" + str(i), np.float64))
-            SHAPE_CAT_DTYPE.append(("wmom_flux_err_" + str(i), np.float64))
+        SHAPE_CAT_DTYPE = []
+        for name in self.gal_runners:
+            SHAPE_CAT_DTYPE += get_shape_cat_dtype(name)
+            for i in range(len(self.mbobs)):
+                SHAPE_CAT_DTYPE.append((f"{name}_flux_" + str(i), np.float64))
+                SHAPE_CAT_DTYPE.append(
+                    (f"{name}_flux_err_" + str(i), np.float64)
+                )
         final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
         final_cat = np.zeros(
             len(all_sep_cat),
@@ -291,23 +258,34 @@ class MetaDetect:
                 final_cat[i][key] = sep_obj[key]
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
-                    shape_key = key.split("wmom_")[1]
+                    runner_name = key.split("_")[0]
+                    shape_key = key.split(f"{runner_name}_")[1]
                     if shape_key == "dx":
-                        final_cat[i][key] = all_shape_cat[i]["pars"][0]
+                        final_cat[i][key] = all_shape_cat[runner_name][i][
+                            "pars"
+                        ][0]
                     elif shape_key == "dy":
-                        final_cat[i][key] = all_shape_cat[i]["pars"][1]
+                        final_cat[i][key] = all_shape_cat[runner_name][i][
+                            "pars"
+                        ][1]
                     elif "flux_err" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        # final_cat[i][key] = all_shape_cat[i]["flux_err"][
+                        # final_cat[i][key] = all_shape_cat[runner_name][i]["flux_err"][
                         #     flux_ind
                         # ]
-                        final_cat[i][key] = all_shape_cat[i]["flux_err"]
+                        final_cat[i][key] = all_shape_cat[runner_name][i][
+                            "flux_err"
+                        ]
                     elif "flux" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        # final_cat[i][key] = all_shape_cat[i]["flux"][flux_ind]
-                        final_cat[i][key] = all_shape_cat[i]["flux"]
+                        # final_cat[i][key] = all_shape_cat[runner_name][i]["flux"][flux_ind]
+                        final_cat[i][key] = all_shape_cat[runner_name][i][
+                            "flux"
+                        ]
                     else:
-                        final_cat[i][key] = all_shape_cat[i][shape_key]
+                        final_cat[i][key] = all_shape_cat[runner_name][i][
+                            shape_key
+                        ]
                 except:
                     continue
         return final_cat

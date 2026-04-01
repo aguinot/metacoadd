@@ -5,11 +5,15 @@ from math import sqrt
 import numpy as np
 import numba as nb
 
+from ngmix import Observation, ObsList, MultiBandObsList, Jacobian
+
 import sep
 
 from astropy.wcs import WCS
 
 from scipy.stats import median_abs_deviation as mad
+
+from .uberseg import fast_uberseg
 
 DES_KERNEL = np.array(
     [
@@ -155,6 +159,76 @@ def get_cutout(img, x, y, stamp_size):
         cutout_row,
         cutout_col,
     )
+
+
+def get_stamp_mbobs(
+    img_mbobs,
+    det_row,
+    min_stamp_size=71,
+    max_stamp_size=201,
+    do_uberseg=False,
+    seg_map=None,
+):
+
+    if do_uberseg and seg_map is None:
+        raise ValueError("seg_map must be provided if do_uberseg is True.")
+
+    # Get stamp size
+    # stamp_size = np.int64(np.ceil(np.sqrt(det_row["npix"] / np.pi) * 2))
+    stamp_size = get_cutout_size(
+        det_row["xx"],
+        det_row["xy"],
+        det_row["yy"],
+        n_sigma=5.0,
+    )
+    stamp_size = np.int64(np.ceil(stamp_size))
+    if stamp_size % 2 == 0:
+        stamp_size += 1
+    stamp_size = max(min_stamp_size, stamp_size)
+    stamp_size = min(max_stamp_size, stamp_size)
+
+    # Make MultiBandObsList
+    mb_obs = MultiBandObsList()
+    for _, obslist in enumerate(img_mbobs):
+        obs_list = ObsList()
+        for _, obs in enumerate(obslist):
+            img, dx, dy = get_cutout(
+                obs.image, det_row["x"], det_row["y"], stamp_size
+            )
+            wgt, _, _ = get_cutout(
+                obs.weight, det_row["x"], det_row["y"], stamp_size
+            )
+            if hasattr(obs, "noise"):
+                noise, _, _ = get_cutout(
+                    obs.noise, det_row["x"], det_row["y"], stamp_size
+                )
+            else:
+                noise = None
+            if do_uberseg:
+                seg, _, _ = get_cutout(
+                    seg_map, det_row["x"], det_row["y"], stamp_size
+                )
+                wgt = fast_uberseg(seg, wgt, det_row["number"])
+
+            jac = Jacobian(
+                row=dx,
+                col=dy,
+                dudrow=obs.jacobian.get_dudrow(),
+                dudcol=obs.jacobian.get_dudcol(),
+                dvdrow=obs.jacobian.get_dvdrow(),
+                dvdcol=obs.jacobian.get_dvdcol(),
+            )
+
+            newobs = Observation(
+                image=img,
+                weight=wgt,
+                jacobian=jac,
+                noise=noise,
+                psf=obs.psf,
+            )
+            obs_list.append(newobs)
+        mb_obs.append(obs_list)
+    return mb_obs
 
 
 def get_output_cat(n_obj):
