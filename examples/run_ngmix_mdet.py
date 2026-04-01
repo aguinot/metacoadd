@@ -25,7 +25,7 @@ rng = np.random.RandomState(seed)
 
 simu_type = "imcom"
 simu_size = IMCOM_BLOCK_SIZE
-bands = ["Y106"]  # , "J129", "H158"]
+bands = ["Y106", "J129", "H158"]
 gal_type = "gauss"
 psf_type = simu_type
 layout_kind = "grid"
@@ -96,8 +96,8 @@ print("Run sims done")
 ####
 
 mbobs = ngmix.MultiBandObsList()
-obslist = ngmix.ObsList()
 for band in bands:
+    obslist = ngmix.ObsList()
     for i in range(n_epochs):
         wcs = simu_dict[band][i]["wcs"]
         h = wcs.header
@@ -122,14 +122,14 @@ for band in bands:
         )
 
         psf_obs = ngmix.Observation(
-            image=psf_img,
+            image=deepcopy(psf_img),
             jacobian=psf_jacob,
         )
 
         obs = ngmix.Observation(
-            image=img,
-            weight=simu_dict["Y106"][0]["weight"],
-            noise=simu_dict[band][i]["noise"],
+            image=deepcopy(img),
+            weight=deepcopy(simu_dict["Y106"][0]["weight"]),
+            noise=deepcopy(simu_dict[band][i]["noise"]),
             psf=psf_obs,
             jacobian=img_jacob,
             ormask=np.zeros(img.shape, dtype=np.int32),
@@ -235,8 +235,8 @@ METADETECT_CONFIG = {
     },
     # This is for the cutout at each detection
     "meds": {
-        "min_box_size": 31,
-        "max_box_size": 31,
+        "min_box_size": 101,
+        "max_box_size": 101,
         "box_type": "iso_radius",
         "rad_min": 4,
         "rad_fac": 2,

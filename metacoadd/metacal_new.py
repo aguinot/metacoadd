@@ -6,7 +6,8 @@ from ngmix.metacal.convenience import (
     _rotate_obs_image_square,
     _doadd_single_obs,
 )
-from ngmix.metacal.metacal import _check_shape, _do_dilate, MetacalFitGaussPSF
+from ngmix.metacal.metacal import _check_shape, _do_dilate
+from ngmix.metacal.metacal import MetacalFitGaussPSF as MetacalFitGaussPSF_
 from ngmix.simobs import simulate_obs
 
 # from ngmix.metacal.defaults import (
@@ -60,14 +61,12 @@ class MetacalFixGaussPSF(object):
         step,
         fwhm_target=0.3,
         has_pixel=True,
-        fixnoise=True,
         rng=None,
     ):
 
         self.obs = obs
         self.step = step
         self.has_pixel = has_pixel
-        self.fixnoise = fixnoise
         self.rng = rng
 
         self.fwhm_target = fwhm_target
@@ -75,39 +74,35 @@ class MetacalFixGaussPSF(object):
         if not obs.has_psf():
             raise ValueError("observation must have a psf observation set")
 
-        if self.fixnoise:
-            if hasattr(obs, "noise"):
-                noise_obs = _replace_image_with_noise(obs)
-            else:
-                noise_obs = simulate_obs(
-                    gmix=None,
-                    obs=obs,
-                    rng=rng,
-                )
-            _rotate_obs_image_square(noise_obs, k=1)
-            self.noise_obs = noise_obs
-
-        if self.has_pixel:
-            self._set_pixel()
         self._set_interp()
 
-        # Setup science data
-        self.image_int_nopsf, self.psf_int_nopix, stepk, maxk = self._set_data(
-            self.obs
-        )
+        if self.has_pixel:
+            self._set_pixel(obs)
 
-        # Setup noise data
-        # We reuse existing information to save compute time
-        if self.fixnoise:
-            self.noise_image_int_nopsf, self.noise_psf_int_nopix, _, _ = (
-                self._set_data(
-                    self.noise_obs,
-                    psf_int=self.psf_int_nopix,
-                    stepk=stepk,
-                    maxk=maxk,
-                )
-            )
+        self._set_psf_data(obs)
         self._psf_cache = {}
+        self._stepk = None
+        self._maxk = None
+
+    def get_all(self, obs, types, _force_stepk=None, _force_maxk=None):
+
+        # Setup science data
+        self.image_int_nopsf, stepk, maxk = self._set_data(
+            obs,
+            stepk=_force_stepk if _force_stepk is not None else 0.0,
+            maxk=_force_maxk if _force_maxk is not None else 0.0,
+        )
+        if self._stepk is None and self._maxk is None:
+            self._stepk = stepk
+            self._maxk = maxk
+
+        odict = {}
+        for mcal_type in types:
+            odict[mcal_type] = self.get_obs_galshear(mcal_type)
+
+        # Clear image
+        self.image_int_nopsf = None
+        return odict
 
     def get_obs_galshear(self, mcal_type):
         """
@@ -148,14 +143,6 @@ class MetacalFixGaussPSF(object):
         sheared_image = self.get_target_image(newpsf_obj, shear=shear)
 
         newobs = self._make_obs(sheared_image, newpsf_image)
-
-        if self.fixnoise:
-            sheared_noise_image = self.get_target_image(
-                newpsf_obj, shear=shear, do_noise=True
-            )
-            newobs_noise = self._make_obs(sheared_noise_image, newpsf_image)
-            _rotate_obs_image_square(newobs_noise, k=3)
-            _doadd_single_obs(newobs, newobs_noise)
 
         # this is the pixel-convolved psf object, used to draw the
         # psf image
@@ -238,7 +225,7 @@ class MetacalFixGaussPSF(object):
         try:
             newim = imconv.drawImage(
                 bounds=self._image_bounds,
-                wcs=self.get_wcs(),
+                wcs=self.get_wcs(self.obs),
                 method="no_pixel",  # pixel is already in psf
             )
         except RuntimeError as err:
@@ -337,7 +324,29 @@ class MetacalFixGaussPSF(object):
         psf_grown_image, psf_grown = self._psf_cache[key]
         return psf_grown_image.copy(), psf_grown
 
-    def _set_data(self, obs, psf_int=None, stepk=0.0, maxk=0.0):
+    def _set_psf_data(self, obs):
+        """
+        create galsim objects based on the input observation
+        """
+
+        psf_image, psf_int = self._get_interp(
+            obs.psf.image.copy(),
+            self.get_psf_wcs(obs),
+        )
+        self._psf_bounds = psf_image.bounds
+
+        # interpolated psf deconvolved from pixel.  This is what
+        # we dilate, shear, etc and reconvolve the image by
+        if self.has_pixel:
+            self.psf_int_nopix = galsim.Convolve(
+                psf_int,
+                self.pixel_inv,
+            )
+        else:
+            self.psf_int_nopix = psf_int
+        self.psf_int_nopix_inv = galsim.Deconvolve(self.psf_int_nopix)
+
+    def _set_data(self, obs, stepk=0.0, maxk=0.0):
         """
         create galsim objects based on the input observation
         """
@@ -345,27 +354,9 @@ class MetacalFixGaussPSF(object):
         # these would share data with the original numpy arrays, make copies
         # to be sure they don't get modified
         image, image_int = self._get_interp(
-            obs.image.copy(), self.get_wcs(), stepk=stepk, maxk=maxk
+            obs.image.copy(), self.get_wcs(obs), stepk=stepk, maxk=maxk
         )
         self._image_bounds = image.bounds
-
-        if psf_int is None:
-            psf_image, psf_int = self._get_interp(
-                obs.psf.image.copy(),
-                self.get_psf_wcs(),
-            )
-            self._psf_bounds = psf_image.bounds
-
-        # interpolated psf deconvolved from pixel.  This is what
-        # we dilate, shear, etc and reconvolve the image by
-        if self.has_pixel:
-            psf_int_nopix = galsim.Convolve(
-                psf_int,
-                self.pixel_inv,
-            )
-        else:
-            psf_int_nopix = psf_int
-        psf_int_nopix_inv = galsim.Deconvolve(psf_int_nopix)
 
         # deconvolved galaxy image, psf+pixel removed
         if self.has_pixel:
@@ -377,24 +368,24 @@ class MetacalFixGaussPSF(object):
             image_int_nopix = image_int
         image_int_nopsf = galsim.Convolve(
             image_int_nopix,
-            psf_int_nopix_inv,
+            self.psf_int_nopix_inv,
         )
 
-        return image_int_nopsf, psf_int_nopix, image_int.stepk, image_int.maxk
+        return image_int_nopsf, image_int.stepk, image_int.maxk
 
-    def get_wcs(self):
+    def get_wcs(self, obs):
         """
         get a galsim wcs from the input jacobian
         """
-        return self.obs.jacobian.get_galsim_wcs()
+        return obs.jacobian.get_galsim_wcs()
 
-    def get_psf_wcs(self):
+    def get_psf_wcs(self, obs):
         """
         get a galsim wcs from the input jacobian
         """
-        return self.obs.psf.jacobian.get_galsim_wcs()
+        return obs.psf.jacobian.get_galsim_wcs()
 
-    def _set_pixel(self):
+    def _set_pixel(self, obs):
         """
         set the pixel based on the pixel scale, for convolutions
 
@@ -402,11 +393,11 @@ class MetacalFixGaussPSF(object):
         to get the proper pixel
         """
 
-        wcs = self.get_wcs()
+        wcs = self.get_wcs(obs)
         self.pixel = wcs.toWorld(galsim.Pixel(scale=1))
         self.pixel_inv = galsim.Deconvolve(self.pixel)
 
-        wcs_psf = self.get_psf_wcs()
+        wcs_psf = self.get_psf_wcs(obs)
         self.pixel_psf = wcs_psf.toWorld(galsim.Pixel(scale=1))
         self.pixel_psf_inv = galsim.Deconvolve(self.pixel_psf)
 
@@ -469,14 +460,19 @@ class MetacalFixGaussPSF(object):
         newobs.psf = self._make_psf_obs(psf_im)
         return newobs
 
+    def get_interp_param(self):
+        """
+        Get the stepk and maxk values for the interpolant.
+        """
+        return self._stepk, self._maxk
 
-class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF):
+
+class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
     def __init__(
         self,
         obs,
         step,
         has_pixel=True,
-        fixnoise=True,
         rng=None,
     ):
         """
@@ -489,8 +485,12 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF):
             using the noise field in the observations
         """
         super().__init__(
-            obs=obs, step=step, has_pixel=has_pixel, fixnoise=fixnoise, rng=rng
+            obs=obs,
+            step=step,
+            has_pixel=has_pixel,
+            rng=rng,
         )
+        self.obs = obs
         self._setup_psf_noise()
         self._do_psf_fit()
 
@@ -529,7 +529,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF):
                     psf_grown_image = psf_grown.drawImage(
                         bounds=self._psf_bounds,
                         method="no_pixel",  # pixel is already in psf
-                        wcs=self.get_psf_wcs(),
+                        wcs=self.get_psf_wcs(self.obs),
                     )
                 except RuntimeError as err:
                     # argh, galsim uses generic exceptions
