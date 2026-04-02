@@ -12,7 +12,7 @@ from roman_shear_sims.psf_makers import PSFMaker
 from roman_shear_sims.constant import IMCOM_BLOCK_SIZE
 
 from metacoadd.metadetect import MetaDetect
-from metacoadd.moments.galsim_admom import GAdmomFitter
+# from metacoadd.moments.galsim_admom import GAdmomFitter
 
 from time import time
 
@@ -152,7 +152,8 @@ if __name__ == "__main__":
     gal_fitter = ngmix.gaussmom.GaussMom(fwhm=1.2)
     gal_runner = ngmix.runners.Runner(fitter=gal_fitter)
 
-    psf_fitter = GAdmomFitter(guess_fwhm=0.6)
+    # psf_fitter = GAdmomFitter(guess_fwhm=0.6)
+    psf_fitter = ngmix.gaussmom.GaussMom(fwhm=0.6)
     psf_runner = ngmix.runners.Runner(fitter=psf_fitter)
 
     rng = np.random.RandomState(42)

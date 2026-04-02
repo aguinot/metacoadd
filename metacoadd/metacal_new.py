@@ -1,5 +1,12 @@
+import gc
+from copy import deepcopy
+
+import numpy as np
+
 import galsim
 
+import ngmix
+from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix.shape import Shape
 from ngmix.metacal.convenience import (
     _replace_image_with_noise,
@@ -16,6 +23,176 @@ from ngmix.simobs import simulate_obs
 #     METACAL_MINIMAL_TYPES,
 # )
 from ngmix.gexceptions import GMixRangeError
+
+
+DEFAULT_CONFIG = {
+    "step": 0.01,
+    "has_pixel": False,
+}
+
+
+class MetacalHandler:
+    def __init__(
+        self,
+        obs,
+        rng,
+        mcal_class="gauss_psf",
+        fixnoise=True,
+        use_noise_image=True,
+        mcal_config={},
+    ):
+        self.rng = rng
+        self.fixnoise = fixnoise
+        self.use_noise_image = use_noise_image
+        self.mcal_config = DEFAULT_CONFIG.copy()
+        self.mcal_config.update(mcal_config)
+
+        self._stepk = None
+        self._maxk = None
+
+        self._set_mcal_handler(mcal_class)
+        # if self.fixnoise:
+        #     self._setup_noise_image(obs)
+
+        self._stepk = None
+        self._maxk = None
+
+    def get_all(self, obs, mcal_types):
+
+        mcal_obs = self.get_mcal(obs, mcal_types)
+        # if self.fixnoise:
+        #     noise_obs = self._get_noise_image(obs)
+        #     mcal_noise_obs = self.get_mcal(noise_obs, mcal_types)
+        #     for mcal_type in mcal_types:
+        #         _rotate_obs_image_square(mcal_noise_obs[mcal_type], k=3)
+        #         _doadd_obs(mcal_obs[mcal_type], mcal_noise_obs[mcal_type])
+        #     del mcal_noise_obs, noise_obs
+        return mcal_obs
+
+    def get_mcal(self, obs, mcal_types):
+
+        if isinstance(obs, Observation):
+            mcal_obs = {}
+            mcal_maker = self.mcal_handler(
+                obs,
+                rng=self.rng,
+                **self.mcal_config,
+            )
+            for mcal_type in mcal_types:
+                mcal_obs[mcal_type] = self._get_one_shear(
+                    obs, mcal_maker, mcal_type
+                )
+            mcal_maker._clear_data()
+            del mcal_maker
+            gc.collect()
+
+            if self.fixnoise:
+                noise_obs = self._get_noise_image(obs)
+                mcal_maker = self.mcal_handler(
+                    noise_obs,
+                    rng=self.rng,
+                    **self.mcal_config,
+                )
+                for mcal_type in mcal_types:
+                    mcal_noise_obs = self._get_one_shear(
+                        noise_obs, mcal_maker, mcal_type
+                    )
+                    _rotate_obs_image_square(mcal_noise_obs, k=3)
+                    _doadd_single_obs(mcal_obs[mcal_type], mcal_noise_obs)
+                mcal_maker._clear_data()
+                del mcal_maker, mcal_noise_obs, noise_obs
+                gc.collect()
+
+        elif isinstance(obs, ObsList):
+            mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
+            for nobs in obs:
+                mcal_obs_ = self.get_mcal(nobs, mcal_types)
+                for mcal_type in mcal_types:
+                    mcal_obs[mcal_type].append(mcal_obs_[mcal_type])
+
+        elif isinstance(obs, MultiBandObsList):
+            mcal_obs = {
+                mcal_type: MultiBandObsList() for mcal_type in mcal_types
+            }
+            for band_ind, obslist in enumerate(obs):
+                for mcal_type in mcal_types:
+                    mcal_obs[mcal_type].append(ObsList())
+                for nobs in obslist:
+                    mcal_obs_ = self.get_mcal(nobs, mcal_types)
+                    for mcal_type in mcal_types:
+                        mcal_obs[mcal_type][band_ind].append(
+                            mcal_obs_[mcal_type]
+                        )
+
+        return mcal_obs
+
+    def _get_one_shear(self, obs, mcal_maker, mcal_type):
+
+        if not hasattr(mcal_maker, "image_int_nopsf"):
+            stepk, maxk = mcal_maker._set_data(
+                obs,
+                stepk=self._stepk if self._stepk is not None else 0.0,
+                maxk=self._maxk if self._maxk is not None else 0.0,
+            )
+        if self._stepk is None and self._maxk is None:
+            self._stepk = stepk
+            self._maxk = maxk
+        mcal_obs = mcal_maker.get_obs_galshear(obs, mcal_type)
+
+        return mcal_obs
+
+    def _set_mcal_handler(self, mcal_class):
+
+        if mcal_class == "gauss_psf":
+            self.mcal_handler = MetacalFitGaussPSF
+        elif mcal_class == "fix_gauss_psf":
+            self.mcal_handler = MetacalFixGaussPSF
+
+    def _get_noise_image(self, obs):
+
+        if self.use_noise_image:
+            # self._replace_image_with_noise(obs)
+            noise_obs = _replace_image_with_noise(obs)
+        else:
+            raise NotImplementedError(
+                "Only use_noise_image=True is implemented at the moment."
+            )
+        _rotate_obs_image_square(noise_obs, k=1)
+        return noise_obs
+
+    # def _replace_image_with_noise(self, obs):
+    #     """
+    #     Here we setup the noise observation used for fix noise. It is light
+    #     weight observation as we only need the noise, the psf is stored from
+    #     the original observation and re-used here.
+    #     """
+
+    #     if isinstance(obs, Observation):
+    #         self.noise_obs = Observation(
+    #             image=np.rot90(obs.noise.copy(), k=1),
+    #             jacobian=obs.jacobian.copy(),
+    #         )
+    #     elif isinstance(obs, ObsList):
+    #         self.noise_obs = ObsList()
+    #         for nobs in obs:
+    #             self.noise_obs.append(
+    #                 Observation(
+    #                     image=np.rot90(nobs.noise.copy(), k=1),
+    #                     jacobian=nobs.jacobian.copy(),
+    #                 )
+    #             )
+    #     else:
+    #         self.noise_obs = MultiBandObsList()
+    #         for obslist in obs:
+    #             noise_obslist = ObsList()
+    #             for nobs in obslist:
+    #                 noise_obslist.append(
+    #                     Observation(
+    #                         image=np.rot90(nobs.noise.copy(), k=1),
+    #                         jacobian=nobs.jacobian.copy(),
+    #                     )
+    #                 )
+    #             self.noise_obs.append(noise_obslist)
 
 
 class MetacalFixGaussPSF(object):
@@ -64,7 +241,7 @@ class MetacalFixGaussPSF(object):
         rng=None,
     ):
 
-        self.obs = obs
+        self._init_obs(obs)
         self.step = step
         self.has_pixel = has_pixel
         self.rng = rng
@@ -81,30 +258,33 @@ class MetacalFixGaussPSF(object):
 
         self._set_psf_data(obs)
         self._psf_cache = {}
+        # We cache the reconv PSF so we don't have to make it again for the
+        # noise image if we use fixnoise
+        self._new_psf_obs = None
         self._stepk = None
         self._maxk = None
 
-    def get_all(self, obs, types, _force_stepk=None, _force_maxk=None):
+    # def get_all(self, obs, types, _force_stepk=None, _force_maxk=None):
 
-        # Setup science data
-        self.image_int_nopsf, stepk, maxk = self._set_data(
-            obs,
-            stepk=_force_stepk if _force_stepk is not None else 0.0,
-            maxk=_force_maxk if _force_maxk is not None else 0.0,
-        )
-        if self._stepk is None and self._maxk is None:
-            self._stepk = stepk
-            self._maxk = maxk
+    #     # Setup science data
+    #     stepk, maxk = self._set_data(
+    #         obs,
+    #         stepk=_force_stepk if _force_stepk is not None else 0.0,
+    #         maxk=_force_maxk if _force_maxk is not None else 0.0,
+    #     )
+    #     if self._stepk is None and self._maxk is None:
+    #         self._stepk = stepk
+    #         self._maxk = maxk
 
-        odict = {}
-        for mcal_type in types:
-            odict[mcal_type] = self.get_obs_galshear(mcal_type)
+    #     odict = {}
+    #     for mcal_type in types:
+    #         odict[mcal_type] = self.get_obs_galshear(obs, mcal_type)
 
-        # Clear image
-        self.image_int_nopsf = None
-        return odict
+    #     # Clear image
+    #     self._clear_data()
+    #     return odict
 
-    def get_obs_galshear(self, mcal_type):
+    def get_obs_galshear(self, obs, mcal_type):
         """
         This is the case where we shear the image, for calculating R
 
@@ -142,14 +322,14 @@ class MetacalFixGaussPSF(object):
 
         sheared_image = self.get_target_image(newpsf_obj, shear=shear)
 
-        newobs = self._make_obs(sheared_image, newpsf_image)
+        newobs = self._make_obs(obs, sheared_image, newpsf_image)
 
         # this is the pixel-convolved psf object, used to draw the
         # psf image
         newobs.psf.galsim_obj = newpsf_obj
         return newobs
 
-    def get_obs_psfshear(self, shear):
+    def get_obs_psfshear(self, obs, shear):
         """
         This is the case where we shear the psf image, for calculating Rpsf
 
@@ -161,7 +341,7 @@ class MetacalFixGaussPSF(object):
         newpsf_image, newpsf_obj = self.get_target_psf(shear, "psf_shear")
         conv_image = self.get_target_image(newpsf_obj, shear=None)
 
-        newobs = self._make_obs(conv_image, newpsf_image)
+        newobs = self._make_obs(obs, conv_image, newpsf_image)
         return newobs
 
     def _get_dilated_psf(self, shear, doshear=False):
@@ -171,8 +351,6 @@ class MetacalFixGaussPSF(object):
 
         If doshear, also shear it
         """
-
-        print("Here ??")
 
         psf_grown_nopix = self._do_dilate(
             self.psf_int_nopix, shear, doshear=doshear
@@ -366,12 +544,12 @@ class MetacalFixGaussPSF(object):
             )
         else:
             image_int_nopix = image_int
-        image_int_nopsf = galsim.Convolve(
+        self.image_int_nopsf = galsim.Convolve(
             image_int_nopix,
             self.psf_int_nopix_inv,
         )
 
-        return image_int_nopsf, image_int.stepk, image_int.maxk
+        return image_int.stepk, image_int.maxk
 
     def get_wcs(self, obs):
         """
@@ -434,13 +612,17 @@ class MetacalFixGaussPSF(object):
         )
         return image, image_int
 
-    def _make_psf_obs(self, psf_im):
+    def _make_psf_obs(self, obs, psf_im):
 
-        new_psf_obs = self.obs.psf.copy()
-        new_psf_obs.image = psf_im.array
-        return new_psf_obs
+        if self._new_psf_obs is None:
+            new_psf_obs = obs.psf.copy()
+            new_psf_obs.image = psf_im.array
+            self._new_psf_obs = new_psf_obs
+            return new_psf_obs
+        else:
+            return self._new_psf_obs
 
-    def _make_obs(self, im, psf_im):
+    def _make_obs(self, obs, im, psf_im):
         """
         b
         Make new Observation objects with the new image and psf.
@@ -455,9 +637,9 @@ class MetacalFixGaussPSF(object):
         A new Observation
         """
 
-        newobs = self.obs.copy()
+        newobs = obs.copy()
         newobs.image = im.array
-        newobs.psf = self._make_psf_obs(psf_im)
+        newobs.psf = self._make_psf_obs(obs, psf_im)
         return newobs
 
     def get_interp_param(self):
@@ -465,6 +647,18 @@ class MetacalFixGaussPSF(object):
         Get the stepk and maxk values for the interpolant.
         """
         return self._stepk, self._maxk
+
+    def _clear_data(self):
+        del self.image_int_nopsf
+
+    def _init_obs(self, obs):
+        """
+        Store the input observation for use in making new observations.
+        """
+        self.obs = DummyObs()
+        self.obs.psf = obs.psf
+        self.obs._psf = obs._psf
+        self.obs.jacobian = obs.jacobian
 
 
 class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
@@ -490,7 +684,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
             has_pixel=has_pixel,
             rng=rng,
         )
-        self.obs = obs
+
         self._setup_psf_noise()
         self._do_psf_fit()
 
@@ -554,3 +748,22 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
 
         # we don't convolve by the pixel, its already in there
         return psf_grown
+
+
+class DummyObs:
+    def __init__(self):
+        self.psf = None
+        self.jacobian = None
+
+
+def _doadd_obs(obs, nobs):
+
+    if isinstance(obs, Observation):
+        _doadd_single_obs(obs, nobs)
+    elif isinstance(obs, ObsList):
+        for o, n in zip(obs, nobs):
+            _doadd_single_obs(o, n)
+    elif isinstance(obs, MultiBandObsList):
+        for obslist, nlist in zip(obs, nobs):
+            for o, n in zip(obslist, nlist):
+                _doadd_single_obs(o, n)

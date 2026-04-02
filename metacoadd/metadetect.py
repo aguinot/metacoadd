@@ -11,7 +11,7 @@ from ngmix.metacal.convenience import (
     _doadd_single_obs,
 )
 
-from .metacal_new import MetacalFitGaussPSF
+from .metacal_new import MetacalFitGaussPSF, MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 
 
@@ -113,13 +113,14 @@ class MetaDetect:
         Run metadetect.
         """
 
-        self._init_metacal(deepcopy(mb_obs))
-        del mb_obs
-        gc.collect()
+        self._init_metacal(mb_obs)
+        # del mb_obs
+        # gc.collect()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
             mcal_mbobs = self.get_mcal(mcal_key)
+            # mcal_mbobs = self.mcal_handler.get_mcal(mb_obs, mcal_key)
 
             T_psf = self.get_T_psf(mcal_mbobs)
 
@@ -141,6 +142,21 @@ class MetaDetect:
             gc.collect()
 
         return final_cat
+
+    def _init_metacal(self, mb_obs):
+        mcal_handler = MetacalHandler(
+            obs=mb_obs,
+            rng=self.rng,
+            fixnoise=self.mcal_config["fixnoise"],
+            use_noise_image=self.mcal_config["use_noise_image"],
+            mcal_config={
+                "step": self.mcal_config["step"],
+                "has_pixel": self.mcal_config["has_pixel"],
+            },
+        )
+        self._mcal_mbobs = mcal_handler.get_all(
+            mb_obs, self.mcal_config["types"]
+        )
 
     # def _init_metacal(self):
     #     self._mcal_mbobs = {
@@ -176,61 +192,61 @@ class MetaDetect:
     #     self._stepk = None
     #     self._maxk = None
 
-    def _init_metacal(self, mb_obs):
-        self._stepk = None
-        self._maxk = None
+    # def _init_metacal(self, mb_obs):
+    #     self._stepk = None
+    #     self._maxk = None
 
-        obs_rng = np.random.RandomState(self.rng.randint(2**32))
-        if self.mcal_config["fixnoise"]:
-            if self.mcal_config["use_noise_image"]:
-                noise_obs = _replace_image_with_noise(mb_obs)
-            else:
-                noise_obs = ngmix.simobs.simulate_obs(
-                    gmix=None, obs=mb_obs, rng=obs_rng
-                )
-            _rotate_obs_image_square(noise_obs, k=1)
+    #     obs_rng = np.random.RandomState(self.rng.randint(2**32))
+    #     if self.mcal_config["fixnoise"]:
+    #         if self.mcal_config["use_noise_image"]:
+    #             noise_obs = _replace_image_with_noise(mb_obs)
+    #         else:
+    #             noise_obs = ngmix.simobs.simulate_obs(
+    #                 gmix=None, obs=mb_obs, rng=obs_rng
+    #             )
+    #         _rotate_obs_image_square(noise_obs, k=1)
 
-        self._mcal_mbobs = {
-            mcal_type: ngmix.MultiBandObsList()
-            for mcal_type in self.mcal_config["types"]
-        }
-        for i, obs_list in enumerate(mb_obs):
-            for mcal_type in self.mcal_config["types"]:
-                self._mcal_mbobs[mcal_type].append(ngmix.ObsList())
-            for j, obs in enumerate(obs_list):
-                mcal_maker = MetacalFitGaussPSF(
-                    obs,
-                    step=self.mcal_config["step"],
-                    has_pixel=self.mcal_config["has_pixel"],
-                    rng=obs_rng,
-                )
+    #     self._mcal_mbobs = {
+    #         mcal_type: ngmix.MultiBandObsList()
+    #         for mcal_type in self.mcal_config["types"]
+    #     }
+    #     for i, obs_list in enumerate(mb_obs):
+    #         for mcal_type in self.mcal_config["types"]:
+    #             self._mcal_mbobs[mcal_type].append(ngmix.ObsList())
+    #         for j, obs in enumerate(obs_list):
+    #             mcal_maker = MetacalFitGaussPSF(
+    #                 obs,
+    #                 step=self.mcal_config["step"],
+    #                 has_pixel=self.mcal_config["has_pixel"],
+    #                 rng=obs_rng,
+    #             )
 
-                mcal_obs = mcal_maker.get_all(
-                    obs,
-                    self.mcal_config["types"],
-                    _force_stepk=self._stepk,
-                    _force_maxk=self._maxk,
-                )
-                if self._stepk is None or self._maxk is None:
-                    self._stepk, self._maxk = mcal_maker.get_interp_param()
+    #             mcal_obs = mcal_maker.get_all(
+    #                 obs,
+    #                 self.mcal_config["types"],
+    #                 _force_stepk=self._stepk,
+    #                 _force_maxk=self._maxk,
+    #             )
+    #             if self._stepk is None or self._maxk is None:
+    #                 self._stepk, self._maxk = mcal_maker.get_interp_param()
 
-                if self.mcal_config["fixnoise"]:
-                    mcal_noise_obs = mcal_maker.get_all(
-                        noise_obs[i][j],
-                        self.mcal_config["types"],
-                        _force_stepk=self._stepk,
-                        _force_maxk=self._maxk,
-                    )
+    #             if self.mcal_config["fixnoise"]:
+    #                 mcal_noise_obs = mcal_maker.get_all(
+    #                     noise_obs[i][j],
+    #                     self.mcal_config["types"],
+    #                     _force_stepk=self._stepk,
+    #                     _force_maxk=self._maxk,
+    #                 )
 
-                for mcal_type in self.mcal_config["types"]:
-                    mcal_obs_ = mcal_obs[mcal_type]
-                    if self.mcal_config["fixnoise"]:
-                        mcal_noise_obs_ = mcal_noise_obs[mcal_type]
-                        _rotate_obs_image_square(mcal_noise_obs_, k=3)
-                        _doadd_single_obs(mcal_obs_, mcal_noise_obs_)
-                    self._mcal_mbobs[mcal_type][i].append(mcal_obs_)
-                del mcal_maker
-                gc.collect()
+    #             for mcal_type in self.mcal_config["types"]:
+    #                 mcal_obs_ = mcal_obs[mcal_type]
+    #                 if self.mcal_config["fixnoise"]:
+    #                     mcal_noise_obs_ = mcal_noise_obs[mcal_type]
+    #                     _rotate_obs_image_square(mcal_noise_obs_, k=3)
+    #                     _doadd_single_obs(mcal_obs_, mcal_noise_obs_)
+    #                 self._mcal_mbobs[mcal_type][i].append(mcal_obs_)
+    #             del mcal_maker
+    #             gc.collect()
 
     # def get_mcal(self, mcal_type):
     #     mcal_mbobs = ngmix.MultiBandObsList()
@@ -269,14 +285,16 @@ class MetaDetect:
         if self._coadd_multiband:
             img, weight = self.get_coadd_multiband(mb_obs)
         else:
-            img = np.copy(mb_obs[0][0].image)
-            weight = np.copy(mb_obs[0][0].weight)
+            img = mb_obs[0][0].image
+            weight = mb_obs[0][0].weight
         cat, seg_map = get_cat(
             img,
             weight,
             thresh=self._detect_thresh,
             wcs=None,
         )
+        del img, weight
+        gc.collect()
 
         return cat, seg_map
 
@@ -289,7 +307,6 @@ class MetaDetect:
         do_uberseg=False,
     ):
 
-        self.all_obs = []
         all_shape_cat = {name: [] for name in self.gal_runners}
         k = 0
         for det_obj in sep_cat:
@@ -303,8 +320,6 @@ class MetaDetect:
                 do_uberseg=do_uberseg,
                 seg_map=seg_map,
             )
-
-            self.all_obs.append(mb_obs)
 
             for name, runner in self.gal_runners.items():
                 res = runner.go(mb_obs[0][0])
