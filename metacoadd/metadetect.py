@@ -85,9 +85,12 @@ class MetaDetect:
 
         if isinstance(gal_runners, dict):
             for _, runner in gal_runners.items():
-                if not isinstance(runner, ngmix.runners.RunnerBase):
+                if not (
+                    isinstance(runner, ngmix.runners.RunnerBase)
+                    or isinstance(runner, ngmix.bootstrap.Bootstrapper)
+                ):
                     raise ValueError(
-                        "All gal_runners must be instances of ngmix.runners.RunnerBase"
+                        "All gal_runners must be instances of ngmix.runners.RunnerBase or ngmix.bootstrap.Bootstrapper"
                     )
         elif isinstance(gal_runners, ngmix.runners.RunnerBase):
             gal_runners = {"default": gal_runners}
@@ -130,6 +133,7 @@ class MetaDetect:
                 mcal_key,
                 T_psf,
             )
+            self.all_shape_cat = all_shape_cat
 
             final_cat[mcal_key] = self.build_output_cat(
                 mcal_mbobs, all_sep_cat, all_shape_cat
@@ -218,7 +222,10 @@ class MetaDetect:
             )
 
             for name, runner in self.gal_runners.items():
-                res = runner.go(mb_obs[0][0])
+                if name == "gauss":
+                    res = runner.go(mb_obs)
+                if name == "wmom":
+                    res = runner.go(mb_obs[0][0])
                 res = {k: v for k, v in res.items()}
                 if "g" in res:
                     res["g1"] = res["g"][0]
@@ -263,18 +270,20 @@ class MetaDetect:
                         ][1]
                     elif "flux_err" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        # final_cat[i][key] = all_shape_cat[runner_name][i]["flux_err"][
-                        #     flux_ind
-                        # ]
                         final_cat[i][key] = all_shape_cat[runner_name][i][
                             "flux_err"
-                        ]
+                        ][flux_ind]
+                        # final_cat[i][key] = all_shape_cat[runner_name][i][
+                        #     "flux_err"
+                        # ]
                     elif "flux" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        # final_cat[i][key] = all_shape_cat[runner_name][i]["flux"][flux_ind]
                         final_cat[i][key] = all_shape_cat[runner_name][i][
                             "flux"
-                        ]
+                        ][flux_ind]
+                        # final_cat[i][key] = all_shape_cat[runner_name][i][
+                        #     "flux"
+                        # ]
                     else:
                         final_cat[i][key] = all_shape_cat[runner_name][i][
                             shape_key
