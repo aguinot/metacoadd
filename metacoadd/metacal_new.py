@@ -52,31 +52,6 @@ class MetacalHandler:
         self._maxk = None
 
     def get_all(self, obs, mcal_types):
-        mcal_obs = self.get_all_(obs, mcal_types)
-
-        if self.fixnoise:
-            noise_obs = self._get_noise_image(obs)
-            mcal_noise_obs = self.get_all_(noise_obs, mcal_types)
-
-            for mcal_type in mcal_obs:
-                imbobs = mcal_obs[mcal_type]
-                nmbobs = mcal_noise_obs[mcal_type]
-
-                _rotate_obs_image_square(nmbobs, k=3)
-
-                if isinstance(imbobs, Observation):
-                    _doadd_single_obs(imbobs, nmbobs)
-                elif isinstance(imbobs, ObsList):
-                    for imbob, nmbob in zip(imbobs, nmbobs):
-                        _doadd_single_obs(imbob, nmbob)
-                elif isinstance(imbobs, MultiBandObsList):
-                    for imbobs_band, nmbobs_band in zip(imbobs, nmbobs):
-                        for imbob, nmbob in zip(imbobs_band, nmbobs_band):
-                            _doadd_single_obs(imbob, nmbob)
-
-        return mcal_obs
-
-    def get_all_(self, obs, mcal_types):
 
         if isinstance(obs, Observation):
             mcal_obs = {}
@@ -90,25 +65,25 @@ class MetacalHandler:
                     obs, mcal_maker, mcal_type
                 )
 
-            # if self.fixnoise:
-            #     noise_obs = self._get_noise_image(obs)
-            #     mcal_maker = self.mcal_handler(
-            #         noise_obs,
-            #         rng=self.rng,
-            #         **self.mcal_config,
-            #     )
-            #     for mcal_type in mcal_types:
-            #         mcal_noise_obs = self._get_one_shear(
-            #             noise_obs, mcal_maker, mcal_type
-            #         )
-            #         _rotate_obs_image_square(mcal_noise_obs, k=3)
-            #         _doadd_single_obs(mcal_obs[mcal_type], mcal_noise_obs)
-            #     mcal_maker._clear_data()
+            if self.fixnoise:
+                noise_obs = self._get_noise_image(obs)
+                mcal_maker = self.mcal_handler(
+                    noise_obs,
+                    rng=self.rng,
+                    **self.mcal_config,
+                )
+                for mcal_type in mcal_types:
+                    mcal_noise_obs = self._get_one_shear(
+                        noise_obs, mcal_maker, mcal_type
+                    )
+                    _rotate_obs_image_square(mcal_noise_obs, k=3)
+                    _doadd_single_obs(mcal_obs[mcal_type], mcal_noise_obs)
+                mcal_maker._clear_data()
 
         elif isinstance(obs, ObsList):
             mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
             for nobs in obs:
-                mcal_obs_ = self.get_all_(nobs, mcal_types)
+                mcal_obs_ = self.get_all(nobs, mcal_types)
                 for mcal_type in mcal_types:
                     mcal_obs[mcal_type].append(mcal_obs_[mcal_type])
 
@@ -120,7 +95,7 @@ class MetacalHandler:
                 for mcal_type in mcal_types:
                     mcal_obs[mcal_type].append(ObsList())
                 for nobs in obslist:
-                    mcal_obs_ = self.get_all_(nobs, mcal_types)
+                    mcal_obs_ = self.get_all(nobs, mcal_types)
                     for mcal_type in mcal_types:
                         mcal_obs[mcal_type][band_ind].append(
                             mcal_obs_[mcal_type]
