@@ -204,6 +204,20 @@ def get_stamp_mbobs(
                 )
             else:
                 noise = None
+            if hasattr(obs, "bmask"):
+                if np.all(obs.bmask == 0):
+                    bmask = np.zeros_like(img, dtype=np.int32)
+                else:
+                    bmask, _, _ = get_cutout(
+                        obs.bmask, det_row["x"], det_row["y"], stamp_size
+                    )
+            if hasattr(obs, "ormask"):
+                if np.all(obs.ormask == 0):
+                    ormask = np.zeros_like(img, dtype=np.int32)
+                else:
+                    ormask, _, _ = get_cutout(
+                        obs.ormask, det_row["x"], det_row["y"], stamp_size
+                    )
             if do_uberseg:
                 seg, _, _ = get_cutout(
                     seg_map, det_row["x"], det_row["y"], stamp_size
@@ -225,6 +239,8 @@ def get_stamp_mbobs(
                 jacobian=jac,
                 noise=noise,
                 psf=obs.psf,
+                bmask=bmask,
+                ormask=ormask,
             )
             obs_list.append(newobs)
         mb_obs.append(obs_list)

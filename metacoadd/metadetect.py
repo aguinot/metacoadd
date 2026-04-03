@@ -13,6 +13,7 @@ from ngmix.metacal.convenience import (
 
 from .metacal_new import MetacalFitGaussPSF, MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
+from .fitting import get_fitters, get_gauss_psf_runner
 
 
 def get_shape_cat_dtype(runner_name):
@@ -62,15 +63,14 @@ class MetaDetect:
         types=["1m", "1p", "2m", "2p", "noshear"],
         detect_thresh=1500,
         coadd_multiband=True,
-        gal_runners=None,
-        psf_runner=None,
+        models=None,
+        fwhm=None,
         mcal_config={},
     ):
         self.rng = rng
         self.mcal_config = {
             "step": step,
             "types": types,
-            # "psf": "fitgauss_UR",
             "psf": "fitgauss",
             "use_noise_image": True,
             "fixnoise": True,
@@ -82,31 +82,8 @@ class MetaDetect:
 
         self._detect_thresh = detect_thresh
         self._coadd_multiband = coadd_multiband
-
-        if isinstance(gal_runners, dict):
-            for _, runner in gal_runners.items():
-                if not (
-                    isinstance(runner, ngmix.runners.RunnerBase)
-                    or isinstance(runner, ngmix.bootstrap.Bootstrapper)
-                ):
-                    raise ValueError(
-                        "All gal_runners must be instances of ngmix.runners.RunnerBase or ngmix.bootstrap.Bootstrapper"
-                    )
-        elif isinstance(gal_runners, ngmix.runners.RunnerBase):
-            gal_runners = {"default": gal_runners}
-        else:
-            raise ValueError(
-                "gal_runners must be either a dict of ngmix.runners.RunnerBase "
-                "or a single ngmix.runners.RunnerBase instance. "
-                f"Got {type(gal_runners)}"
-            )
-        self.gal_runners = gal_runners
-        if not isinstance(psf_runner, ngmix.runners.RunnerBase):
-            raise ValueError(
-                "psf_runner must be an instance of ngmix.runners.RunnerBase. "
-                f"Got {type(psf_runner)}"
-            )
-        self.psf_runner = psf_runner
+        self._models = models
+        self._fwhm = fwhm
 
     def go(
         self,
@@ -116,6 +93,20 @@ class MetaDetect:
         Run metadetect.
         """
 
+        if isinstance(mb_obs, ngmix.MultiBandObsList):
+            nband = len(mb_obs)
+            scale = mb_obs[0][0].jacobian.get_scale()
+        else:
+            raise ValueError(
+                "mb_obs must be an instance of ngmix.MultiBandObsList"
+            )
+        self.gal_runners = get_fitters(
+            models=self._models,
+            fwhm=self._fwhm,
+            rng=self.rng,
+            nband=nband,
+            scale=scale,
+        )
         self._init_metacal(mb_obs)
 
         final_cat = {}
@@ -160,11 +151,13 @@ class MetaDetect:
 
     def get_T_psf(self, mb_obs):
 
+        psf_runner = get_gauss_psf_runner(self.rng)
+
         T_psf_avg = 0.0
         W_psf = 0.0
         for obslist in mb_obs:
             for obs in obslist:
-                psf_res = self.psf_runner.go(obs.psf)
+                psf_res = psf_runner.go(obs.psf)
                 w_psf = np.median(obs.weight[obs.weight != 0])
                 T_psf_avg += psf_res["T"] * w_psf
                 W_psf += w_psf
@@ -208,8 +201,7 @@ class MetaDetect:
     ):
 
         all_shape_cat = {name: [] for name in self.gal_runners}
-        k = 0
-        for det_obj in sep_cat:
+        for obj_ind, det_obj in enumerate(sep_cat):
             cutout_size = 101
 
             mb_obs = get_stamp_mbobs(
@@ -222,11 +214,8 @@ class MetaDetect:
             )
 
             for name, runner in self.gal_runners.items():
-                if name == "gauss":
-                    res = runner.go(mb_obs)
-                if name == "wmom":
-                    res = runner.go(mb_obs[0][0])
-                res = {k: v for k, v in res.items()}
+                res_ = runner.go(mb_obs)
+                res = {k: v for k, v in res_.items()}
                 if "g" in res:
                     res["g1"] = res["g"][0]
                     res["g2"] = res["g"][1]
@@ -236,7 +225,6 @@ class MetaDetect:
                 res["Tpsf"] = T_psf
 
                 all_shape_cat[name].append(res)
-            k += 1
         return all_shape_cat
 
     def build_output_cat(self, mb_obs, all_sep_cat, all_shape_cat):
@@ -270,20 +258,14 @@ class MetaDetect:
                         ][1]
                     elif "flux_err" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        final_cat[i][key] = all_shape_cat[runner_name][i][
-                            "flux_err"
-                        ][flux_ind]
-                        # final_cat[i][key] = all_shape_cat[runner_name][i][
-                        #     "flux_err"
-                        # ]
+                        final_cat[i][key] = np.atleast_1d(
+                            all_shape_cat[runner_name][i]["flux_err"]
+                        )[flux_ind]
                     elif "flux" in shape_key:
                         flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        final_cat[i][key] = all_shape_cat[runner_name][i][
-                            "flux"
-                        ][flux_ind]
-                        # final_cat[i][key] = all_shape_cat[runner_name][i][
-                        #     "flux"
-                        # ]
+                        final_cat[i][key] = np.atleast_1d(
+                            all_shape_cat[runner_name][i]["flux"]
+                        )[flux_ind]
                     else:
                         final_cat[i][key] = all_shape_cat[runner_name][i][
                             shape_key
