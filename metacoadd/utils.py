@@ -116,3 +116,22 @@ def _exp2obs(exp, exp_psf=None, use_resamp=False):
     )
 
     return obs
+
+
+def atleast_mbobs(obs):
+    if isinstance(obs, ngmix.Observation):
+        mbobs = ngmix.MultiBandObsList()
+        obslist = ngmix.ObsList()
+        obslist.append(obs)
+        mbobs.append(obslist)
+    elif isinstance(obs, ngmix.ObsList):
+        mbobs = ngmix.MultiBandObsList()
+        mbobs.append(obs)
+    elif isinstance(obs, ngmix.MultiBandObsList):
+        mbobs = obs
+    else:
+        raise ValueError(
+            "obs must be an Observation, ObsList or MultiBandObsList"
+        )
+
+    return mbobs
