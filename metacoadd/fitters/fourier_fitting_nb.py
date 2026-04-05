@@ -20,6 +20,17 @@ def pad_arr(arr, target_dim):
 
 
 @nb.njit
+def meshgrid_2d(x, y):
+    xx = np.empty(shape=(y.size, x.size), dtype=x.dtype)
+    yy = np.empty(shape=(y.size, x.size), dtype=y.dtype)
+    for i, y_ in enumerate(y):
+        for j, x_ in enumerate(x):
+            xx[i, j] = x_
+            yy[i, j] = y_
+    return xx, yy
+
+
+@nb.njit
 def zero_pad_fft(im, target_dim):
     padded_im = pad_arr(im, target_dim)
     return fft.rfft2(padded_im)
@@ -28,7 +39,6 @@ def zero_pad_fft(im, target_dim):
 @nb.njit
 def compute_noise_power_spectrum(
     noise_image,
-    get_weights=False,
 ):
     """Compute one-sided (rfft2) noise power spectrum from a single noise image.
 
@@ -36,13 +46,10 @@ def compute_noise_power_spectrum(
     ----------
     noise_image : ndarray (N, N)
         Square 2-D array containing pure noise (should be mean-subtracted).
-    get_weights : bool, optional
-        If True, also return one-sided Hermitian weights.  Default False.
 
     Returns
     -------
     power_spectrum : ndarray (N, N // 2 + 1)
-    weights : ndarray or None
     """
     N = noise_image.shape[0]
     k_noise = fft.rfft2(noise_image)
@@ -54,13 +61,12 @@ def compute_noise_power_spectrum(
     if power_max > 0:
         ps = np.maximum(ps, power_max * 1e-10)
 
-    if get_weights:
-        return ps, make_rfft2_onesided_weights(N)
-    return ps, None
+    return ps
 
 
+@nb.njit
 def estimate_noise_ps_analytic(
-    noise_images,
+    noise_image,
     stamp_size,
     target_variance=0.0,
     correct_periodicity=True,
@@ -85,9 +91,8 @@ def estimate_noise_ps_analytic(
 
     Parameters
     ----------
-    noise_images : ndarray (L, L) or list of ndarray
-        One or more square noise template images.  When a list is
-        given the periodograms are averaged.
+    noise_images : ndarray (L, L)
+        One or more square noise template images
     stamp_size : int
         Side length of the fitting stamps.
     target_variance : float, optional
@@ -102,11 +107,8 @@ def estimate_noise_ps_analytic(
     ps : ndarray (stamp_size, stamp_size // 2 + 1)
         One-sided rfft2 power spectrum at stamp resolution.
     """
-    # Accept a single image or a list
-    if isinstance(noise_images, np.ndarray) and noise_images.ndim == 2:
-        noise_images = [noise_images]
 
-    L = noise_images[0].shape[0]
+    L = noise_image.shape[0]
     N = stamp_size
     if L < N:
         raise ValueError(f"noise_image size ({L}) must be >= stamp_size ({N})")
@@ -115,11 +117,9 @@ def estimate_noise_ps_analytic(
     # Step 1 – average periodogram over all supplied templates
     # ------------------------------------------------------------------
     ps_full = np.zeros((L, L // 2 + 1), dtype=np.float64)
-    for img in noise_images:
-        img = np.asarray(img, dtype=np.float64)
-        ft = fft.rfft2(img)
-        ps_full += ft.real**2 + ft.imag**2
-    ps_full /= len(noise_images) * (L * L)
+    ft = fft.rfft2(noise_image)
+    ps_full += ft.real**2 + ft.imag**2
+    ps_full /= (len(noise_image) + 1) * (L * L)
 
     # ------------------------------------------------------------------
     # Step 2 – CF from periodogram, with periodicity correction
@@ -128,9 +128,10 @@ def estimate_noise_ps_analytic(
 
     if correct_periodicity:
         # GalSim's _cf_periodicity_dilution_correction
-        delta_x = np.fft.fftfreq(L) * L
-        delta_y = np.fft.fftfreq(L) * L
-        Dx, Dy = np.meshgrid(delta_x, delta_y)
+        delta_x = fft.fftfreq(L) * L
+        delta_y = fft.fftfreq(L) * L
+        # Dx, Dy = np.meshgrid(delta_x, delta_y)
+        Dx, Dy = meshgrid_2d(delta_x, delta_y)
         correction = (L * L) / ((L - np.abs(Dx)) * (L - np.abs(Dy)))
         cf *= correction
 
