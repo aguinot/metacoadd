@@ -24,7 +24,8 @@ dependencies = [
     "ngmix @ git+https://github.com/esheldon/ngmix.git",
     "esutil",
     "pyfftw>=0.12",
-    "lanczos @ git+https://github.com/aguinot/lanczos.git"
+    # "lanczos @ git+https://github.com/aguinot/lanczos.git",
+    "rocket-fft"
 ]
 
 [project.urls]
