@@ -15,9 +15,8 @@ from ..utils import atleast_mbobs
 
 
 class FourierFitter(Fitter):
-    def __init__(self, model, prior=None, fit_pars=None, pad_factor=4):
+    def __init__(self, model, prior=None, fit_pars=None):
         super().__init__(model=model, prior=prior, fit_pars=fit_pars)
-        self._pad_factor = pad_factor
 
     def _make_fit_model(self, obs, guess):
         return FourierFitModel(
@@ -25,39 +24,16 @@ class FourierFitter(Fitter):
             model=self.model,
             guess=guess,
             prior=self.prior,
-            pad_factor=self._pad_factor,
         )
 
 
 class FourierFitModel(FitModel):
-    def __init__(self, obs, model, guess, prior=None, pad_factor=4):
+    def __init__(self, obs, model, guess, prior=None):
         super().__init__(obs=obs, model=model, guess=guess, prior=prior)
-        self._pad_factor = pad_factor
         self._set_kim(
             atleast_mbobs(obs),
-            pad_factor=pad_factor,
         )
         self._set_fdiff_size()
-
-    def set_fit_result(self, result):
-        # Rescale covariance to use real-pixel DOF instead of padded-Fourier DOF.
-        # fdiff has 2x padded pixels (real + imag parts); true DOF should use real pixels.
-        if result.get("flags", 1) == 0 and result.get("pars_cov0") is not None:
-            fdiff = self.calc_fdiff(result["pars"])
-            used_dof = fdiff.size - self.n_prior_pars - self.npars
-
-            # Convert padded real-pixel count back to original real-space pixels.
-            real_totpix = self._padded_real_totpix // (self._pad_factor**2)
-            true_dof = real_totpix - self.npars
-
-            if used_dof > 0 and true_dof > 0:
-                sse = np.sum(fdiff[self.n_prior_pars :] ** 2)
-                s_sq_true = sse / true_dof
-                pars_cov = result["pars_cov0"] * s_sq_true
-                result["pars_cov"] = pars_cov
-                result["pars_err"] = np.sqrt(np.diag(pars_cov))
-
-        super().set_fit_result(result)
 
     def calc_lnprob(self, pars, more=False):
 
@@ -111,7 +87,13 @@ class FourierFitModel(FitModel):
 
         try:
             self._fill_gmix_all(pars)
-            start = self._fill_priors(pars=pars, fdiff=fdiff)
+            self._fill_priors(pars=pars, fdiff=fdiff)
+            # Use n_prior_pars (not _fill_priors return value) so that
+            # Fourier data starts exactly where run_leastsq expects it.
+            # _fill_priors returns 5 while n_prior_pars is 6 (g1,g2 share
+            # one joint prior entry), causing the DC mode to land at index 5
+            # and be excluded from the s² calculation in run_leastsq.
+            start = self.n_prior_pars
             for band in range(self.nband):
                 obs_list = self.obs[band]
                 gmix_list = self._gmix_all[band]
@@ -133,36 +115,38 @@ class FourierFitModel(FitModel):
             fdiff[:] = LOWVAL
         return fdiff
 
-    def _set_kim(self, obs_in, pad_factor=4):
+    def _set_kim(self, obs_in):
         """
-        Input should be an Observation, ObsList, or MultiBandObsList
+        Store native-resolution Fourier data and PSD.
+
+        The chi² is evaluated at native N resolution where the noise
+        diagonal approximation is valid. The PSD can be provided at
+        either native (N, N//2+1) or padded (M, M//2+1) resolution;
+        if padded, it is subsampled to native resolution.
         """
 
-        target_dim = int(obs_in[0][0].image.shape[0] * pad_factor)
+        native_dim = int(obs_in[0][0].image.shape[0])
 
         self._kim = []
         self._ps = []
         self.totpix = 0
-        self._padded_real_totpix = 0
         for i, obslist in enumerate(obs_in):
             self._kim.append([])
             self._ps.append([])
             for j, obs in enumerate(obslist):
-                kim = zero_pad_fft(obs.image, target_dim=target_dim)
+                # FFT at native resolution via numba-accelerated path
+                kim = zero_pad_fft(obs.image, target_dim=native_dim)
                 self._kim[i].append(kim)
                 self.totpix += kim.size
-                self._padded_real_totpix += target_dim * target_dim
 
                 ps_ij = obs.ps
-                if ps_ij.shape != kim.shape:
-                    raise ValueError(
-                        "PSD shape mismatch for band/exposure "
-                        f"({i}, {j}): ps={ps_ij.shape}, kim={kim.shape}. "
-                        "PSD and Fourier residuals must have identical shape."
-                    )
-                self._ps[i].append(ps_ij)
+                native_shape = (native_dim, native_dim // 2 + 1)
 
-        self._w = make_rfft2_onesided_weights(target_dim)
+                if ps_ij.shape == native_shape:
+                    # PSD already at native resolution
+                    self._ps[i].append(ps_ij)
+
+        self._w = make_rfft2_onesided_weights(native_dim)
 
     def _set_fdiff_size(self):
         # we have 2*totpix, since we use both real and imaginary

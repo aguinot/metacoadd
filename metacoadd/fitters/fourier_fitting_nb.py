@@ -1,3 +1,8 @@
+"""
+The code in this file is mainly AI generated using Claude Opus 4.6
+It has been tested and validated.
+"""
+
 import numba as nb
 
 import numpy as np
@@ -23,117 +28,148 @@ def zero_pad_fft(im, target_dim):
 @nb.njit
 def compute_noise_power_spectrum(
     noise_image,
-    output_dim,
     get_weights=False,
-    normalize=False,
 ):
-    """Compute one-sided (rfft2) noise power spectrum for real-space images.
-
-    Returns a PSD with shape (output_dim, output_dim//2 + 1), normalized
-    to mean=1, plus one-sided Hermitian weights for minimal likelihood code.
+    """Compute one-sided (rfft2) noise power spectrum from a single noise image.
 
     Parameters
     ----------
-    noise_image : ndarray
-        2D array containing pure noise (no signal). Should be square.`
-        This is typically obs.noise from ngmix observations.
-        Can be larger than the image being measured.
-    output_dim : int
-        Desired output dimension for the output stamp/grid.
+    noise_image : ndarray (N, N)
+        Square 2-D array containing pure noise (should be mean-subtracted).
     get_weights : bool, optional
-        Whether to return the one-sided Hermitian weights for rfft2 likelihoods.
-        Default is False.
-    normalize : bool, optional
-        If True, normalize PSD by its mean (dimensionless, mean=1).
-        If False, keep the absolute noise scale. Default is False.
+        If True, also return one-sided Hermitian weights.  Default False.
 
     Returns
     -------
-    tuple(ndarray, ndarray)
-        power_spectrum : shape (output_dim, output_dim//2 + 1)
-        onesided_weights : shape (output_dim, output_dim//2 + 1) if get_weights else None.
+    power_spectrum : ndarray (N, N // 2 + 1)
+    weights : ndarray or None
     """
-    original_dim = noise_image.shape[0]
-
-    # Compute PSD from original-sized noise, not padded.
-    # Padding introduces artificial zeros that would dilute the power spectrum.
-    # The PSD should reflect the noise statistics of the actual data only.
+    N = noise_image.shape[0]
     k_noise = fft.rfft2(noise_image)
-    # Normalize by original pixel count to preserve absolute scale.
-    norm = original_dim * original_dim
-    power_spectrum = (
-        k_noise.real * k_noise.real + k_noise.imag * k_noise.imag
-    ) / norm
+    norm = N * N
+    ps = (k_noise.real * k_noise.real + k_noise.imag * k_noise.imag) / norm
 
-    # Resample to output_dim if different from original_dim.
-    if output_dim != original_dim:
-        power_spectrum = _resample_power_spectrum(
-            power_spectrum,
-            original_dim,
-            output_dim,
-            normalize=normalize,
-        )
-    else:
-        if normalize:
-            mean_power = np.mean(power_spectrum)
-            if mean_power > 0:
-                power_spectrum = power_spectrum / mean_power
-        # Add floor to avoid exact zeros.
-        power_max = np.max(power_spectrum)
-        if power_max > 0:
-            floor = power_max * 1e-10
-            power_spectrum = np.maximum(power_spectrum, floor)
+    # Floor to prevent exact zeros / near-zero division in chi2
+    power_max = np.max(ps)
+    if power_max > 0:
+        ps = np.maximum(ps, power_max * 1e-10)
 
     if get_weights:
-        weights = make_rfft2_onesided_weights(output_dim)
-        return power_spectrum, weights
-
-    return power_spectrum, None
+        return ps, make_rfft2_onesided_weights(N)
+    return ps, None
 
 
-@nb.njit
-def _resample_power_spectrum(
-    power_spectrum_rfft,
-    input_dim,
-    output_dim,
-    normalize=False,
+def estimate_noise_ps_analytic(
+    noise_images,
+    stamp_size,
+    target_variance=0.0,
+    correct_periodicity=True,
 ):
-    """Resample one-sided PSD by resizing correlation then returning one-sided PSD."""
-    correlation = fft.irfft2(power_spectrum_rfft, s=(input_dim, input_dim))
+    """Estimate the stamp-level noise PSD analytically (mimics GalSim).
 
-    correlation = fft.fftshift(correlation)
+    Reproduces GalSim's ``CorrelatedNoise`` pipeline without GalSim:
 
-    if output_dim > input_dim:
-        resampled_correlation = pad_arr(correlation, output_dim)
-    else:
-        crop_amount = input_dim - output_dim
-        crop_before = crop_amount // 2
-        crop_after = crop_before + output_dim
-        resampled_correlation = correlation[
-            crop_before:crop_after,
-            crop_before:crop_after,
-        ]
+    1.  Compute the correlation function (CF) from the template
+        periodogram.
+    2.  Apply the periodicity-dilution correction (same as GalSim's
+        ``correct_periodicity=True``).
+    3.  Truncate the CF to stamp-sized lags (what GalSim's
+        ``InterpolatedImage.drawImage`` does when the pixel scales
+        match).
+    4.  FFT the truncated CF to obtain the stamp PSD.
 
-    resampled_correlation = fft.ifftshift(resampled_correlation)
-    k_resampled = fft.rfft2(resampled_correlation)
-    # Correlation -> FFT already returns the PSD. Do not square again.
-    # Numerical noise can introduce tiny imaginary parts; keep real part.
-    resampled_power_spectrum = k_resampled.real
-    resampled_power_spectrum = np.maximum(resampled_power_spectrum, 0.0)
+    If several independent noise realisations of the same field are
+    available, pass them as a list to ``noise_images``: their
+    periodograms are averaged before step 2, giving a lower-variance
+    CF (and therefore a better PSD).
 
-    if normalize:
-        mean_power = np.mean(resampled_power_spectrum)
-        if mean_power > 0:
-            resampled_power_spectrum = resampled_power_spectrum / mean_power
+    Parameters
+    ----------
+    noise_images : ndarray (L, L) or list of ndarray
+        One or more square noise template images.  When a list is
+        given the periodograms are averaged.
+    stamp_size : int
+        Side length of the fitting stamps.
+    target_variance : float, optional
+        If > 0, rescale the PSD so that its implied pixel variance
+        equals this value.
+    correct_periodicity : bool, optional
+        Apply GalSim's periodicity-dilution correction to the CF
+        (default ``True``).
 
-    # Add small floor to prevent exact zeros and near-zero division in chi2/fdiff.
-    # Floor is relative to the max power spectrum value to adapt to noise scale.
-    power_max = np.max(resampled_power_spectrum)
-    if power_max > 0:
-        floor = power_max * 1e-10
-        resampled_power_spectrum = np.maximum(resampled_power_spectrum, floor)
+    Returns
+    -------
+    ps : ndarray (stamp_size, stamp_size // 2 + 1)
+        One-sided rfft2 power spectrum at stamp resolution.
+    """
+    # Accept a single image or a list
+    if isinstance(noise_images, np.ndarray) and noise_images.ndim == 2:
+        noise_images = [noise_images]
 
-    return resampled_power_spectrum
+    L = noise_images[0].shape[0]
+    N = stamp_size
+    if L < N:
+        raise ValueError(f"noise_image size ({L}) must be >= stamp_size ({N})")
+
+    # ------------------------------------------------------------------
+    # Step 1 – average periodogram over all supplied templates
+    # ------------------------------------------------------------------
+    ps_full = np.zeros((L, L // 2 + 1), dtype=np.float64)
+    for img in noise_images:
+        img = np.asarray(img, dtype=np.float64)
+        ft = fft.rfft2(img)
+        ps_full += ft.real**2 + ft.imag**2
+    ps_full /= len(noise_images) * (L * L)
+
+    # ------------------------------------------------------------------
+    # Step 2 – CF from periodogram, with periodicity correction
+    # ------------------------------------------------------------------
+    cf = fft.irfft2(ps_full, s=(L, L))
+
+    if correct_periodicity:
+        # GalSim's _cf_periodicity_dilution_correction
+        delta_x = np.fft.fftfreq(L) * L
+        delta_y = np.fft.fftfreq(L) * L
+        Dx, Dy = np.meshgrid(delta_x, delta_y)
+        correction = (L * L) / ((L - np.abs(Dx)) * (L - np.abs(Dy)))
+        cf *= correction
+
+    # ------------------------------------------------------------------
+    # Step 3 – truncate CF to stamp-sized lags (FFT order)
+    # ------------------------------------------------------------------
+    half = N // 2
+    n_pos = half + 1  # lags 0 .. half
+    n_neg = N - n_pos  # lags -(N-n_pos) .. -1
+
+    cf_stamp = np.zeros((N, N), dtype=np.float64)
+    cf_stamp[:n_pos, :n_pos] = cf[:n_pos, :n_pos]
+    cf_stamp[:n_pos, n_pos:] = cf[:n_pos, L - n_neg :]
+    cf_stamp[n_pos:, :n_pos] = cf[L - n_neg :, :n_pos]
+    cf_stamp[n_pos:, n_pos:] = cf[L - n_neg :, L - n_neg :]
+
+    # ------------------------------------------------------------------
+    # Step 4 – FFT → stamp PSD
+    # ------------------------------------------------------------------
+    ps_complex = fft.rfft2(cf_stamp)
+    # For a valid positive-definite CF, this should be real & positive;
+    # we take abs() as GalSim does to handle minor numerical noise.
+    ps = np.abs(ps_complex)
+
+    # ------------------------------------------------------------------
+    # Rescale to target variance
+    # ------------------------------------------------------------------
+    if target_variance > 0.0:
+        w = make_rfft2_onesided_weights(N)
+        current_var = np.sum(w * ps) / (N * N)
+        if current_var > 0.0:
+            ps *= target_variance / current_var
+
+    # Floor
+    ps_max = np.max(ps)
+    if ps_max > 0:
+        ps = np.maximum(ps, ps_max * 1e-12)
+
+    return ps
 
 
 @nb.njit
