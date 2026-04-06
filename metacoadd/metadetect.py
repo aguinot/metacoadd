@@ -11,7 +11,7 @@ from ngmix.metacal.convenience import (
     _doadd_single_obs,
 )
 
-from .metacal_new import MetacalFitGaussPSF, MetacalHandler
+from .metacal_new import MetacalHandler, MetacalHandlerTest
 from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
@@ -67,6 +67,7 @@ class MetaDetect:
         models=None,
         fwhm=None,
         mcal_config={},
+        test_fixnoise=False,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -85,6 +86,7 @@ class MetaDetect:
         self._coadd_multiband = coadd_multiband
         self._models = models
         self._fwhm = fwhm
+        self.test_fixnoise = test_fixnoise
 
     def go(
         self,
@@ -139,15 +141,26 @@ class MetaDetect:
         return final_cat
 
     def _init_metacal(self, mb_obs):
-        mcal_handler = MetacalHandler(
-            rng=self.rng,
-            fixnoise=self.mcal_config["fixnoise"],
-            use_noise_image=self.mcal_config["use_noise_image"],
-            mcal_config={
-                "step": self.mcal_config["step"],
-                "has_pixel": self.mcal_config["has_pixel"],
-            },
-        )
+        if not self.test_fixnoise:
+            mcal_handler = MetacalHandler(
+                rng=self.rng,
+                fixnoise=self.mcal_config["fixnoise"],
+                use_noise_image=self.mcal_config["use_noise_image"],
+                mcal_config={
+                    "step": self.mcal_config["step"],
+                    "has_pixel": self.mcal_config["has_pixel"],
+                },
+            )
+        else:
+            mcal_handler = MetacalHandlerTest(
+                rng=self.rng,
+                fixnoise=self.mcal_config["fixnoise"],
+                use_noise_image=self.mcal_config["use_noise_image"],
+                mcal_config={
+                    "step": self.mcal_config["step"],
+                    "has_pixel": self.mcal_config["has_pixel"],
+                },
+            )
         self.mcal_mbobs = mcal_handler.get_all(
             mb_obs, self.mcal_config["types"]
         )

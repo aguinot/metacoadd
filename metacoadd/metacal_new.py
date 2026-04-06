@@ -138,6 +138,114 @@ class MetacalHandler:
         return noise_obs
 
 
+class MetacalHandlerTest:
+    def __init__(
+        self,
+        rng,
+        mcal_class="gauss_psf",
+        fixnoise=True,
+        use_noise_image=True,
+        mcal_config={},
+    ):
+        self.rng = rng
+        self.fixnoise = fixnoise
+        self.use_noise_image = use_noise_image
+        self.mcal_config = DEFAULT_CONFIG.copy()
+        self.mcal_config.update(mcal_config)
+
+        self._stepk = None
+        self._maxk = None
+
+        self._set_mcal_handler(mcal_class)
+
+        self._stepk = None
+        self._maxk = None
+
+    def get_all(self, obs, mcal_types):
+
+        if isinstance(obs, Observation):
+            mcal_obs = {}
+            mcal_maker = self.mcal_handler(
+                obs,
+                rng=self.rng,
+                **self.mcal_config,
+            )
+            for mcal_type in mcal_types:
+                mcal_obs[mcal_type] = self._get_one_shear(
+                    obs, mcal_maker, mcal_type
+                )
+
+            if self.fixnoise:
+                noise_obs = self._get_noise_image(obs)
+                mcal_maker = self.mcal_handler(
+                    noise_obs,
+                    rng=self.rng,
+                    **self.mcal_config,
+                )
+                for mcal_type in mcal_types:
+                    mcal_noise_obs = self._get_one_shear(
+                        noise_obs, mcal_maker, mcal_type
+                    )
+                    mcal_obs[mcal_type].noise = mcal_noise_obs.image
+                mcal_maker._clear_data()
+
+        elif isinstance(obs, ObsList):
+            mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
+            for nobs in obs:
+                mcal_obs_ = self.get_all(nobs, mcal_types)
+                for mcal_type in mcal_types:
+                    mcal_obs[mcal_type].append(mcal_obs_[mcal_type])
+
+        elif isinstance(obs, MultiBandObsList):
+            mcal_obs = {
+                mcal_type: MultiBandObsList() for mcal_type in mcal_types
+            }
+            for band_ind, obslist in enumerate(obs):
+                for mcal_type in mcal_types:
+                    mcal_obs[mcal_type].append(ObsList())
+                for nobs in obslist:
+                    mcal_obs_ = self.get_all(nobs, mcal_types)
+                    for mcal_type in mcal_types:
+                        mcal_obs[mcal_type][band_ind].append(
+                            mcal_obs_[mcal_type]
+                        )
+
+        return mcal_obs
+
+    def _get_one_shear(self, obs, mcal_maker, mcal_type):
+
+        if not hasattr(mcal_maker, "image_int_nopsf"):
+            stepk, maxk = mcal_maker._set_data(
+                obs,
+                stepk=self._stepk if self._stepk is not None else 0.0,
+                maxk=self._maxk if self._maxk is not None else 0.0,
+            )
+        if self._stepk is None and self._maxk is None:
+            self._stepk = stepk
+            self._maxk = maxk
+        mcal_obs = mcal_maker.get_obs_galshear(obs, mcal_type)
+
+        return mcal_obs
+
+    def _set_mcal_handler(self, mcal_class):
+
+        if mcal_class == "gauss_psf":
+            self.mcal_handler = MetacalFitGaussPSF
+        elif mcal_class == "fix_gauss_psf":
+            self.mcal_handler = MetacalFixGaussPSF
+
+    def _get_noise_image(self, obs):
+
+        if self.use_noise_image:
+            # self._replace_image_with_noise(obs)
+            noise_obs = _replace_image_with_noise(obs)
+        else:
+            raise NotImplementedError(
+                "Only use_noise_image=True is implemented at the moment."
+            )
+        return noise_obs
+
+
 class MetacalFixGaussPSF(object):
     """
     Create manipulated images for use in metacalibration
