@@ -122,7 +122,7 @@ def get_gauss_psf_runner(rng):
     psf_runner = ngmix.runners.PSFRunner(
         fitter=psf_fitter,
         guesser=psf_guesser,
-        ntry=2,
+        ntry=5,
     )
     return psf_runner
 
