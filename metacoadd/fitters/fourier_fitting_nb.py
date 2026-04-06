@@ -119,7 +119,7 @@ def estimate_noise_ps_analytic(
     ps_full = np.zeros((L, L // 2 + 1), dtype=np.float64)
     ft = fft.rfft2(noise_image)
     ps_full += ft.real**2 + ft.imag**2
-    ps_full /= (len(noise_image) + 1) * (L * L)
+    ps_full /= L * L
 
     # ------------------------------------------------------------------
     # Step 2 – CF from periodogram, with periodicity correction
