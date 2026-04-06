@@ -2,13 +2,11 @@ import numpy as np
 
 import galsim
 
-import ngmix
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix.shape import Shape
 from ngmix.metacal.convenience import (
     _replace_image_with_noise,
     _rotate_obs_image_square,
-    _doadd_single_obs,
 )
 from ngmix.metacal.metacal import _check_shape, _do_dilate
 from ngmix.metacal.metacal import MetacalFitGaussPSF as MetacalFitGaussPSF_
@@ -78,7 +76,6 @@ class MetacalHandler:
                     )
                     _rotate_obs_image_square(mcal_noise_obs, k=3)
                     _doadd_single_obs(mcal_obs[mcal_type], mcal_noise_obs)
-                mcal_maker._clear_data()
 
         elif isinstance(obs, ObsList):
             mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
@@ -187,7 +184,6 @@ class MetacalHandlerTest:
                         noise_obs, mcal_maker, mcal_type
                     )
                     mcal_obs[mcal_type].noise = mcal_noise_obs.image
-                mcal_maker._clear_data()
 
         elif isinstance(obs, ObsList):
             mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
@@ -776,3 +772,23 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
             new_psf_obs.jacobian.set_cen(row=cen[0], col=cen[1])
 
         return new_psf_obs
+
+
+def _doadd_single_obs(obs, nobs):
+    obs.image_orig = obs.image.copy()
+    obs.noise_orig = obs.noise.copy()
+    obs.weight_orig = obs.weight.copy()
+
+    # the weight and image can be modified in the context, and update_pixels is
+    # automatically called upon exit
+
+    with obs.writeable():
+        obs.image += nobs.image
+        obs.noise += nobs.noise
+
+        wpos = np.where((obs.weight != 0.0) & (nobs.weight != 0.0))
+        if wpos[0].size > 0:
+            tvar = obs.weight * 0
+            # add the variances
+            tvar[wpos] = 1.0 / obs.weight[wpos] + 1.0 / nobs.weight[wpos]
+            obs.weight[wpos] = 1.0 / tvar[wpos]
