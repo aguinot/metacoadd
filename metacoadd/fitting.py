@@ -2,6 +2,7 @@ import ngmix
 from ngmix.gmix.gmix import _gmix_model_dict
 
 from .moments.wmom_runner import MBMomRunner
+from .fitters.fourier_fitting import FourierFitter
 
 
 def get_fitters(models, fwhm=None, rng=None, nband=None, scale=None):
@@ -25,6 +26,12 @@ def parse_model(model):
         pass
     elif model in _gmix_model_dict:
         pass
+    elif "fourier" in model:
+        base_model = model.split("fourier_")[-1]
+        if base_model not in _gmix_model_dict:
+            raise ValueError(
+                f"Model {model} not recognized. Must be one of {list(_gmix_model_dict.keys())} or 'wmom'"
+            )
     else:
         raise ValueError(
             f"Model {model} not recognized. Must be one of {list(_gmix_model_dict.keys())} or 'wmom'"
@@ -38,6 +45,10 @@ def get_runner(model, fwhm=None, rng=None, nband=None, scale=None):
 
     if model in ["wmom", "pgauss", "am"]:
         runner = build_mb_wmom_runner(model, fwhm=fwhm, rng=rng)
+    elif "fourier" in model:
+        runner = build_model_fitting_fourier_runner(
+            model, rng=rng, nband=nband, scale=scale
+        )
     else:
         runner = build_model_fitting_runner(
             model, rng=rng, nband=nband, scale=scale
@@ -81,6 +92,20 @@ def build_model_fitting_runner(model, rng, nband, scale):
     return boot
 
 
+def build_model_fitting_fourier_runner(fourier_model, rng, nband, scale):
+    model = fourier_model.split("fourier_")[-1]
+    if model in ["gauss", "exp", "dev"]:
+        gal_runner = get_single_fourier_model_runner(model, rng, nband, scale)
+    else:
+        raise NotImplementedError(f"Model {model} not implemented yet")
+    psf_runner = get_gauss_psf_runner(rng)
+    boot = ngmix.bootstrap.Bootstrapper(
+        runner=gal_runner,
+        psf_runner=psf_runner,
+    )
+    return boot
+
+
 def get_gauss_psf_runner(rng):
     psf_guesser = ngmix.guessers.SimplePSFGuesser(
         rng=rng,
@@ -106,6 +131,32 @@ def get_single_model_runner(model, rng, nband, scale):
     prior = _make_prior(rng, scale, nband)
 
     fitter = ngmix.fitting.Fitter(
+        model=model,
+        prior=prior,
+        fit_pars={
+            "maxfev": 2000,
+            "xtol": 5.0e-5,
+            "ftol": 5.0e-5,
+        },
+    )
+    guesser = ngmix.guessers.TPSFFluxGuesser(
+        rng=rng,
+        T=0.25,
+        prior=prior,
+    )
+    runner = ngmix.runners.Runner(
+        fitter=fitter,
+        guesser=guesser,
+        ntry=2,
+    )
+
+    return runner
+
+
+def get_single_fourier_model_runner(model, rng, nband, scale):
+    prior = _make_prior(rng, scale, nband)
+
+    fitter = FourierFitter(
         model=model,
         prior=prior,
         fit_pars={

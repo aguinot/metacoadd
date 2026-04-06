@@ -242,6 +242,10 @@ def get_stamp_mbobs(
                 bmask=bmask,
                 ormask=ormask,
             )
+
+            if hasattr(obs, "ps"):
+                newobs.ps = obs.ps
+
             obs_list.append(newobs)
         mb_obs.append(obs_list)
     return mb_obs

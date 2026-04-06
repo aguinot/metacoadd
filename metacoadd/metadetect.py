@@ -14,6 +14,7 @@ from ngmix.metacal.convenience import (
 from .metacal_new import MetacalFitGaussPSF, MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
+from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
 
 
 def get_shape_cat_dtype(runner_name):
@@ -117,6 +118,8 @@ class MetaDetect:
 
             all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
 
+            self._set_power_spectrum(mcal_mbobs)
+
             all_shape_cat = self.get_shape_cat(
                 mcal_mbobs,
                 all_sep_cat,
@@ -148,6 +151,25 @@ class MetaDetect:
         self.mcal_mbobs = mcal_handler.get_all(
             mb_obs, self.mcal_config["types"]
         )
+
+    def _set_power_spectrum(self, mb_obs):
+        do_ps = False
+        for model_name in self.gal_runners:
+            if "fourier" in model_name:
+                do_ps = True
+                break
+        if not do_ps:
+            return
+
+        for obslist in mb_obs:
+            for obs in obslist:
+                if hasattr(obs, "ps"):
+                    continue
+                ps = estimate_noise_ps_analytic(
+                    obs.noise,
+                    101,
+                )
+                obs.ps = ps
 
     def get_T_psf(self, mb_obs):
 
@@ -247,6 +269,8 @@ class MetaDetect:
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
                     runner_name = key.split("_")[0]
+                    if runner_name == "fourier":
+                        runner_name = "_".join(key.split("_")[:2])
                     shape_key = key.split(f"{runner_name}_")[1]
                     if shape_key == "dx":
                         final_cat[i][key] = all_shape_cat[runner_name][i][
