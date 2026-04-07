@@ -66,6 +66,7 @@ class MetaDetect:
         coadd_multiband=True,
         models=None,
         fwhm=None,
+        stamp_size=101,
         mcal_config={},
         test_fixnoise=False,
     ):
@@ -86,6 +87,7 @@ class MetaDetect:
         self._coadd_multiband = coadd_multiband
         self._models = models
         self._fwhm = fwhm
+        self._stamp_size = stamp_size
         self.test_fixnoise = test_fixnoise
 
     def go(
@@ -109,6 +111,7 @@ class MetaDetect:
             rng=self.rng,
             nband=nband,
             scale=scale,
+            stamp_size=self._stamp_size,
         )
         self._init_metacal(mb_obs)
 
@@ -236,7 +239,7 @@ class MetaDetect:
 
         all_shape_cat = {name: [] for name in self.gal_runners}
         for obj_ind, det_obj in enumerate(sep_cat):
-            cutout_size = 101
+            cutout_size = self._stamp_size
 
             mb_obs = get_stamp_mbobs(
                 in_mbobs,

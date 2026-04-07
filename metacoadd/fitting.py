@@ -5,7 +5,9 @@ from .moments.wmom_runner import MBMomRunner
 from .fitters.fourier_fitting import FourierFitter
 
 
-def get_fitters(models, fwhm=None, rng=None, nband=None, scale=None):
+def get_fitters(
+    models, fwhm=None, rng=None, nband=None, scale=None, stamp_size=None
+):
 
     if isinstance(models, str):
         models = [models]
@@ -15,7 +17,12 @@ def get_fitters(models, fwhm=None, rng=None, nband=None, scale=None):
     fitters = {}
     for model in models:
         fitters[model] = get_runner(
-            model, fwhm=fwhm, rng=rng, nband=nband, scale=scale
+            model,
+            fwhm=fwhm,
+            rng=rng,
+            nband=nband,
+            scale=scale,
+            stamp_size=stamp_size,
         )
     return fitters
 
@@ -39,7 +46,9 @@ def parse_model(model):
     return model
 
 
-def get_runner(model, fwhm=None, rng=None, nband=None, scale=None):
+def get_runner(
+    model, fwhm=None, rng=None, nband=None, scale=None, stamp_size=None
+):
 
     model = parse_model(model)
 
@@ -47,7 +56,7 @@ def get_runner(model, fwhm=None, rng=None, nband=None, scale=None):
         runner = build_mb_wmom_runner(model, fwhm=fwhm, rng=rng)
     elif "fourier" in model:
         runner = build_model_fitting_fourier_runner(
-            model, rng=rng, nband=nband, scale=scale
+            model, rng=rng, nband=nband, scale=scale, stamp_size=stamp_size
         )
     else:
         runner = build_model_fitting_runner(
@@ -92,10 +101,14 @@ def build_model_fitting_runner(model, rng, nband, scale):
     return boot
 
 
-def build_model_fitting_fourier_runner(fourier_model, rng, nband, scale):
+def build_model_fitting_fourier_runner(
+    fourier_model, rng, nband, scale, stamp_size=None
+):
     model = fourier_model.split("fourier_")[-1]
     if model in ["gauss", "exp", "dev"]:
-        gal_runner = get_single_fourier_model_runner(model, rng, nband, scale)
+        gal_runner = get_single_fourier_model_runner(
+            model, rng, nband, scale, stamp_size=stamp_size
+        )
     else:
         raise NotImplementedError(f"Model {model} not implemented yet")
     psf_runner = get_gauss_psf_runner(rng)
@@ -153,7 +166,7 @@ def get_single_model_runner(model, rng, nband, scale):
     return runner
 
 
-def get_single_fourier_model_runner(model, rng, nband, scale):
+def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
     prior = _make_prior(rng, scale, nband)
 
     fitter = FourierFitter(
@@ -164,6 +177,7 @@ def get_single_fourier_model_runner(model, rng, nband, scale):
             "xtol": 5.0e-5,
             "ftol": 5.0e-5,
         },
+        stamp_size=stamp_size,
     )
     guesser = ngmix.guessers.TPSFFluxGuesser(
         rng=rng,

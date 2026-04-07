@@ -12,10 +12,12 @@ from numpy import fft
 @nb.njit
 def pad_arr(arr, target_dim):
 
-    pad_width = (target_dim - arr.shape[0]) // 2
+    pad_rows = (target_dim - arr.shape[0]) // 2
+    pad_cols = (target_dim - arr.shape[1]) // 2
     padded_arr = np.zeros((target_dim, target_dim))
-    end = pad_width + arr.shape[0]
-    padded_arr[pad_width:end, pad_width:end] = arr
+    padded_arr[
+        pad_rows : pad_rows + arr.shape[0], pad_cols : pad_cols + arr.shape[1]
+    ] = arr
     return padded_arr
 
 

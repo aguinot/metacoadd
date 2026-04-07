@@ -15,8 +15,9 @@ from ..utils import atleast_mbobs
 
 
 class FourierFitter(Fitter):
-    def __init__(self, model, prior=None, fit_pars=None):
+    def __init__(self, model, prior=None, fit_pars=None, stamp_size=None):
         super().__init__(model=model, prior=prior, fit_pars=fit_pars)
+        self._stamp_size = stamp_size
 
     def _make_fit_model(self, obs, guess):
         return FourierFitModel(
@@ -24,14 +25,16 @@ class FourierFitter(Fitter):
             model=self.model,
             guess=guess,
             prior=self.prior,
+            stamp_size=self._stamp_size,
         )
 
 
 class FourierFitModel(FitModel):
-    def __init__(self, obs, model, guess, prior=None):
+    def __init__(self, obs, model, guess, prior=None, stamp_size=None):
         super().__init__(obs=obs, model=model, guess=guess, prior=prior)
         self._set_kim(
             atleast_mbobs(obs),
+            stamp_size=stamp_size,
         )
         self._set_fdiff_size()
 
@@ -115,17 +118,32 @@ class FourierFitModel(FitModel):
             fdiff[:] = LOWVAL
         return fdiff
 
-    def _set_kim(self, obs_in):
+    def _set_kim(self, obs_in, stamp_size=None):
         """
         Store native-resolution Fourier data and PSD.
 
-        The chi² is evaluated at native N resolution where the noise
-        diagonal approximation is valid. The PSD can be provided at
-        either native (N, N//2+1) or padded (M, M//2+1) resolution;
-        if padded, it is subsampled to native resolution.
+        The chi² is evaluated at *stamp_size* resolution (the intended full
+        stamp size passed from the caller).  When a stamp is clipped at the
+        image boundary, ``obs.image`` may be smaller than ``stamp_size`` in
+        one or both dimensions.  ``zero_pad_fft`` symmetrically embeds the
+        clipped image into a ``stamp_size × stamp_size`` frame before taking
+        the FFT.  The model is built at ``obs.image.shape`` using the
+        original Jacobian (no centroid adjustment needed) and embedded by the
+        same rule inside ``calc_lnprob`` / ``calc_fdiff``, so data and model
+        are always identically placed in Fourier space.
+
+        If ``stamp_size`` is None, the dimension is inferred from the first
+        observation's image shape (original behaviour for un-clipped stamps).
+
+        The PSD can be provided at either native (stamp_size, stamp_size//2+1)
+        or padded (M, M//2+1) resolution; if padded, it is sub-sampled to
+        native resolution.
         """
 
-        native_dim = int(obs_in[0][0].image.shape[0])
+        if stamp_size is not None:
+            native_dim = int(stamp_size)
+        else:
+            native_dim = int(obs_in[0][0].image.shape[0])
 
         self._kim = []
         self._ps = []
