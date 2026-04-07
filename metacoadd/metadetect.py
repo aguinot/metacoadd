@@ -126,7 +126,6 @@ class MetaDetect:
                 mcal_mbobs,
                 all_sep_cat,
                 seg_map,
-                mcal_key,
                 T_psf,
             )
             self.all_shape_cat = all_shape_cat
