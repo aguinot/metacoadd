@@ -257,7 +257,7 @@ class MetaDetect:
                 elif "e" in res:
                     res["g1"] = res["e"][0]
                     res["g2"] = res["e"][1]
-                res["Tpsf"] = T_psf
+                res[f"{name}_Tpsf"] = T_psf
 
                 all_shape_cat[name].append(res)
         return all_shape_cat
