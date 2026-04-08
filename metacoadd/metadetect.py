@@ -114,6 +114,7 @@ class MetaDetect:
             stamp_size=self._stamp_size,
         )
         self._init_metacal(mb_obs)
+        self._set_power_spectrum()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
@@ -123,7 +124,7 @@ class MetaDetect:
 
             all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
 
-            self._set_power_spectrum(mcal_mbobs)
+            # self._set_power_spectrum(mcal_mbobs)
 
             all_shape_cat = self.get_shape_cat(
                 mcal_mbobs,
@@ -167,7 +168,25 @@ class MetaDetect:
             mb_obs, self.mcal_config["types"]
         )
 
-    def _set_power_spectrum(self, mb_obs):
+    # def _set_power_spectrum(self, mb_obs):
+    #     do_ps = False
+    #     for model_name in self.gal_runners:
+    #         if "fourier" in model_name:
+    #             do_ps = True
+    #             break
+    #     if not do_ps:
+    #         return
+
+    #     for obslist in mb_obs:
+    #         for obs in obslist:
+    #             if hasattr(obs, "ps"):
+    #                 continue
+    #             ps = estimate_noise_ps_analytic(
+    #                 obs.noise,
+    #                 101,
+    #             )
+    #             obs.ps = ps
+    def _set_power_spectrum(self):
         do_ps = False
         for model_name in self.gal_runners:
             if "fourier" in model_name:
@@ -176,15 +195,60 @@ class MetaDetect:
         if not do_ps:
             return
 
-        for obslist in mb_obs:
-            for obs in obslist:
-                if hasattr(obs, "ps"):
-                    continue
-                ps = estimate_noise_ps_analytic(
-                    obs.noise,
-                    101,
-                )
-                obs.ps = ps
+        mcal_ps = {}
+        for mcal_key, mcal_mbobs in self.mcal_mbobs.items():
+            mcal_ps[mcal_key] = []
+            for obslist in mcal_mbobs:
+                mcal_ps[mcal_key].append([])
+                for obs in obslist:
+                    ps = estimate_noise_ps_analytic(
+                        obs.noise,
+                        101,
+                    )
+                    mcal_ps[mcal_key][-1].append(ps)
+
+        # 1p
+        if "1p" in self.mcal_config["types"]:
+            mcal_mbobs = self.mcal_mbobs["1p"]
+            for band_ind, obslist in enumerate(mcal_mbobs):
+                for list_ind, obs in enumerate(obslist):
+                    obs.ps = (
+                        mcal_ps["1p"][band_ind][list_ind]
+                        + mcal_ps["1m"][band_ind][list_ind]
+                    ) / 2.0
+        # 1m
+        if "1m" in self.mcal_config["types"]:
+            mcal_mbobs = self.mcal_mbobs["1m"]
+            for band_ind, obslist in enumerate(mcal_mbobs):
+                for list_ind, obs in enumerate(obslist):
+                    obs.ps = (
+                        mcal_ps["1p"][band_ind][list_ind]
+                        + mcal_ps["1m"][band_ind][list_ind]
+                    ) / 2.0
+        # 2p
+        if "2p" in self.mcal_config["types"]:
+            mcal_mbobs = self.mcal_mbobs["2p"]
+            for band_ind, obslist in enumerate(mcal_mbobs):
+                for list_ind, obs in enumerate(obslist):
+                    obs.ps = (
+                        mcal_ps["2p"][band_ind][list_ind]
+                        + mcal_ps["2m"][band_ind][list_ind]
+                    ) / 2.0
+        # 2m
+        if "2m" in self.mcal_config["types"]:
+            mcal_mbobs = self.mcal_mbobs["2m"]
+            for band_ind, obslist in enumerate(mcal_mbobs):
+                for list_ind, obs in enumerate(obslist):
+                    obs.ps = (
+                        mcal_ps["2p"][band_ind][list_ind]
+                        + mcal_ps["2m"][band_ind][list_ind]
+                    ) / 2.0
+        # noshear
+        if "noshear" in self.mcal_config["types"]:
+            mcal_mbobs = self.mcal_mbobs["noshear"]
+            for band_ind, obslist in enumerate(mcal_mbobs):
+                for list_ind, obs in enumerate(obslist):
+                    obs.ps = mcal_ps["noshear"][band_ind][list_ind]
 
     def get_T_psf(self, mb_obs):
 

@@ -26,30 +26,6 @@ DEFAULT_CONFIG = {
 }
 
 
-def _copy_noshear_noise(mcal_obs, mcal_types):
-    """Copy the noshear noise field to all shear variants.
-
-    By using the same noise field for PSD estimation across all
-    variants, the downstream Fourier chi² uses identical weights
-    for every variant.  This guarantees that the MLE noise bias
-    is the same for all variants and cancels exactly in the
-    metacal response estimate R = (e⁺ - e⁻) / (2Δg).
-
-    The chi² weighting is suboptimal for sheared variants by
-    O(Δg²) ≈ 0.01%, which is completely negligible compared to
-    the factor-of-2 variance cost of classic fixnoise.
-
-    No noise is injected into the images — only the noise field
-    (used for PSD estimation) is replaced.
-    """
-    noshear_noise = mcal_obs["noshear"].noise.copy()
-    for mcal_type in mcal_types:
-        if mcal_type == "noshear":
-            continue
-        with mcal_obs[mcal_type].writeable():
-            mcal_obs[mcal_type].noise[:, :] = noshear_noise
-
-
 class MetacalHandler:
     def __init__(
         self,
@@ -206,11 +182,16 @@ class MetacalHandlerTest:
                     rng=self.rng,
                     **self.mcal_config,
                 )
-                mcal_noise_obs = self._get_one_shear(
-                    noise_obs, mcal_maker, "noshear"
-                )
                 for mcal_type in mcal_types:
+                    mcal_noise_obs = self._get_one_shear(
+                        noise_obs, mcal_maker, mcal_type
+                    )
                     mcal_obs[mcal_type].noise = mcal_noise_obs.image
+                # mcal_noise_obs = self._get_one_shear(
+                #     noise_obs, mcal_maker, "noshear"
+                # )
+                # for mcal_type in mcal_types:
+                #     mcal_obs[mcal_type].noise = mcal_noise_obs.image
 
         elif isinstance(obs, ObsList):
             mcal_obs = {mcal_type: ObsList() for mcal_type in mcal_types}
