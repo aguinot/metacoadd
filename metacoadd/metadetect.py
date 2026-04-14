@@ -69,6 +69,8 @@ class MetaDetect:
         stamp_size=101,
         mcal_config={},
         test_fixnoise=False,
+        noise_boost_factor=1.0,
+        path_mcal_transfer_func="/Users/aguinot/Documents/roman/test_metadetect/metacal_transfer_func.npy",
     ):
         self.rng = rng
         self.mcal_config = {
@@ -89,6 +91,8 @@ class MetaDetect:
         self._fwhm = fwhm
         self._stamp_size = stamp_size
         self.test_fixnoise = test_fixnoise
+        self.noise_boost_factor = noise_boost_factor
+        self.path_mcal_transfer_func = path_mcal_transfer_func
 
     def go(
         self,
@@ -114,7 +118,7 @@ class MetaDetect:
             stamp_size=self._stamp_size,
         )
         self._init_metacal(mb_obs)
-        self._set_power_spectrum()
+        self._set_power_spectrum(mb_obs)
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
@@ -163,6 +167,7 @@ class MetaDetect:
                     "step": self.mcal_config["step"],
                     "has_pixel": self.mcal_config["has_pixel"],
                 },
+                noise_boost_factor=self.noise_boost_factor,
             )
         self.mcal_mbobs = mcal_handler.get_all(
             mb_obs, self.mcal_config["types"]
@@ -186,7 +191,7 @@ class MetaDetect:
     #                 101,
     #             )
     #             obs.ps = ps
-    def _set_power_spectrum(self):
+    def _set_power_spectrum(self, orig_mb_obs):
         do_ps = False
         for model_name in self.gal_runners:
             if "fourier" in model_name:
@@ -195,60 +200,92 @@ class MetaDetect:
         if not do_ps:
             return
 
+        type_to_ind = {
+            "noshear": 0,
+            "1p": 1,
+            "1m": 2,
+            "2p": 3,
+            "2m": 4,
+        }
+
+        all_shear_T = np.load(self.path_mcal_transfer_func)
+        ps_orig = None
         mcal_ps = {}
         for mcal_key, mcal_mbobs in self.mcal_mbobs.items():
             mcal_ps[mcal_key] = []
-            for obslist in mcal_mbobs:
+            for band_ind, obslist in enumerate(mcal_mbobs):
                 mcal_ps[mcal_key].append([])
-                for obs in obslist:
-                    ps = estimate_noise_ps_analytic(
-                        obs.noise,
-                        101,
-                    )
-                    mcal_ps[mcal_key][-1].append(ps)
+                for list_ind, obs in enumerate(obslist):
+                    # ps = estimate_noise_ps_analytic(
+                    #     obs.noise,
+                    #     101,
+                    # )
+                    # mcal_ps[mcal_key][-1].append(
+                    #     ps / self.noise_boost_factor**2
+                    # )
+                    # obs.ps = ps / self.noise_boost_factor**2
+                    if ps_orig is None:
+                        ps_orig = estimate_noise_ps_analytic(
+                            orig_mb_obs[band_ind][list_ind].noise,
+                            101,
+                        )
+                    if mcal_key == "noshear":
+                        obs.ps = (
+                            ps_orig * all_shear_T[type_to_ind["noshear"], :, :]
+                        )
+                    elif "1" in mcal_key:
+                        obs.ps = [
+                            (ps_orig * all_shear_T[type_to_ind["1p"], :, :]),
+                            (ps_orig * all_shear_T[type_to_ind["1m"], :, :]),
+                        ]
+                    elif "2" in mcal_key:
+                        obs.ps = [
+                            (ps_orig * all_shear_T[type_to_ind["2p"], :, :]),
+                            (ps_orig * all_shear_T[type_to_ind["2m"], :, :]),
+                        ]
 
-        # 1p
-        if "1p" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["1p"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["1p"][band_ind][list_ind]
-                        + mcal_ps["1m"][band_ind][list_ind]
-                    ) / 2.0
-        # 1m
-        if "1m" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["1m"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["1p"][band_ind][list_ind]
-                        + mcal_ps["1m"][band_ind][list_ind]
-                    ) / 2.0
-        # 2p
-        if "2p" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["2p"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["2p"][band_ind][list_ind]
-                        + mcal_ps["2m"][band_ind][list_ind]
-                    ) / 2.0
-        # 2m
-        if "2m" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["2m"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["2p"][band_ind][list_ind]
-                        + mcal_ps["2m"][band_ind][list_ind]
-                    ) / 2.0
-        # noshear
-        if "noshear" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["noshear"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = mcal_ps["noshear"][band_ind][list_ind]
+        # # 1p
+        # if "1p" in self.mcal_config["types"]:
+        #     mcal_mbobs = self.mcal_mbobs["1p"]
+        #     for band_ind, obslist in enumerate(mcal_mbobs):
+        #         for list_ind, obs in enumerate(obslist):
+        #             obs.ps = (
+        #                 mcal_ps["1p"][band_ind][list_ind]
+        #                 + mcal_ps["1m"][band_ind][list_ind]
+        #             ) / 2.0
+        # # 1m
+        # if "1m" in self.mcal_config["types"]:
+        #     mcal_mbobs = self.mcal_mbobs["1m"]
+        #     for band_ind, obslist in enumerate(mcal_mbobs):
+        #         for list_ind, obs in enumerate(obslist):
+        #             obs.ps = (
+        #                 mcal_ps["1p"][band_ind][list_ind]
+        #                 + mcal_ps["1m"][band_ind][list_ind]
+        #             ) / 2.0
+        # # 2p
+        # if "2p" in self.mcal_config["types"]:
+        #     mcal_mbobs = self.mcal_mbobs["2p"]
+        #     for band_ind, obslist in enumerate(mcal_mbobs):
+        #         for list_ind, obs in enumerate(obslist):
+        #             obs.ps = (
+        #                 mcal_ps["2p"][band_ind][list_ind]
+        #                 + mcal_ps["2m"][band_ind][list_ind]
+        #             ) / 2.0
+        # # 2m
+        # if "2m" in self.mcal_config["types"]:
+        #     mcal_mbobs = self.mcal_mbobs["2m"]
+        #     for band_ind, obslist in enumerate(mcal_mbobs):
+        #         for list_ind, obs in enumerate(obslist):
+        #             obs.ps = (
+        #                 mcal_ps["2p"][band_ind][list_ind]
+        #                 + mcal_ps["2m"][band_ind][list_ind]
+        #             ) / 2.0
+        # # noshear
+        # if "noshear" in self.mcal_config["types"]:
+        #     mcal_mbobs = self.mcal_mbobs["noshear"]
+        #     for band_ind, obslist in enumerate(mcal_mbobs):
+        #         for list_ind, obs in enumerate(obslist):
+        #             obs.ps = mcal_ps["noshear"][band_ind][list_ind]
 
     def get_T_psf(self, mb_obs):
 
@@ -323,7 +360,7 @@ class MetaDetect:
                 elif "e" in res:
                     res["g1"] = res["e"][0]
                     res["g2"] = res["e"][1]
-                res[f"{name}_Tpsf"] = T_psf
+                res["Tpsf"] = T_psf
 
                 all_shape_cat[name].append(res)
         return all_shape_cat

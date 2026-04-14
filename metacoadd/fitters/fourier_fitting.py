@@ -2,8 +2,10 @@ import numpy as np
 
 from ngmix.fitting.results import FitModel
 from ngmix.fitting.fitters import Fitter
+from ngmix.fitting.leastsqbound import run_leastsq
 from ngmix.gexceptions import GMixRangeError
 from ngmix.defaults import LOWVAL, BIGVAL
+from ngmix import Observation, ObsList, MultiBandObsList
 
 from .fourier_fitting_nb import (
     zero_pad_fft,
@@ -19,22 +21,113 @@ class FourierFitter(Fitter):
         super().__init__(model=model, prior=prior, fit_pars=fit_pars)
         self._stamp_size = stamp_size
 
-    def _make_fit_model(self, obs, guess):
+    def go(self, obs, guess):
+        """
+        Run leastsq and set the result
+
+        Parameters
+        ----------
+        obs: Observation, ObsList, or MultiBandObsList
+            Observation(s) to fit
+        guess: array
+            Array of initial parameters for the fit
+
+        Returns
+        --------
+        a dict-like which contains the result as well as functions used for the
+        fitting.
+
+        """
+
+        n_ps = self._set_ps_iter(obs)
+        all_results = []
+        for ps_ind in range(n_ps):
+            fit_model = self._make_fit_model(
+                obs=obs, guess=guess, ps_ind=ps_ind
+            )
+
+            result = run_leastsq(
+                fit_model.calc_fdiff,
+                guess=guess,
+                n_prior_pars=fit_model.n_prior_pars,
+                bounds=fit_model.bounds,
+                **self.fit_pars,
+            )
+            if result["flags"] != 0:
+                all_results = [result]
+                break
+            all_results.append(result)
+            guess = result["pars"]
+
+        if len(all_results) > 1:
+            result = self._combine_ps_results(all_results)
+        else:
+            result = all_results[0]
+
+        fit_model.set_fit_result(result)
+        return fit_model
+
+    def _make_fit_model(self, obs, guess, ps_ind=0):
         return FourierFitModel(
             obs=obs,
             model=self.model,
             guess=guess,
             prior=self.prior,
             stamp_size=self._stamp_size,
+            ps_ind=ps_ind,
         )
+
+    def _combine_ps_results(self, all_results):
+
+        seed = get_seed_from_par(all_results[0]["pars"][0])
+        rng = np.random.RandomState(seed)
+        res_ind = rng.randint(0, len(all_results))
+
+        final_res = {}
+        final_res["flags"] = 0
+        for res in all_results:
+            final_res["flags"] |= res["flags"]
+        final_res["pars"] = np.mean(
+            [res["pars"] for res in all_results], axis=0
+        )
+        final_res["nfev"] = np.max([res["nfev"] for res in all_results])
+        final_res["ier"] = all_results[res_ind]["ier"]
+        final_res["errmsg"] = all_results[res_ind]["errmsg"]
+        final_res["pars_err"] = all_results[res_ind]["pars_err"]
+        final_res["pars_cov"] = all_results[res_ind]["pars_cov"]
+        final_res["pars_cov0"] = all_results[res_ind]["pars_cov0"]
+        return final_res
+
+    def _set_ps_iter(self, obs):
+        n_ps = 1
+        if isinstance(obs, MultiBandObsList):
+            for obslist in obs:
+                for obs_ in obslist:
+                    ps = obs_.ps
+                    if isinstance(ps, list):
+                        n_ps = max(n_ps, len(ps))
+        elif isinstance(obs, ObsList):
+            for obs_ in obs:
+                ps = obs_.ps
+                if isinstance(ps, list):
+                    n_ps = max(n_ps, len(ps))
+        else:
+            ps = obs.ps
+            if isinstance(ps, list):
+                n_ps = max(n_ps, len(ps))
+
+        return n_ps
 
 
 class FourierFitModel(FitModel):
-    def __init__(self, obs, model, guess, prior=None, stamp_size=None):
+    def __init__(
+        self, obs, model, guess, prior=None, stamp_size=None, ps_ind=0
+    ):
         super().__init__(obs=obs, model=model, guess=guess, prior=prior)
         self._set_kim(
             atleast_mbobs(obs),
             stamp_size=stamp_size,
+            ps_ind=ps_ind,
         )
         self._set_fdiff_size()
 
@@ -118,7 +211,7 @@ class FourierFitModel(FitModel):
             fdiff[:] = LOWVAL
         return fdiff
 
-    def _set_kim(self, obs_in, stamp_size=None):
+    def _set_kim(self, obs_in, stamp_size=None, ps_ind=0):
         """
         Store native-resolution Fourier data and PSD.
 
@@ -157,7 +250,11 @@ class FourierFitModel(FitModel):
                 self._kim[i].append(kim)
                 self.totpix += kim.size
 
-                ps_ij = obs.ps
+                ps_ = obs.ps
+                if isinstance(ps_, list):
+                    ps_ij = ps_[ps_ind]
+                else:
+                    ps_ij = ps_
                 native_shape = (native_dim, native_dim // 2 + 1)
 
                 if ps_ij.shape == native_shape:
@@ -170,3 +267,12 @@ class FourierFitModel(FitModel):
         # we have 2*totpix, since we use both real and imaginary
         # parts
         self.fdiff_size = self.n_prior_pars + 2 * self.totpix
+
+
+def get_seed_from_par(val):
+    power_ = int(np.log10(abs(val)))
+    if power_ < 0:
+        power = abs(power_) + 4
+    if power_ >= 0:
+        power = 4 - power_ - 1
+    return int(abs(val * 10**power))

@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 
 import galsim
@@ -144,11 +145,13 @@ class MetacalHandlerTest:
         mcal_class="gauss_psf",
         fixnoise=True,
         use_noise_image=True,
+        noise_boost_factor=1.0,
         mcal_config={},
     ):
         self.rng = rng
         self.fixnoise = fixnoise
         self.use_noise_image = use_noise_image
+        self.noise_boost_factor = noise_boost_factor
         self.mcal_config = DEFAULT_CONFIG.copy()
         self.mcal_config.update(mcal_config)
 
@@ -242,11 +245,31 @@ class MetacalHandlerTest:
 
         if self.use_noise_image:
             # self._replace_image_with_noise(obs)
-            noise_obs = _replace_image_with_noise(obs)
+            noise_obs = self._replace_image_with_noise_boost(obs)
         else:
             raise NotImplementedError(
                 "Only use_noise_image=True is implemented at the moment."
             )
+        return noise_obs
+
+    def _replace_image_with_noise_boost(self, obs):
+        """
+        copy the observation and copy the .noise parameter
+        into the image position
+        """
+
+        noise_obs = copy.deepcopy(obs)
+
+        if isinstance(noise_obs, Observation):
+            noise_obs.image = noise_obs.noise
+        elif isinstance(noise_obs, ObsList):
+            for nobs in noise_obs:
+                nobs.image = nobs.noise
+        else:
+            for obslist in noise_obs:
+                for nobs in obslist:
+                    nobs.image = nobs.noise * self.noise_boost_factor
+
         return noise_obs
 
 
