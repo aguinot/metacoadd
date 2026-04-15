@@ -118,7 +118,8 @@ class MetaDetect:
             stamp_size=self._stamp_size,
         )
         self._init_metacal(mb_obs)
-        self._set_power_spectrum(mb_obs)
+        if self.test_fixnoise:
+            self._set_power_spectrum_pseudo_fixnoise()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
@@ -128,7 +129,8 @@ class MetaDetect:
 
             all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
 
-            # self._set_power_spectrum(mcal_mbobs)
+            if not self.test_fixnoise:
+                self._set_power_spectrum(mcal_mbobs)
 
             all_shape_cat = self.get_shape_cat(
                 mcal_mbobs,
@@ -173,25 +175,26 @@ class MetaDetect:
             mb_obs, self.mcal_config["types"]
         )
 
-    # def _set_power_spectrum(self, mb_obs):
-    #     do_ps = False
-    #     for model_name in self.gal_runners:
-    #         if "fourier" in model_name:
-    #             do_ps = True
-    #             break
-    #     if not do_ps:
-    #         return
+    def _set_power_spectrum(self, mb_obs):
+        do_ps = False
+        for model_name in self.gal_runners:
+            if "fourier" in model_name:
+                do_ps = True
+                break
+        if not do_ps:
+            return
 
-    #     for obslist in mb_obs:
-    #         for obs in obslist:
-    #             if hasattr(obs, "ps"):
-    #                 continue
-    #             ps = estimate_noise_ps_analytic(
-    #                 obs.noise,
-    #                 101,
-    #             )
-    #             obs.ps = ps
-    def _set_power_spectrum(self, orig_mb_obs):
+        for obslist in mb_obs:
+            for obs in obslist:
+                if hasattr(obs, "ps"):
+                    continue
+                ps = estimate_noise_ps_analytic(
+                    obs.noise,
+                    101,
+                )
+                obs.ps = ps
+
+    def _set_power_spectrum_pseudo_fixnoise(self):
         do_ps = False
         for model_name in self.gal_runners:
             if "fourier" in model_name:
