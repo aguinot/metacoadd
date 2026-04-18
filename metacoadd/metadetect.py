@@ -123,7 +123,7 @@ class MetaDetect:
             raise ValueError(
                 "mb_obs must be an instance of ngmix.MultiBandObsList"
             )
-        print("Setting up fitters...")
+        # print("Setting up fitters...")
         self.gal_runners = get_fitters(
             models=self._models,
             fwhms=self._fwhms,
@@ -132,55 +132,55 @@ class MetaDetect:
             scale=scale,
             stamp_size=self._stamp_size,
         )
-        print("Done setting up fitters.")
+        # print("Done setting up fitters.")
 
-        print("Running metacalibration...")
-        ts = time()
+        # print("Running metacalibration...")
+        # ts = time()
         self._init_metacal(mb_obs)
-        print(
-            "Done running metacalibration.",
-            "Time taken:",
-            time() - ts,
-            "seconds",
-        )
+        # print(
+        #     "Done running metacalibration.",
+        #     "Time taken:",
+        #     time() - ts,
+        #     "seconds",
+        # )
         if self.test_fixnoise:
-            print("Not printing")
+            # print("Not printing")
             self._set_power_spectrum_pseudo_fixnoise()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
-            print("Looping over metacal type ", mcal_key)
+            # print("Looping over metacal type ", mcal_key)
             mcal_mbobs = self.mcal_mbobs[mcal_key]
 
-            print("Getting T_psf...")
+            # print("Getting T_psf...")
             T_psf = self.get_T_psf(mcal_mbobs)
-            print("Done getting T_psf.")
+            # print("Done getting T_psf.")
 
-            print("Getting catalog...")
+            # print("Getting catalog...")
             all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
-            print(
-                "Done getting catalog.", len(all_sep_cat), "objects detected."
-            )
+            # print(
+            #     "Done getting catalog.", len(all_sep_cat), "objects detected."
+            # )
 
             if not self.test_fixnoise:
-                print("Not printing 2")
+                # print("Not printing 2")
                 self._set_power_spectrum(mcal_mbobs)
 
-            print("Getting shape catalog...")
+            # print("Getting shape catalog...")
             all_shape_cat = self.get_shape_cat(
                 mcal_mbobs,
                 all_sep_cat,
                 seg_map,
                 T_psf,
             )
-            print("Done getting shape catalog.")
+            # print("Done getting shape catalog.")
             self.all_shape_cat = all_shape_cat
 
-            print("Building output catalog...")
+            # print("Building output catalog...")
             final_cat[mcal_key] = self.build_output_cat(
                 mcal_mbobs, all_sep_cat, all_shape_cat
             )
-            print("Done building output catalog.")
+            # print("Done building output catalog.")
 
             del mcal_mbobs, all_sep_cat, seg_map, all_shape_cat
             gc.collect()
@@ -385,7 +385,7 @@ class MetaDetect:
 
         all_shape_cat = {name: [] for name in self.gal_runners}
         for obj_ind, det_obj in enumerate(sep_cat):
-            print(f"Measuring object {obj_ind + 1}")
+            # print(f"Measuring object {obj_ind + 1}")
             cutout_size = self._stamp_size
 
             mb_obs = get_stamp_mbobs(

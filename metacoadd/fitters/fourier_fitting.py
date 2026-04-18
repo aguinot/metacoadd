@@ -48,8 +48,8 @@ class FourierFitter(Fitter):
         n_ps = self._set_ps_iter(obs)
         all_results = []
         for ps_ind in range(n_ps):
-            print("Guess:", guess[4:])
-            ts = time()
+            # print("Guess:", guess[4:])
+            # ts = time()
             # fit_model_real = self._make_fit_model_real(
             #     obs=obs,
             #     guess=guess,
