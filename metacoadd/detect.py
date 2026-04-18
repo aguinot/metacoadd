@@ -90,6 +90,8 @@ DET_CAT_DTYPE = [
     ("dec", np.float64),
     ("x", np.float64),
     ("y", np.float64),
+    ("sx_row", np.float64),
+    ("sx_col", np.float64),
     ("a", np.float64),
     ("b", np.float64),
     ("xx", np.float64),
@@ -259,7 +261,19 @@ def get_output_cat(n_obj):
     return out
 
 
-def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
+def get_cat(
+    img,
+    weight,
+    thresh=1.5,
+    minarea=5,
+    deblend_nthresh=32,
+    deblend_cont=0.005,
+    kernel=None,
+    filter_type="conv",
+    header=None,
+    wcs=None,
+    mask=None,
+):
     # NOTE: Might need to look again into this. For now we keep it simple.
     rms = np.zeros_like(weight)
     mask_rms = np.ones_like(weight)
@@ -275,6 +289,9 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     elif header is not None:
         wcs = WCS(header)
 
+    if kernel is None:
+        kernel = DES_KERNEL
+
     # NOTE: Sometimes we end up with a non-zero background, I don't know why..
     bkg = sep.Background(img, mask=mask_rms)
 
@@ -283,11 +300,11 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
         thresh,
         err=rms,
         segmentation_map=True,
-        minarea=5,
-        deblend_nthresh=32,
-        deblend_cont=0.005,
-        filter_type="conv",
-        filter_kernel=DES_KERNEL,
+        minarea=minarea,
+        deblend_nthresh=deblend_nthresh,
+        deblend_cont=deblend_cont,
+        filter_type=filter_type,
+        filter_kernel=np.asarray(kernel),
     )
     n_obj = len(obj)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
@@ -369,6 +386,8 @@ def get_cat(img, weight, thresh=1.5, header=None, wcs=None, mask=None):
     out["npix"] = obj["npix"]
     out["x"] = obj["x"]
     out["y"] = obj["y"]
+    out["sx_row"] = obj["y"]
+    out["sx_col"] = obj["x"]
     out["a"] = obj["a"]
     out["b"] = obj["b"]
     out["xx"] = obj["x2"]

@@ -1,6 +1,7 @@
 import re
 import gc
 from copy import deepcopy
+from time import time
 
 import numpy as np
 
@@ -63,9 +64,14 @@ class MetaDetect:
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
         detect_thresh=1500,
+        detect_minarea=5,
+        detect_deblend_nthresh=32,
+        detect_deblend_cont=0.005,
+        detect_kernel=None,
+        detect_filter_type="conv",
         coadd_multiband=True,
         models=None,
-        fwhm=None,
+        fwhms=None,
         stamp_size=101,
         mcal_config={},
         test_fixnoise=False,
@@ -86,9 +92,17 @@ class MetaDetect:
         self.mcal_config.update(mcal_config)
 
         self._detect_thresh = detect_thresh
+        self._detect_minarea = detect_minarea
+        self._detect_deblend_nthresh = detect_deblend_nthresh
+        self._detect_deblend_cont = detect_deblend_cont
+        self._detect_kernel = detect_kernel
+        self._detect_filter_type = detect_filter_type
         self._coadd_multiband = coadd_multiband
         self._models = models
-        self._fwhm = fwhm
+        self._fwhms = fwhms
+        # Temporary fix. If the stamp size is even, raise issues.
+        if stamp_size % 2 == 0:
+            stamp_size += 1
         self._stamp_size = stamp_size
         self.test_fixnoise = test_fixnoise
         self.noise_boost_factor = noise_boost_factor
@@ -109,40 +123,64 @@ class MetaDetect:
             raise ValueError(
                 "mb_obs must be an instance of ngmix.MultiBandObsList"
             )
+        print("Setting up fitters...")
         self.gal_runners = get_fitters(
             models=self._models,
-            fwhm=self._fwhm,
+            fwhms=self._fwhms,
             rng=self.rng,
             nband=nband,
             scale=scale,
             stamp_size=self._stamp_size,
         )
+        print("Done setting up fitters.")
+
+        print("Running metacalibration...")
+        ts = time()
         self._init_metacal(mb_obs)
+        print(
+            "Done running metacalibration.",
+            "Time taken:",
+            time() - ts,
+            "seconds",
+        )
         if self.test_fixnoise:
+            print("Not printing")
             self._set_power_spectrum_pseudo_fixnoise()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
+            print("Looping over metacal type ", mcal_key)
             mcal_mbobs = self.mcal_mbobs[mcal_key]
 
+            print("Getting T_psf...")
             T_psf = self.get_T_psf(mcal_mbobs)
+            print("Done getting T_psf.")
 
+            print("Getting catalog...")
             all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
+            print(
+                "Done getting catalog.", len(all_sep_cat), "objects detected."
+            )
 
             if not self.test_fixnoise:
+                print("Not printing 2")
                 self._set_power_spectrum(mcal_mbobs)
 
+            print("Getting shape catalog...")
             all_shape_cat = self.get_shape_cat(
                 mcal_mbobs,
                 all_sep_cat,
                 seg_map,
                 T_psf,
             )
+            print("Done getting shape catalog.")
             self.all_shape_cat = all_shape_cat
 
+            print("Building output catalog...")
             final_cat[mcal_key] = self.build_output_cat(
                 mcal_mbobs, all_sep_cat, all_shape_cat
             )
+            print("Done building output catalog.")
 
             del mcal_mbobs, all_sep_cat, seg_map, all_shape_cat
             gc.collect()
@@ -190,7 +228,7 @@ class MetaDetect:
                     continue
                 ps = estimate_noise_ps_analytic(
                     obs.noise,
-                    101,
+                    self._stamp_size,
                 )
                 obs.ps = ps
 
@@ -221,7 +259,7 @@ class MetaDetect:
                 for list_ind, obs in enumerate(obslist):
                     ps = estimate_noise_ps_analytic(
                         obs.noise,
-                        101,
+                        self._stamp_size,
                     )
                     mcal_ps[mcal_key][-1].append(
                         ps / self.noise_boost_factor**2
@@ -230,7 +268,7 @@ class MetaDetect:
                     # if ps_orig is None:
                     #     ps_orig = estimate_noise_ps_analytic(
                     #         orig_mb_obs[band_ind][list_ind].noise,
-                    #         101,
+                    #         self._stamp_size,
                     #     )
                     # if mcal_key == "noshear":
                     #     obs.ps = (
@@ -325,6 +363,10 @@ class MetaDetect:
             img,
             weight,
             thresh=self._detect_thresh,
+            minarea=self._detect_minarea,
+            deblend_nthresh=self._detect_deblend_nthresh,
+            deblend_cont=self._detect_deblend_cont,
+            kernel=self._detect_kernel,
             wcs=None,
         )
         del img, weight
@@ -343,6 +385,7 @@ class MetaDetect:
 
         all_shape_cat = {name: [] for name in self.gal_runners}
         for obj_ind, det_obj in enumerate(sep_cat):
+            print(f"Measuring object {obj_ind + 1}")
             cutout_size = self._stamp_size
 
             mb_obs = get_stamp_mbobs(
@@ -416,3 +459,72 @@ class MetaDetect:
                 except:
                     continue
         return final_cat
+
+
+def do_metadetect(
+    config,
+    mbobs,
+    rng,
+    shear_band_combs=None,
+    color_key_func=None,
+    color_dep_mbobs=None,
+    det_band_combs=None,
+):
+    """Run metadetect on the multi-band observations.
+
+    Parameters
+    ----------
+    config: dict
+        Configuration dictionary. Possible entries are
+
+            metacal
+            weight
+            model
+
+    mbobs: ngmix.MultiBandObsList
+        We will do detection and measurements on these images
+    rng: numpy.random.RandomState
+        Random number generator
+    shear_band_combs: list of list of int, optional
+        If given, each element of the outer list is a list of indices into mbobs to use
+        for shear measurement. Shear measurements will be made for each element of the
+        outer list. If None, then shear measurements will be made for all entries in
+        mbobs.
+    det_band_combs: list of list of int or str, optional
+        If given, the set of bands to use for detection. The default of None uses all
+        of the bands. If the string "shear_bands" is passed, the code uses the bands
+        used for shear.
+    color_key_func: function, optional
+        If given, a function that computes a color or tuple of colors to key the
+        `color_dep_mbobs` dictionary given an input set of fluxes from the mbobs.
+    color_dep_mbobs: dict of mbobs, optional
+        A dictionary of color-dependently rendered observations of the mbobs for use
+        in color-dependent metadetect.
+
+    Returns
+    -------
+    res: dict
+        The fitting data keyed on the shear component.
+    """
+    md = MetaDetect(
+        rng,
+        step=config["metacal"].get("step", 0.01),
+        types=config["metacal"].get(
+            "types", ["1m", "1p", "2m", "2p", "noshear"]
+        ),
+        detect_thresh=config["sx"].get("detect_thresh", 1.5),
+        detect_minarea=config["sx"].get("detect_minarea", 5),
+        detect_deblend_nthresh=config["sx"].get("deblend_nthresh", 32),
+        detect_deblend_cont=config["sx"].get("deblend_cont", 0.005),
+        detect_kernel=config["sx"].get("filter_kernel", None),
+        detect_filter_type=config["sx"].get("filter_type", "conv"),
+        coadd_multiband=True,
+        models=[fitter["model"] for fitter in config["fitters"]],
+        fwhms=[fitter["weight"]["fwhm"] for fitter in config["fitters"]],
+        stamp_size=config["meds"]["min_box_size"],
+        mcal_config={},
+        test_fixnoise=False,
+        noise_boost_factor=1.0,
+        path_mcal_transfer_func="/Users/aguinot/Documents/roman/test_metadetect/metacal_transfer_func.npy",
+    )
+    return md.go(mbobs)
