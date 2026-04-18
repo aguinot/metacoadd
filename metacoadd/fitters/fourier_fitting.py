@@ -1,3 +1,5 @@
+from time import time
+
 import numpy as np
 
 from ngmix.fitting.results import FitModel
@@ -12,6 +14,10 @@ from .fourier_fitting_nb import (
     chisq_from_rfft2_residual,
     fill_fdiff_from_rfft2,
     make_rfft2_onesided_weights,
+)
+from ..gmix_fourier.gmix_fourier_nb import (
+    gmix_eval_fourier_analytic,
+    gmix_eval_fourier_analytic_inplace,
 )
 from ..utils import atleast_mbobs
 
@@ -42,10 +48,24 @@ class FourierFitter(Fitter):
         n_ps = self._set_ps_iter(obs)
         all_results = []
         for ps_ind in range(n_ps):
+            print("Guess:", guess[4:])
+            ts = time()
+            # fit_model_real = self._make_fit_model_real(
+            #     obs=obs,
+            #     guess=guess,
+            # )
+            # result_real = run_leastsq(
+            #     fit_model_real.calc_fdiff,
+            #     guess=guess,
+            #     n_prior_pars=fit_model_real.n_prior_pars,
+            #     bounds=fit_model_real.bounds,
+            #     **self.fit_pars,
+            # )
+            # if result_real["flags"] == 0:
+            #     guess = result_real["pars"]
             fit_model = self._make_fit_model(
                 obs=obs, guess=guess, ps_ind=ps_ind
             )
-
             result = run_leastsq(
                 fit_model.calc_fdiff,
                 guess=guess,
@@ -53,6 +73,26 @@ class FourierFitter(Fitter):
                 bounds=fit_model.bounds,
                 **self.fit_pars,
             )
+            # print(
+            #     "Result:",
+            #     result["pars"][4:],
+            #     "nfev:",
+            #     result["nfev"],
+            #     # "nfev tot:",
+            #     # result_real["nfev"] + result["nfev"],
+            #     "time:",
+            #     (time() - ts) * 1000,
+            #     "snr:",
+            #     np.round(result["pars"][-1] / result["pars_err"][-1], 3)
+            #     if result["pars_err"][-1] > 0
+            #     else -1.0,
+            #     # "snr real:",
+            #     # np.round(
+            #     #     result_real["pars"][-1] / result_real["pars_err"][-1], 3
+            #     # )
+            #     # if result_real["pars_err"][-1] > 0
+            #     # else -1.0,
+            # )
             if result["flags"] != 0:
                 all_results = [result]
                 break
@@ -75,6 +115,14 @@ class FourierFitter(Fitter):
             prior=self.prior,
             stamp_size=self._stamp_size,
             ps_ind=ps_ind,
+        )
+
+    def _make_fit_model_real(self, obs, guess):
+        return FitModel(
+            obs=obs,
+            model=self.model,
+            guess=guess,
+            prior=self.prior,
         )
 
     def _combine_ps_results(self, all_results):
@@ -131,6 +179,55 @@ class FourierFitModel(FitModel):
         )
         self._set_fdiff_size()
 
+    def _get_k_model(self, gm, obs, kim):
+        """Return the Fourier-space model for one observation.
+
+        Uses the analytic path (no FFT) when the observation has no mask
+        applied (``obs.has_no_mask`` True or mask is all-ones).  Falls back
+        to the FFT path when masking is present, because the mask must also
+        be applied to the model in that case.
+
+        Parameters
+        ----------
+        gm : GMix
+            Convolved Gaussian mixture for this observation.
+        obs : Observation
+            The ngmix Observation (used to check masking and get Jacobian).
+        kim : ndarray, complex128
+            Pre-computed Fourier data for this observation; its shape gives
+            the target rfft2 dimension.
+        """
+        N = kim.shape[0]
+        # use_analytic = not self._obs_has_mask(obs)
+        use_analytic = True
+        if use_analytic:
+            j = obs.jacobian
+            return gmix_eval_fourier_analytic(
+                gm.get_data(),
+                N,
+                j.row0,
+                j.col0,
+                j.dvdrow,
+                j.dvdcol,
+                j.dudrow,
+                j.dudcol,
+            )
+        else:
+            r_model = gm.make_image(obs.image.shape, jacobian=obs.jacobian)
+            return zero_pad_fft(r_model, target_dim=N)
+
+    @staticmethod
+    def _obs_has_mask(obs):
+        """Return True if the observation has a non-trivial weight mask."""
+        if obs.has_bmask():
+            return True
+        if obs.has_weight():
+            w = obs.weight
+            # any zeroed pixel means a masked pixel
+            if np.any(w == 0):
+                return True
+        return False
+
     def calc_lnprob(self, pars, more=False):
 
         try:
@@ -147,11 +244,8 @@ class FourierFitModel(FitModel):
                 gmix_list = self._gmix_all[band]
 
                 for i, (obs, gm) in enumerate(zip(obs_list, gmix_list)):
-                    r_model = gm.make_image(
-                        obs.image.shape, jacobian=obs.jacobian
-                    )
                     kim = self._kim[band][i]
-                    k_model = zero_pad_fft(r_model, target_dim=kim.shape[0])
+                    k_model = self._get_k_model(gm, obs, kim)
                     chi2, numer, denom = chisq_from_rfft2_residual(
                         kim, k_model, self._ps[band][i], self._w
                     )
@@ -195,12 +289,9 @@ class FourierFitModel(FitModel):
                 gmix_list = self._gmix_all[band]
 
                 for i, (obs, gm) in enumerate(zip(obs_list, gmix_list)):
-                    r_model = gm.make_image(
-                        obs.image.shape, jacobian=obs.jacobian
-                    )
                     kim = self._kim[band][i]
                     ps = self._ps[band][i]
-                    k_model = zero_pad_fft(r_model, target_dim=kim.shape[0])
+                    k_model = self._get_k_model(gm, obs, kim)
                     fill_fdiff_from_rfft2(
                         kim, k_model, ps, self._w, fdiff, start
                     )
@@ -219,7 +310,7 @@ class FourierFitModel(FitModel):
         stamp size passed from the caller).  When a stamp is clipped at the
         image boundary, ``obs.image`` may be smaller than ``stamp_size`` in
         one or both dimensions.  ``zero_pad_fft`` symmetrically embeds the
-        clipped image into a ``stamp_size × stamp_size`` frame before taking
+        clipped image into a ``stamp_size x stamp_size`` frame before taking
         the FFT.  The model is built at ``obs.image.shape`` using the
         original Jacobian (no centroid adjustment needed) and embedded by the
         same rule inside ``calc_lnprob`` / ``calc_fdiff``, so data and model

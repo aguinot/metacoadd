@@ -6,7 +6,7 @@ from .fitters.fourier_fitting import FourierFitter
 
 
 def get_fitters(
-    models, fwhm=None, rng=None, nband=None, scale=None, stamp_size=None
+    models, fwhms=None, rng=None, nband=None, scale=None, stamp_size=None
 ):
 
     if isinstance(models, str):
@@ -15,7 +15,7 @@ def get_fitters(
         raise ValueError("models must be a string or a list of strings")
 
     fitters = {}
-    for model in models:
+    for model, fwhm in zip(models, fwhms):
         fitters[model] = get_runner(
             model,
             fwhm=fwhm,
@@ -181,7 +181,7 @@ def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
     )
     guesser = ngmix.guessers.TPSFFluxGuesser(
         rng=rng,
-        T=0.25,
+        T=0.02,
         prior=prior,
     )
     runner = ngmix.runners.Runner(

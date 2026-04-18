@@ -34,6 +34,8 @@ def meshgrid_2d(x, y):
 
 @nb.njit
 def zero_pad_fft(im, target_dim):
+    if im.shape[0] == target_dim and im.shape[1] == target_dim:
+        return fft.rfft2(im)
     padded_im = pad_arr(im, target_dim)
     return fft.rfft2(padded_im)
 
