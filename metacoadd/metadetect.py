@@ -13,7 +13,7 @@ from ngmix.metacal.convenience import (
 )
 
 from .metacal_new import MetacalHandler, MetacalHandlerTest
-from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
+from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
 
@@ -77,6 +77,7 @@ class MetaDetect:
         test_fixnoise=False,
         noise_boost_factor=1.0,
         path_mcal_transfer_func="/Users/aguinot/Documents/roman/test_metadetect/metacal_transfer_func.npy",
+        force_detection=False,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -107,6 +108,7 @@ class MetaDetect:
         self.test_fixnoise = test_fixnoise
         self.noise_boost_factor = noise_boost_factor
         self.path_mcal_transfer_func = path_mcal_transfer_func
+        self.force_detection = force_detection
 
     def go(
         self,
@@ -371,7 +373,11 @@ class MetaDetect:
         else:
             img = mb_obs[0][0].image
             weight = mb_obs[0][0].weight
-        cat, seg_map = get_cat(
+        if self.force_detection:
+            detect_func = get_cat_force
+        else:
+            detect_func = get_cat
+        cat, seg_map = detect_func(
             img,
             weight,
             thresh=self._detect_thresh,

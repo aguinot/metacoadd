@@ -408,3 +408,125 @@ def get_cat(
         out["dec"] = dec
 
     return out, seg
+
+
+def get_cat_force(
+    img,
+    weight,
+    thresh=1.5,
+    minarea=5,
+    deblend_nthresh=32,
+    deblend_cont=0.005,
+    kernel=None,
+    filter_type="conv",
+    header=None,
+    wcs=None,
+    mask=None,
+):
+    # NOTE: Might need to look again into this. For now we keep it simple.
+    rms = np.zeros_like(weight)
+    mask_rms = np.ones_like(weight)
+    m = np.where(weight > 0)
+    rms[m] = np.sqrt(1 / weight[m])
+    mask_rms[m] = 0
+
+    rms = np.median(np.sqrt(1 / weight[m]))
+    # rms = mad(img, scale="normal", axis=(0, 1))
+
+    if (header is not None) and (wcs is not None):
+        raise ValueError("Only one of header or wcs can be provided.")
+    elif header is not None:
+        wcs = WCS(header)
+
+    if kernel is None:
+        kernel = DES_KERNEL
+
+    # NOTE: Sometimes we end up with a non-zero background, I don't know why..
+
+    n_obj = 1
+    seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
+
+    x = np.array([img.shape[1] / 2.0])
+    y = np.array([img.shape[0] / 2.0])
+    a = np.array([3])
+    b = np.array([3])
+
+    kronrads, krflags = sep.kron_radius(
+        img,
+        x,
+        y,
+        a,
+        b,
+        0,
+        6.0,
+    )
+    fluxes = np.ones(n_obj) * -10.0
+    fluxerrs = np.ones(n_obj) * -10.0
+    flux_rad = np.ones(n_obj) * -10.0
+    snr = np.ones(n_obj) * -10.0
+    flags = np.ones(n_obj, dtype=np.int64) * 64
+    flags_rad = np.ones(n_obj, dtype=np.int64) * 64
+
+    good_flux = (
+        (kronrads > 0)
+        & (b > 0)
+        & (a >= b)
+        & (0 >= -np.pi / 2)
+        & (0 <= np.pi / 2)
+    )
+    fluxes[good_flux], fluxerrs[good_flux], flags[good_flux] = sep.sum_ellipse(
+        img,
+        x,
+        y,
+        a,
+        b,
+        0,
+        2.5 * kronrads[good_flux],
+        err=rms,
+        subpix=1,
+    )
+
+    flux_rad[good_flux], flags_rad[good_flux] = sep.flux_radius(
+        img,
+        x[good_flux],
+        y[good_flux],
+        6.0 * a[good_flux],
+        0.5,
+        normflux=fluxes[good_flux],
+        subpix=1,
+    )
+
+    good_snr = (fluxes > 0) & (fluxerrs > 0)
+    snr[good_snr] = fluxes[good_snr] / fluxerrs[good_snr]
+
+    if wcs is not None:
+        ra, dec = wcs.all_pix2world(x, y, 0)
+
+    out = get_output_cat(n_obj)
+
+    out["number"] = seg_id
+    out["npix"] = np.array([img.size])
+    out["x"] = x
+    out["y"] = y
+    out["sx_row"] = y
+    out["sx_col"] = x
+    out["a"] = a
+    out["b"] = b
+    out["xx"] = np.array([-1.0])
+    out["yy"] = np.array([-1.0])
+    out["xy"] = np.array([-1.0])
+    out["elongation"] = a / b
+    out["ellipticity"] = 1.0 - b / a
+    out["kronrad"] = kronrads
+    out["flux"] = fluxes
+    out["flux_err"] = fluxerrs
+    out["flux_radius"] = flux_rad
+    out["snr"] = snr
+    out["flags"] = np.array([0])
+    out["flux_flags"] = krflags | flags | flags_rad
+    out["ext_flags"] = np.array([0])
+    if wcs is not None:
+        out["ra"] = ra
+        out["dec"] = dec
+
+    return out, None
