@@ -153,6 +153,7 @@ class MetaDetect:
         for mcal_key in self.mcal_config["types"]:
             # print("Looping over metacal type ", mcal_key)
             mcal_mbobs = self.mcal_mbobs[mcal_key]
+            self._current_mcal_key = mcal_key
 
             # print("Getting T_psf...")
             T_psf = self.get_T_psf(mcal_mbobs)
@@ -504,12 +505,31 @@ class MetaDetectForcedPositions(MetaDetect):
         self._y_pix = np.asarray(y_pix, dtype=np.float64)
 
     def get_cat(self, mb_obs):
-        """Run SEP photometry at the forced positions; skip detection."""
+        """Run SEP photometry at the shear-corrected forced positions.
+
+        For each metacal type (1p, 1m, 2p, 2m) the truth positions are shifted
+        by the corresponding reduced shear before photometry, so that Kron
+        radii, fluxes, and SNR are measured at the actual galaxy location in
+        the sheared image rather than at the noshear truth position.
+        """
         if self._coadd_multiband:
             img, weight = self.get_coadd_multiband(mb_obs)
         else:
             img = mb_obs[0][0].image
             weight = mb_obs[0][0].weight
+
+        step = self.mcal_config["step"]
+        mcal_key = getattr(self, "_current_mcal_key", "noshear")
+        _type_shears = {
+            "noshear": (0.0, 0.0),
+            "1p": (step, 0.0),
+            "1m": (-step, 0.0),
+            "2p": (0.0, step),
+            "2m": (0.0, -step),
+        }
+        g1, g2 = _type_shears.get(mcal_key, (0.0, 0.0))
+        jacobian = mb_obs[0][0].jacobian if (g1 != 0.0 or g2 != 0.0) else None
+
         cat, seg_map = get_cat_force(
             img,
             weight,
@@ -521,6 +541,9 @@ class MetaDetectForcedPositions(MetaDetect):
             deblend_cont=self._detect_deblend_cont,
             kernel=self._detect_kernel,
             wcs=None,
+            g1=g1,
+            g2=g2,
+            jacobian=jacobian,
         )
         return cat, seg_map
 

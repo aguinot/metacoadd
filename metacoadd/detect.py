@@ -410,6 +410,65 @@ def get_cat(
     return out, seg
 
 
+def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
+    """Shift pixel positions to account for a metacal shear.
+
+    When metacal applies a reduced shear (g1, g2) to an image, each galaxy
+    moves from its noshear pixel position to a new position given by the
+    forward action of the shear matrix on the sky-coordinate offset from the
+    image centre:
+
+        [u', v'] = S @ [u, v]
+        S = [[1+g1,  g2 ],
+             [ g2,  1-g1]] / (1 - g1^2 - g2^2)
+
+    This is the reduced-shear convention used by GalSim's ``galsim.Shear``.
+    The result is converted back to pixel coordinates via the inverse of the
+    Jacobian (WCS).
+
+    Parameters
+    ----------
+    x_pix, y_pix : array-like
+        Truth pixel positions in the noshear image (0-indexed, SEP convention:
+        x = col, y = row).
+    g1, g2 : float
+        Reduced-shear components of the metacal step.
+    jacobian : ngmix.Jacobian
+        Full-image Jacobian whose ``row0``/``col0`` give the reference pixel
+        (image centre) and whose WCS elements map pixel offsets to sky offsets.
+
+    Returns
+    -------
+    x_new, y_new : ndarray
+        Shifted pixel positions (col, row) in the sheared image.
+    """
+    dudcol = jacobian.get_dudcol()
+    dudrow = jacobian.get_dudrow()
+    dvdcol = jacobian.get_dvdcol()
+    dvdrow = jacobian.get_dvdrow()
+    col0 = jacobian.col0
+    row0 = jacobian.row0
+
+    # Pixel offsets from image centre → sky offsets (arcsec)
+    dcol = np.asarray(x_pix, dtype=np.float64) - col0
+    drow = np.asarray(y_pix, dtype=np.float64) - row0
+    u = dudcol * dcol + dudrow * drow
+    v = dvdcol * dcol + dvdrow * drow
+
+    # Forward reduced-shear transformation (GalSim convention)
+    absgsq = g1 * g1 + g2 * g2
+    inv_denom = 1.0 / (1.0 - absgsq)
+    u_new = inv_denom * ((1.0 + g1) * u + g2 * v)
+    v_new = inv_denom * (g2 * u + (1.0 - g1) * v)
+
+    # Sky offsets → pixel offsets via J^{-1}
+    det_J = dudcol * dvdrow - dudrow * dvdcol
+    dcol_new = (dvdrow * u_new - dudrow * v_new) / det_J
+    drow_new = (-dvdcol * u_new + dudcol * v_new) / det_J
+
+    return col0 + dcol_new, row0 + drow_new
+
+
 def get_cat_force(
     img,
     weight,
@@ -424,6 +483,9 @@ def get_cat_force(
     header=None,
     wcs=None,
     mask=None,
+    g1=0.0,
+    g2=0.0,
+    jacobian=None,
 ):
     # NOTE: Might need to look again into this. For now we keep it simple.
     rms = np.zeros_like(weight)
@@ -449,6 +511,10 @@ def get_cat_force(
     else:
         x = np.array([img.shape[1] / 2.0])
         y = np.array([img.shape[0] / 2.0])
+
+    # Shift positions to match galaxy locations in the sheared image
+    if (g1 != 0.0 or g2 != 0.0) and jacobian is not None:
+        x, y = _shear_positions(x, y, g1, g2, jacobian)
 
     n_obj = len(x)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
