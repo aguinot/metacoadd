@@ -479,6 +479,52 @@ class MetaDetect:
         return final_cat
 
 
+class MetaDetectForcedPositions(MetaDetect):
+    """MetaDetect variant that uses pre-supplied truth positions instead of
+    running source detection.
+
+    SEP photometry (kron flux, SNR, flux radius) is still measured at the
+    forced positions on the noshear image.  The same catalog is applied to
+    every metacal type (noshear, 1p, 1m, ...), eliminating selection effects.
+
+    Parameters
+    ----------
+    rng : numpy.random.RandomState
+    x_pix : array-like
+        0-indexed column positions (sep convention).
+    y_pix : array-like
+        0-indexed row positions (sep convention).
+    **kwargs
+        Forwarded verbatim to ``MetaDetect.__init__``.
+    """
+
+    def __init__(self, rng, x_pix, y_pix, **kwargs):
+        super().__init__(rng, **kwargs)
+        self._x_pix = np.asarray(x_pix, dtype=np.float64)
+        self._y_pix = np.asarray(y_pix, dtype=np.float64)
+
+    def get_cat(self, mb_obs):
+        """Run SEP photometry at the forced positions; skip detection."""
+        if self._coadd_multiband:
+            img, weight = self.get_coadd_multiband(mb_obs)
+        else:
+            img = mb_obs[0][0].image
+            weight = mb_obs[0][0].weight
+        cat, seg_map = get_cat_force(
+            img,
+            weight,
+            x_pix=self._x_pix,
+            y_pix=self._y_pix,
+            thresh=self._detect_thresh,
+            minarea=self._detect_minarea,
+            deblend_nthresh=self._detect_deblend_nthresh,
+            deblend_cont=self._detect_deblend_cont,
+            kernel=self._detect_kernel,
+            wcs=None,
+        )
+        return cat, seg_map
+
+
 def do_metadetect(
     config,
     mbobs,

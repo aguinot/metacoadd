@@ -413,6 +413,8 @@ def get_cat(
 def get_cat_force(
     img,
     weight,
+    x_pix=None,
+    y_pix=None,
     thresh=1.5,
     minarea=5,
     deblend_nthresh=32,
@@ -441,15 +443,17 @@ def get_cat_force(
     if kernel is None:
         kernel = DES_KERNEL
 
-    # NOTE: Sometimes we end up with a non-zero background, I don't know why..
+    if x_pix is not None:
+        x = np.asarray(x_pix, dtype=np.float64)
+        y = np.asarray(y_pix, dtype=np.float64)
+    else:
+        x = np.array([img.shape[1] / 2.0])
+        y = np.array([img.shape[0] / 2.0])
 
-    n_obj = 1
+    n_obj = len(x)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
-
-    x = np.array([img.shape[1] / 2.0])
-    y = np.array([img.shape[0] / 2.0])
-    a = np.array([3])
-    b = np.array([3])
+    a = np.full(n_obj, 3.0)
+    b = np.full(n_obj, 3.0)
 
     kronrads, krflags = sep.kron_radius(
         img,
@@ -476,10 +480,10 @@ def get_cat_force(
     )
     fluxes[good_flux], fluxerrs[good_flux], flags[good_flux] = sep.sum_ellipse(
         img,
-        x,
-        y,
-        a,
-        b,
+        x[good_flux],
+        y[good_flux],
+        a[good_flux],
+        b[good_flux],
         0,
         2.5 * kronrads[good_flux],
         err=rms,
@@ -505,16 +509,15 @@ def get_cat_force(
     out = get_output_cat(n_obj)
 
     out["number"] = seg_id
-    out["npix"] = np.array([img.size])
     out["x"] = x
     out["y"] = y
     out["sx_row"] = y
     out["sx_col"] = x
     out["a"] = a
     out["b"] = b
-    out["xx"] = np.array([-1.0])
-    out["yy"] = np.array([-1.0])
-    out["xy"] = np.array([-1.0])
+    out["xx"] = -1.0
+    out["yy"] = -1.0
+    out["xy"] = -1.0
     out["elongation"] = a / b
     out["ellipticity"] = 1.0 - b / a
     out["kronrad"] = kronrads
@@ -522,9 +525,9 @@ def get_cat_force(
     out["flux_err"] = fluxerrs
     out["flux_radius"] = flux_rad
     out["snr"] = snr
-    out["flags"] = np.array([0])
+    out["flags"] = 0
     out["flux_flags"] = krflags | flags | flags_rad
-    out["ext_flags"] = np.array([0])
+    out["ext_flags"] = 0
     if wcs is not None:
         out["ra"] = ra
         out["dec"] = dec
