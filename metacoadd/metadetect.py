@@ -414,7 +414,6 @@ class MetaDetect:
                             runner=runner,
                             fit_model=res_,
                             mbobs_stamp=mb_obs,
-                            n_realizations=5,  # Adjust this depending on your speed vs precision needs
                         )
                         res["delta_g1"] = dg1
                         res["delta_g2"] = dg2
