@@ -1,4 +1,5 @@
 from time import time
+import copy
 
 import numpy as np
 
@@ -367,3 +368,84 @@ def get_seed_from_par(val):
     if power_ >= 0:
         power = 4 - power_ - 1
     return int(abs(val * 10**power))
+
+
+def compute_noise_bias_empirical(
+    runner,
+    fit_model,
+    mbobs_stamp,
+):
+    """
+    Computes the O(1/SNR^2) noise bias by empirically simulating the
+    misspecified likelihood.
+
+    Parameters
+    ----------
+    runner : FourierFitter
+        The fitter instance used to run the measurement.
+    fit_model : FourierFitModel
+        The fitted result from the base image containing the 'pars'.
+    mbobs_stamp : MultiBandObsList
+        The original observational data for this stamp.
+    V_k_list : list of list of ndarray
+        True noise PSD per band per epoch, shape (N, N//2+1).
+    n_realizations : int
+        Number of mock noise realizations to average over. 5-10 is usually
+        sufficient for forced-detection.
+
+    Returns
+    -------
+    delta_g1 : float
+    delta_g2 : float
+        Bias shifts to *subtract* from the best-fit g1/g2.
+        (theta_corrected = theta_fit - delta_theta)
+    """
+    pars_base = fit_model["pars"]
+    n_bands = len(fit_model._kim)
+
+    delta_g1_sum = 0.0
+    delta_g2_sum = 0.0
+    valid_fits = 0
+
+    # 1. Fill the gmix array with the best-fit parameters so we can evaluate it
+    try:
+        fit_model._fill_gmix_all(pars_base)
+    except GMixRangeError:
+        return 0.0, 0.0
+
+    n_realizations = 1
+    for i in range(n_realizations):
+        # Deepcopy to avoid modifying the original data/weights
+        mock_mbobs = copy.deepcopy(mbobs_stamp)
+
+        for band in range(n_bands):
+            obs_list = mock_mbobs[band]
+            gm_list = fit_model._gmix_all[band]
+
+            for ep, (obs, gm) in enumerate(zip(obs_list, gm_list)):
+                mock_image = fit_model.make_image(band=band, obsnum=ep)
+                mock_image += mbobs_stamp[band][ep].noise
+
+                # Update the observation in the mock mbobs
+                obs.image = mock_image
+                obs.ps = mbobs_stamp[band][
+                    ep
+                ].ps  # keep the same PSD for fitting weights
+
+        # 5. Fit the mock data.
+        # The weights (obs.ps) in mock_mbobs are copied from mbobs_stamp,
+        # so they correctly contain the symmetric PSD_eff used in the original fit.
+        # We start the guess exactly at pars_base so it converges in ~3 iterations.
+        mock_result = runner.go(mock_mbobs)  # , guess=pars_base)
+
+        if mock_result["flags"] == 0:
+            delta_g1_sum += mock_result["pars"][2] - pars_base[2]
+            delta_g2_sum += mock_result["pars"][3] - pars_base[3]
+            valid_fits += 1
+
+    if valid_fits > 0:
+        return float(delta_g1_sum / valid_fits), float(
+            delta_g2_sum / valid_fits
+        )
+
+    return 0.0, 0.0

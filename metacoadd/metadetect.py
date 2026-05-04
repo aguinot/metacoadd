@@ -16,6 +16,7 @@ from .metacal_new import MetacalHandler, MetacalHandlerTest
 from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
+from .fitters.fourier_fitting import compute_noise_bias_empirical
 
 
 def get_shape_cat_dtype(runner_name):
@@ -37,6 +38,8 @@ def get_shape_cat_dtype(runner_name):
         (f"{runner_name}_e2err", np.float64),
         (f"{runner_name}_g1", np.float64),
         (f"{runner_name}_g2", np.float64),
+        (f"{runner_name}_delta_g1", np.float64),
+        (f"{runner_name}_delta_g2", np.float64),
     ]
     return dtype
 
@@ -75,8 +78,6 @@ class MetaDetect:
         stamp_size=101,
         mcal_config={},
         test_fixnoise=False,
-        noise_boost_factor=1.0,
-        path_mcal_transfer_func="/Users/aguinot/Documents/roman/test_metadetect/metacal_transfer_func.npy",
         force_detection=False,
     ):
         self.rng = rng
@@ -106,8 +107,6 @@ class MetaDetect:
             stamp_size += 1
         self._stamp_size = stamp_size
         self.test_fixnoise = test_fixnoise
-        self.noise_boost_factor = noise_boost_factor
-        self.path_mcal_transfer_func = path_mcal_transfer_func
         self.force_detection = force_detection
 
     def go(
@@ -210,7 +209,6 @@ class MetaDetect:
                     "step": self.mcal_config["step"],
                     "has_pixel": self.mcal_config["has_pixel"],
                 },
-                noise_boost_factor=self.noise_boost_factor,
             )
         self.mcal_mbobs = mcal_handler.get_all(
             mb_obs, self.mcal_config["types"]
@@ -252,8 +250,6 @@ class MetaDetect:
             "2m": 4,
         }
 
-        all_shear_T = np.load(self.path_mcal_transfer_func)
-        ps_orig = None
         mcal_ps = {}
         for mcal_key, mcal_mbobs in self.mcal_mbobs.items():
             mcal_ps[mcal_key] = []
@@ -264,29 +260,7 @@ class MetaDetect:
                         obs.noise,
                         self._stamp_size,
                     )
-                    mcal_ps[mcal_key][-1].append(
-                        ps / self.noise_boost_factor**2
-                    )
-                    # obs.ps = ps / self.noise_boost_factor**2
-                    # if ps_orig is None:
-                    #     ps_orig = estimate_noise_ps_analytic(
-                    #         orig_mb_obs[band_ind][list_ind].noise,
-                    #         self._stamp_size,
-                    #     )
-                    # if mcal_key == "noshear":
-                    #     obs.ps = (
-                    #         ps_orig * all_shear_T[type_to_ind["noshear"], :, :]
-                    #     )
-                    # elif "1" in mcal_key:
-                    #     obs.ps = [
-                    #         (ps_orig * all_shear_T[type_to_ind["1p"], :, :]),
-                    #         (ps_orig * all_shear_T[type_to_ind["1m"], :, :]),
-                    #     ]
-                    # elif "2" in mcal_key:
-                    #     obs.ps = [
-                    #         (ps_orig * all_shear_T[type_to_ind["2p"], :, :]),
-                    #         (ps_orig * all_shear_T[type_to_ind["2m"], :, :]),
-                    #     ]
+                    mcal_ps[mcal_key][-1].append(ps)
 
         # 1p
         if "1p" in self.mcal_config["types"]:
@@ -426,6 +400,28 @@ class MetaDetect:
                     res["g1"] = res["e"][0]
                     res["g2"] = res["e"][1]
                 res["Tpsf"] = T_psf
+
+                # Analytical/Empirical noise-bias correction (Fourier fitters only).
+                # Requires obs.ps_true (true noise PSD) to be set on each
+                # observation before calling get_shape_cat.
+                res["delta_g1"] = 0.0
+                res["delta_g2"] = 0.0
+                if "fourier" in name and res.get("flags", 1) == 0:
+                    # try:
+                    if True:
+                        # Pass the runner, the result object, the stamp data, and the true PSDs
+                        dg1, dg2 = compute_noise_bias_empirical(
+                            runner=runner,
+                            fit_model=res_,
+                            mbobs_stamp=mb_obs,
+                            n_realizations=5,  # Adjust this depending on your speed vs precision needs
+                        )
+                        res["delta_g1"] = dg1
+                        res["delta_g2"] = dg2
+                    # except Exception as e:
+                    #     # Optional: print(e) to debug if it fails
+                    #     # print(e)
+                    #     pass
 
                 all_shape_cat[name].append(res)
         return all_shape_cat
@@ -611,7 +607,5 @@ def do_metadetect(
         stamp_size=config["meds"]["min_box_size"],
         mcal_config={},
         test_fixnoise=False,
-        noise_boost_factor=1.0,
-        path_mcal_transfer_func="/Users/aguinot/Documents/roman/test_metadetect/metacal_transfer_func.npy",
     )
     return md.go(mbobs)
