@@ -267,49 +267,37 @@ class MetaDetect:
             mcal_mbobs = self.mcal_mbobs["1p"]
             for band_ind, obslist in enumerate(mcal_mbobs):
                 for list_ind, obs in enumerate(obslist):
-                    obs.ps = [
-                        1
-                        / (
-                            1 / mcal_ps["1p"][band_ind][list_ind]
-                            + 1 / mcal_ps["1m"][band_ind][list_ind]
-                        )
-                    ]
+                    obs.ps = (
+                        mcal_ps["1p"][band_ind][list_ind]
+                        + mcal_ps["1m"][band_ind][list_ind]
+                    ) / 2
         # 1m
         if "1m" in self.mcal_config["types"]:
             mcal_mbobs = self.mcal_mbobs["1m"]
             for band_ind, obslist in enumerate(mcal_mbobs):
                 for list_ind, obs in enumerate(obslist):
-                    obs.ps = [
-                        1
-                        / (
-                            1 / mcal_ps["1p"][band_ind][list_ind]
-                            + 1 / mcal_ps["1m"][band_ind][list_ind]
-                        )
-                    ]
+                    obs.ps = (
+                        mcal_ps["1p"][band_ind][list_ind]
+                        + mcal_ps["1m"][band_ind][list_ind]
+                    ) / 2
         # 2p
         if "2p" in self.mcal_config["types"]:
             mcal_mbobs = self.mcal_mbobs["2p"]
             for band_ind, obslist in enumerate(mcal_mbobs):
                 for list_ind, obs in enumerate(obslist):
-                    obs.ps = [
-                        1
-                        / (
-                            1 / mcal_ps["2p"][band_ind][list_ind]
-                            + 1 / mcal_ps["2m"][band_ind][list_ind]
-                        )
-                    ]
+                    obs.ps = (
+                        mcal_ps["2p"][band_ind][list_ind]
+                        + mcal_ps["2m"][band_ind][list_ind]
+                    ) / 2
         # 2m
         if "2m" in self.mcal_config["types"]:
             mcal_mbobs = self.mcal_mbobs["2m"]
             for band_ind, obslist in enumerate(mcal_mbobs):
                 for list_ind, obs in enumerate(obslist):
-                    obs.ps = [
-                        1
-                        / (
-                            1 / mcal_ps["2p"][band_ind][list_ind]
-                            + 1 / mcal_ps["2m"][band_ind][list_ind]
-                        )
-                    ]
+                    obs.ps = (
+                        mcal_ps["2p"][band_ind][list_ind]
+                        + mcal_ps["2m"][band_ind][list_ind]
+                    ) / 2
         # noshear
         if "noshear" in self.mcal_config["types"]:
             mcal_mbobs = self.mcal_mbobs["noshear"]
