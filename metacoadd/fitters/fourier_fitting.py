@@ -413,39 +413,47 @@ def compute_noise_bias_empirical(
     except GMixRangeError:
         return 0.0, 0.0
 
-    n_realizations = 1
-    for i in range(n_realizations):
-        # Deepcopy to avoid modifying the original data/weights
-        mock_mbobs = copy.deepcopy(mbobs_stamp)
+    # Deepcopy to avoid modifying the original data/weights
+    mock_mbobs_p = copy.deepcopy(mbobs_stamp)
+    mock_mbobs_m = copy.deepcopy(mbobs_stamp)
 
-        for band in range(n_bands):
-            obs_list = mock_mbobs[band]
-            gm_list = fit_model._gmix_all[band]
+    for band in range(n_bands):
+        n_epochs = len(fit_model._kim[band])
 
-            for ep, (obs, gm) in enumerate(zip(obs_list, gm_list)):
-                mock_image = fit_model.make_image(band=band, obsnum=ep)
-                mock_image += mbobs_stamp[band][ep].noise
+        for ep in range(n_epochs):
+            mock_image_p = fit_model.make_image(band=band, obsnum=ep)
+            mock_image_m = fit_model.make_image(band=band, obsnum=ep)
+            mock_image_p += mbobs_stamp[band][ep].noise
+            mock_image_m -= mbobs_stamp[band][ep].noise
 
-                # Update the observation in the mock mbobs
-                obs.image = mock_image
-                obs.ps = mbobs_stamp[band][
-                    ep
-                ].ps  # keep the same PSD for fitting weights
+            # Update the observation in the mock mbobs
+            obs_p = mock_mbobs_p[band][ep]
+            obs_p.image = mock_image_p
+            obs_p.ps = mbobs_stamp[band][ep].ps
+            obs_p.ps = mbobs_stamp[band][
+                ep
+            ].ps  # keep the same PSD for fitting weights
 
-        # 5. Fit the mock data.
-        # The weights (obs.ps) in mock_mbobs are copied from mbobs_stamp,
-        # so they correctly contain the symmetric PSD_eff used in the original fit.
-        # We start the guess exactly at pars_base so it converges in ~3 iterations.
-        mock_result = runner.go(mock_mbobs)  # , guess=pars_base)
+            obs_m = mock_mbobs_m[band][ep]
+            obs_m.image = mock_image_m
+            obs_m.ps = mbobs_stamp[band][ep].ps
+            obs_m.ps = mbobs_stamp[band][
+                ep
+            ].ps  # keep the same PSD for fitting weights
 
-        if mock_result["flags"] == 0:
-            delta_g1_sum += mock_result["pars"][2] - pars_base[2]
-            delta_g2_sum += mock_result["pars"][3] - pars_base[3]
-            valid_fits += 1
+    # 5. Fit the mock data.
+    # The weights (obs.ps) in mock_mbobs are copied from mbobs_stamp,
+    # so they correctly contain the symmetric PSD_eff used in the original fit.
+    # We start the guess exactly at pars_base so it converges in ~3 iterations.
+    mock_result_p = runner.go(mock_mbobs_p)  # , guess=pars_base)
+    if mock_result_p["flags"] == 0:
+        mock_result_m = runner.go(mock_mbobs_m)  # , guess=pars_base)
+    else:
+        return 0.0, 0.0
 
-    if valid_fits > 0:
-        return float(delta_g1_sum / valid_fits), float(
-            delta_g2_sum / valid_fits
-        )
+    if mock_result_m["flags"] == 0:
+        delta_g1 = (mock_result_p["pars"][2] - mock_result_m["pars"][2]) / 2
+        delta_g2 = (mock_result_p["pars"][3] - mock_result_m["pars"][3]) / 2
+        return delta_g1, delta_g2
 
     return 0.0, 0.0
