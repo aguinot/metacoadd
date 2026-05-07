@@ -403,10 +403,6 @@ def compute_noise_bias_empirical(
     pars_base = fit_model["pars"]
     n_bands = len(fit_model._kim)
 
-    delta_g1_sum = 0.0
-    delta_g2_sum = 0.0
-    valid_fits = 0
-
     # 1. Fill the gmix array with the best-fit parameters so we can evaluate it
     try:
         fit_model._fill_gmix_all(pars_base)
@@ -430,16 +426,10 @@ def compute_noise_bias_empirical(
             obs_p = mock_mbobs_p[band][ep]
             obs_p.image = mock_image_p
             obs_p.ps = mbobs_stamp[band][ep].ps
-            obs_p.ps = mbobs_stamp[band][
-                ep
-            ].ps  # keep the same PSD for fitting weights
 
             obs_m = mock_mbobs_m[band][ep]
             obs_m.image = mock_image_m
             obs_m.ps = mbobs_stamp[band][ep].ps
-            obs_m.ps = mbobs_stamp[band][
-                ep
-            ].ps  # keep the same PSD for fitting weights
 
     # 5. Fit the mock data.
     # The weights (obs.ps) in mock_mbobs are copied from mbobs_stamp,
@@ -452,8 +442,12 @@ def compute_noise_bias_empirical(
         return 0.0, 0.0
 
     if mock_result_m["flags"] == 0:
-        delta_g1 = (mock_result_p["pars"][2] - mock_result_m["pars"][2]) / 2
-        delta_g2 = (mock_result_p["pars"][3] - mock_result_m["pars"][3]) / 2
+        delta_g1 = (
+            mock_result_p["pars"][2] + mock_result_m["pars"][2]
+        ) / 2 - pars_base[2]
+        delta_g2 = (
+            mock_result_p["pars"][3] + mock_result_m["pars"][3]
+        ) / 2 - pars_base[3]
         return delta_g1, delta_g2
 
     return 0.0, 0.0
