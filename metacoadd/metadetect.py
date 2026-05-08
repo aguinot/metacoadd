@@ -530,33 +530,17 @@ class MetaDetectForcedPositions(MetaDetect):
 
 
 def get_psd_pert_extra_dtype(runner_name, mcal_key, types):
-    """Extra output dtype columns for the PSD-perturbation cross-fits.
 
-    Sheared branches get one extra pair: the branch image fitted with PSD_ns.
-    The noshear branch gets one extra pair per active sheared branch type.
-
-    Parameters
-    ----------
-    runner_name : str
-    mcal_key : str
-        Branch name this catalog belongs to.
-    types : list of str
-        All active metacal types.
-
-    Returns
-    -------
-    list of (name, dtype) tuples
-    """
     dtype = []
+
     if mcal_key == "noshear":
         for key in types:
             if key == "noshear":
                 continue
+
             dtype.append((f"{runner_name}_g1_psd_{key}", np.float64))
             dtype.append((f"{runner_name}_g2_psd_{key}", np.float64))
-    else:
-        dtype.append((f"{runner_name}_g1_psd_ns", np.float64))
-        dtype.append((f"{runner_name}_g2_psd_ns", np.float64))
+
     return dtype
 
 
@@ -871,34 +855,6 @@ class MetaDetectPSDPert(MetaDetect):
                         else:
                             res[g1_key] = 0.0
                             res[g2_key] = 0.0
-                else:
-                    # Sheared branch: fit I_branch with PSD_ns.
-                    if base_ok and self._ns_ps is not None:
-                        try:
-                            cross_ = runner.go(
-                                self._make_mbobs_with_ps(mb_obs, self._ns_ps)
-                            )
-                            cross = {k: v for k, v in cross_.items()}
-                            if "g" in cross:
-                                cross["g1"] = cross["g"][0]
-                                cross["g2"] = cross["g"][1]
-                            elif "e" in cross:
-                                cross["g1"] = cross["e"][0]
-                                cross["g2"] = cross["e"][1]
-
-                            if cross.get("flags", 1) == 0:
-                                res["g1_psd_ns"] = cross["g1"]
-                                res["g2_psd_ns"] = cross["g2"]
-                            else:
-                                print("Here?")
-                                res["g1_psd_ns"] = 0.0
-                                res["g2_psd_ns"] = 0.0
-                        except Exception:
-                            res["g1_psd_ns"] = 0.0
-                            res["g2_psd_ns"] = 0.0
-                    else:
-                        res["g1_psd_ns"] = 0.0
-                        res["g2_psd_ns"] = 0.0
 
                 all_shape_cat[name].append(res)
         return all_shape_cat
