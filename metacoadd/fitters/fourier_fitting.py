@@ -1,4 +1,3 @@
-from time import time
 import copy
 
 import numpy as np
@@ -8,7 +7,7 @@ from ngmix.fitting.fitters import Fitter
 from ngmix.fitting.leastsqbound import run_leastsq
 from ngmix.gexceptions import GMixRangeError
 from ngmix.defaults import LOWVAL, BIGVAL
-from ngmix import Observation, ObsList, MultiBandObsList
+from ngmix import ObsList, MultiBandObsList
 
 from .fourier_fitting_nb import (
     zero_pad_fft,
@@ -18,7 +17,6 @@ from .fourier_fitting_nb import (
 )
 from ..gmix_fourier.gmix_fourier_nb import (
     gmix_eval_fourier_analytic,
-    gmix_eval_fourier_analytic_inplace,
 )
 from ..utils import atleast_mbobs
 
@@ -49,21 +47,6 @@ class FourierFitter(Fitter):
         n_ps = self._set_ps_iter(obs)
         all_results = []
         for ps_ind in range(n_ps):
-            # print("Guess:", guess[4:])
-            # ts = time()
-            # fit_model_real = self._make_fit_model_real(
-            #     obs=obs,
-            #     guess=guess,
-            # )
-            # result_real = run_leastsq(
-            #     fit_model_real.calc_fdiff,
-            #     guess=guess,
-            #     n_prior_pars=fit_model_real.n_prior_pars,
-            #     bounds=fit_model_real.bounds,
-            #     **self.fit_pars,
-            # )
-            # if result_real["flags"] == 0:
-            #     guess = result_real["pars"]
             fit_model = self._make_fit_model(
                 obs=obs, guess=guess, ps_ind=ps_ind
             )
@@ -74,26 +57,6 @@ class FourierFitter(Fitter):
                 bounds=fit_model.bounds,
                 **self.fit_pars,
             )
-            # print(
-            #     "Result:",
-            #     result["pars"][4:],
-            #     "nfev:",
-            #     result["nfev"],
-            #     # "nfev tot:",
-            #     # result_real["nfev"] + result["nfev"],
-            #     "time:",
-            #     (time() - ts) * 1000,
-            #     "snr:",
-            #     np.round(result["pars"][-1] / result["pars_err"][-1], 3)
-            #     if result["pars_err"][-1] > 0
-            #     else -1.0,
-            #     # "snr real:",
-            #     # np.round(
-            #     #     result_real["pars"][-1] / result_real["pars_err"][-1], 3
-            #     # )
-            #     # if result_real["pars_err"][-1] > 0
-            #     # else -1.0,
-            # )
             if result["flags"] != 0:
                 all_results = [result]
                 break
@@ -116,14 +79,6 @@ class FourierFitter(Fitter):
             prior=self.prior,
             stamp_size=self._stamp_size,
             ps_ind=ps_ind,
-        )
-
-    def _make_fit_model_real(self, obs, guess):
-        return FitModel(
-            obs=obs,
-            model=self.model,
-            guess=guess,
-            prior=self.prior,
         )
 
     def _combine_ps_results(self, all_results):
@@ -199,35 +154,17 @@ class FourierFitModel(FitModel):
             the target rfft2 dimension.
         """
         N = kim.shape[0]
-        # use_analytic = not self._obs_has_mask(obs)
-        use_analytic = True
-        if use_analytic:
-            j = obs.jacobian
-            return gmix_eval_fourier_analytic(
-                gm.get_data(),
-                N,
-                j.row0,
-                j.col0,
-                j.dvdrow,
-                j.dvdcol,
-                j.dudrow,
-                j.dudcol,
-            )
-        else:
-            r_model = gm.make_image(obs.image.shape, jacobian=obs.jacobian)
-            return zero_pad_fft(r_model, target_dim=N)
-
-    @staticmethod
-    def _obs_has_mask(obs):
-        """Return True if the observation has a non-trivial weight mask."""
-        if obs.has_bmask():
-            return True
-        if obs.has_weight():
-            w = obs.weight
-            # any zeroed pixel means a masked pixel
-            if np.any(w == 0):
-                return True
-        return False
+        j = obs.jacobian
+        return gmix_eval_fourier_analytic(
+            gm.get_data(),
+            N,
+            j.row0,
+            j.col0,
+            j.dvdrow,
+            j.dvdcol,
+            j.dudrow,
+            j.dudcol,
+        )
 
     def calc_lnprob(self, pars, more=False):
 
@@ -387,11 +324,6 @@ def compute_noise_bias_empirical(
         The fitted result from the base image containing the 'pars'.
     mbobs_stamp : MultiBandObsList
         The original observational data for this stamp.
-    V_k_list : list of list of ndarray
-        True noise PSD per band per epoch, shape (N, N//2+1).
-    n_realizations : int
-        Number of mock noise realizations to average over. 5-10 is usually
-        sufficient for forced-detection.
 
     Returns
     -------
@@ -431,11 +363,9 @@ def compute_noise_bias_empirical(
             obs_m.image = mock_image_m
             obs_m.ps = mbobs_stamp[band][ep].ps
 
-    # 5. Fit the mock data.
-    # The weights (obs.ps) in mock_mbobs are copied from mbobs_stamp,
-    # so they correctly contain the symmetric PSD_eff used in the original fit.
-    # We start the guess exactly at pars_base so it converges in ~3 iterations.
-    mock_result_p = runner.go(mock_mbobs_p)  # , guess=pars_base)
+    # Fit the mock data. obs.ps is copied from mbobs_stamp so the fitter uses
+    # the same PSD as the original fit.
+    mock_result_p = runner.go(mock_mbobs_p)
     if mock_result_p["flags"] == 0:
         mock_result_m = runner.go(mock_mbobs_m)  # , guess=pars_base)
     else:
