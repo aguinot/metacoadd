@@ -11,8 +11,6 @@ import sep
 
 from astropy.wcs import WCS
 
-from scipy.stats import median_abs_deviation as mad
-
 from .uberseg import fast_uberseg
 
 DES_KERNEL = np.array(

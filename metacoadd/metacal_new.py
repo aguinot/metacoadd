@@ -1,4 +1,3 @@
-import copy
 import numpy as np
 
 import galsim
@@ -11,13 +10,7 @@ from ngmix.metacal.convenience import (
 )
 from ngmix.metacal.metacal import _check_shape, _do_dilate
 from ngmix.metacal.metacal import MetacalFitGaussPSF as MetacalFitGaussPSF_
-from ngmix.simobs import simulate_obs
 
-# from ngmix.metacal.defaults import (
-#     DEFAULT_STEP,
-#     METACAL_TYPES,
-#     METACAL_MINIMAL_TYPES,
-# )
 from ngmix.gexceptions import GMixRangeError
 
 

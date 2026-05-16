@@ -1,22 +1,14 @@
 import re
 import gc
-from copy import deepcopy
-from time import time
 
 import numpy as np
 
 import ngmix
-from ngmix.metacal.convenience import (
-    _replace_image_with_noise,
-    _rotate_obs_image_square,
-    _doadd_single_obs,
-)
 
 from .metacal_new import MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
-from .fitters.fourier_fitting import compute_noise_bias_empirical
 
 
 def get_shape_cat_dtype(runner_name):
