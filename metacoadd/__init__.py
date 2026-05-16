@@ -4,4 +4,4 @@
 # # from . import metacoadd
 # from . import utils
 # from . import moments
-from .metadetect import do_metadetect, MetaDetectPSDPert
+from .metadetect import do_metadetect

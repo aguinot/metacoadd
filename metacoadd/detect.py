@@ -110,18 +110,6 @@ DET_CAT_DTYPE = [
 ]
 
 
-# def get_cutout(img, x, y, stamp_size):
-#     fs = FetchStamps(img, int(stamp_size / 2))
-#     x_round = np.round(x).astype(int)
-#     y_round = np.round(y).astype(int)
-#     dx = x_round - x
-#     dy = y_round - y
-#     fs.get_pixels(np.array([[y_round, x_round]]))
-#     vign = fs.scan()[0].astype(np.float64)
-
-#     return vign, dx, dy
-
-
 @nb.njit(fastmath=True, cache=True)
 def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
     # Compute trace and determinant

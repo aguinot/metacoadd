@@ -12,7 +12,7 @@ from ngmix.metacal.convenience import (
     _doadd_single_obs,
 )
 
-from .metacal_new import MetacalHandler, MetacalHandlerTest
+from .metacal_new import MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
@@ -75,8 +75,6 @@ class MetaDetect:
         fwhms=None,
         stamp_size=101,
         mcal_config={},
-        test_fixnoise=False,
-        force_detection=False,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -104,8 +102,6 @@ class MetaDetect:
         if stamp_size % 2 == 0:
             stamp_size += 1
         self._stamp_size = stamp_size
-        self.test_fixnoise = test_fixnoise
-        self.force_detection = force_detection
 
     def go(
         self,
@@ -133,6 +129,11 @@ class MetaDetect:
         )
         # print("Done setting up fitters.")
 
+        has_fourier = False
+        for gal_runner in self.gal_runners:
+            if "fourier" in gal_runner:
+                has_fourier = True
+
         # print("Running metacalibration...")
         # ts = time()
         self._init_metacal(mb_obs)
@@ -142,9 +143,6 @@ class MetaDetect:
         #     time() - ts,
         #     "seconds",
         # )
-        if self.test_fixnoise:
-            # print("Not printing")
-            self._set_power_spectrum_pseudo_fixnoise()
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
@@ -162,8 +160,7 @@ class MetaDetect:
             #     "Done getting catalog.", len(all_sep_cat), "objects detected."
             # )
 
-            if not self.test_fixnoise:
-                # print("Not printing 2")
+            if has_fourier:
                 self._set_power_spectrum(mcal_mbobs)
 
             # print("Getting shape catalog...")
@@ -188,26 +185,15 @@ class MetaDetect:
         return final_cat
 
     def _init_metacal(self, mb_obs):
-        if not self.test_fixnoise:
-            mcal_handler = MetacalHandler(
-                rng=self.rng,
-                fixnoise=self.mcal_config["fixnoise"],
-                use_noise_image=self.mcal_config["use_noise_image"],
-                mcal_config={
-                    "step": self.mcal_config["step"],
-                    "has_pixel": self.mcal_config["has_pixel"],
-                },
-            )
-        else:
-            mcal_handler = MetacalHandlerTest(
-                rng=self.rng,
-                fixnoise=self.mcal_config["fixnoise"],
-                use_noise_image=self.mcal_config["use_noise_image"],
-                mcal_config={
-                    "step": self.mcal_config["step"],
-                    "has_pixel": self.mcal_config["has_pixel"],
-                },
-            )
+        mcal_handler = MetacalHandler(
+            rng=self.rng,
+            fixnoise=self.mcal_config["fixnoise"],
+            use_noise_image=self.mcal_config["use_noise_image"],
+            mcal_config={
+                "step": self.mcal_config["step"],
+                "has_pixel": self.mcal_config["has_pixel"],
+            },
+        )
         self.mcal_mbobs = mcal_handler.get_all(
             mb_obs, self.mcal_config["types"]
         )
@@ -230,78 +216,6 @@ class MetaDetect:
                     self._stamp_size,
                 )
                 obs.ps = ps
-
-    def _set_power_spectrum_pseudo_fixnoise(self):
-        do_ps = False
-        for model_name in self.gal_runners:
-            if "fourier" in model_name:
-                do_ps = True
-                break
-        if not do_ps:
-            return
-
-        type_to_ind = {
-            "noshear": 0,
-            "1p": 1,
-            "1m": 2,
-            "2p": 3,
-            "2m": 4,
-        }
-
-        mcal_ps = {}
-        for mcal_key, mcal_mbobs in self.mcal_mbobs.items():
-            mcal_ps[mcal_key] = []
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                mcal_ps[mcal_key].append([])
-                for list_ind, obs in enumerate(obslist):
-                    ps = estimate_noise_ps_analytic(
-                        obs.noise,
-                        self._stamp_size,
-                    )
-                    mcal_ps[mcal_key][-1].append(ps)
-
-        # 1p
-        if "1p" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["1p"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["1p"][band_ind][list_ind]
-                        + mcal_ps["1m"][band_ind][list_ind]
-                    ) / 2
-        # 1m
-        if "1m" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["1m"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["1p"][band_ind][list_ind]
-                        + mcal_ps["1m"][band_ind][list_ind]
-                    ) / 2
-        # 2p
-        if "2p" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["2p"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["2p"][band_ind][list_ind]
-                        + mcal_ps["2m"][band_ind][list_ind]
-                    ) / 2
-        # 2m
-        if "2m" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["2m"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = (
-                        mcal_ps["2p"][band_ind][list_ind]
-                        + mcal_ps["2m"][band_ind][list_ind]
-                    ) / 2
-        # noshear
-        if "noshear" in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs["noshear"]
-            for band_ind, obslist in enumerate(mcal_mbobs):
-                for list_ind, obs in enumerate(obslist):
-                    obs.ps = mcal_ps["noshear"][band_ind][list_ind]
 
     def get_T_psf(self, mb_obs):
 
@@ -334,11 +248,8 @@ class MetaDetect:
         else:
             img = mb_obs[0][0].image
             weight = mb_obs[0][0].weight
-        if self.force_detection:
-            detect_func = get_cat_force
-        else:
-            detect_func = get_cat
-        cat, seg_map = detect_func(
+
+        cat, seg_map = get_cat(
             img,
             weight,
             thresh=self._detect_thresh,
@@ -386,27 +297,6 @@ class MetaDetect:
                     res["g1"] = res["e"][0]
                     res["g2"] = res["e"][1]
                 res["Tpsf"] = T_psf
-
-                # Analytical/Empirical noise-bias correction (Fourier fitters only).
-                # Requires obs.ps_true (true noise PSD) to be set on each
-                # observation before calling get_shape_cat.
-                res["delta_g1"] = 0.0
-                res["delta_g2"] = 0.0
-                if "fourier" in name and res.get("flags", 1) == 0:
-                    # try:
-                    if True:
-                        # Pass the runner, the result object, the stamp data, and the true PSDs
-                        dg1, dg2 = compute_noise_bias_empirical(
-                            runner=runner,
-                            fit_model=res_,
-                            mbobs_stamp=mb_obs,
-                        )
-                        res["delta_g1"] = dg1
-                        res["delta_g2"] = dg2
-                    # except Exception as e:
-                    #     # Optional: print(e) to debug if it fails
-                    #     # print(e)
-                    #     pass
 
                 all_shape_cat[name].append(res)
         return all_shape_cat
@@ -527,393 +417,6 @@ class MetaDetectForcedPositions(MetaDetect):
             jacobian=jacobian,
         )
         return cat, seg_map
-
-
-def get_psd_pert_extra_dtype(runner_name, mcal_key, types):
-
-    dtype = []
-
-    if mcal_key == "noshear":
-        for key in types:
-            if key == "noshear":
-                continue
-
-            dtype.append((f"{runner_name}_g1_psd_{key}", np.float64))
-            dtype.append((f"{runner_name}_g2_psd_{key}", np.float64))
-
-    return dtype
-
-
-class MetaDetectPSDPert(MetaDetect):
-    """MetaDetect with PSD-perturbation noise-bias correction output terms.
-
-    Each per-branch catalog is produced with the standard per-branch source
-    detection.  In addition to the standard fit (branch image × branch PSD),
-    extra cross-PSD fits are stored as catalog columns so that the full
-    PSD-perturbation response correction can be assembled post-hoc at the
-    ensemble level, without requiring matched catalogs across branches.
-
-    Optional forced positions
-    -------------------------
-    When *x_pix* and *y_pix* are supplied, source detection is replaced by
-    forced-position SEP photometry (identical to
-    :class:`MetaDetectForcedPositions`).  For sheared branches the positions
-    are shifted by the reduced shear before photometry.  When omitted, standard
-    per-branch SExtractor-style detection is used.
-
-    Parameters
-    ----------
-    rng : numpy.random.RandomState
-    x_pix : array-like or None
-        0-indexed column positions for forced photometry.  ``None`` (default)
-        uses free detection.
-    y_pix : array-like or None
-        0-indexed row positions for forced photometry.
-
-    Extra columns (Fourier fitters only)
-    ------------------------------------
-    Sheared branches (1p, 1m, 2p, 2m):
-        ``<runner>_g1_psd_ns``, ``<runner>_g2_psd_ns``
-            Branch image fitted with the noshear PSD.
-
-    Noshear branch:
-        ``<runner>_g1_psd_{key}``, ``<runner>_g2_psd_{key}``  for each active
-        sheared key.
-            Noshear image fitted with the branch-specific PSD.
-
-    Post-hoc response (component 1 example)
-    ----------------------------------------
-    ::
-
-        R_raw  = mean(cat_1p["g1_psd_ns"]  - cat_1m["g1_psd_ns"])  / 2Δg
-        R_asym = mean(cat_1p["g1"]          - cat_1m["g1"])          / 2Δg
-        R_ns   = mean(cat_ns["g1_psd_1p"]   - cat_ns["g1_psd_1m"])  / 2Δg
-        R_tot  = R_raw - R_asym + R_ns
-
-    Notes
-    -----
-    The empirical noise-bias correction (±noise realisations) is disabled;
-    ``delta_g1`` and ``delta_g2`` are always zero.
-    """
-
-    def __init__(self, rng, x_pix=None, y_pix=None, **kwargs):
-        super().__init__(rng, **kwargs)
-        if (x_pix is None) != (y_pix is None):
-            raise ValueError(
-                "x_pix and y_pix must both be supplied or both be None"
-            )
-        self._x_pix = (
-            np.asarray(x_pix, dtype=np.float64) if x_pix is not None else None
-        )
-        self._y_pix = (
-            np.asarray(y_pix, dtype=np.float64) if y_pix is not None else None
-        )
-
-    # ------------------------------------------------------------------
-    # PSD management
-    # ------------------------------------------------------------------
-
-    def _set_all_power_spectra(self):
-        """Compute and cache PSDs for every metacal branch.
-
-        After this call, every obs in every branch mbobs has ``obs.ps`` set,
-        and the PSDs are also stored in::
-
-            self._all_ps[branch_key][band_ind][epoch_ind]  → ndarray
-            self._ns_ps[band_ind][epoch_ind]               → ndarray  (noshear)
-        """
-        self._all_ps = {}
-        for key, mcal_mbobs in self.mcal_mbobs.items():
-            self._set_power_spectrum(mcal_mbobs)
-            self._all_ps[key] = [
-                [obs.ps for obs in obslist] for obslist in mcal_mbobs
-            ]
-        if "noshear" in self._all_ps:
-            self._ns_ps = self._all_ps["noshear"]
-        else:
-            self._ns_ps = None
-
-    # ------------------------------------------------------------------
-    # PSD swap helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _make_obs_with_ps(obs, ps):
-        """Return a lightweight Observation sharing *obs*'s arrays but with *ps*.
-
-        No array data is copied; this is safe because the Fourier fitter never
-        writes to the image in-place.
-        """
-        new_obs = deepcopy(obs)
-        new_obs.ps = ps
-        return new_obs
-
-    @staticmethod
-    def _make_mbobs_with_ps(mb_obs, ps_grid):
-        """Return a new MultiBandObsList with PSDs replaced by *ps_grid*.
-
-        Parameters
-        ----------
-        mb_obs : ngmix.MultiBandObsList
-            Source observations (image arrays are shared, not copied).
-        ps_grid : list of list of ndarray
-            ``ps_grid[band_ind][epoch_ind]`` → replacement PSD array.
-
-        Returns
-        -------
-        ngmix.MultiBandObsList
-        """
-        new_mb_obs = ngmix.MultiBandObsList()
-        for band_ind, obslist in enumerate(mb_obs):
-            new_obslist = ngmix.ObsList()
-            for ep_ind, obs in enumerate(obslist):
-                new_obs = MetaDetectPSDPert._make_obs_with_ps(
-                    obs, ps_grid[band_ind][ep_ind]
-                )
-                new_obslist.append(new_obs)
-            new_mb_obs.append(new_obslist)
-        return new_mb_obs
-
-    # ------------------------------------------------------------------
-    # Source detection (free or forced)
-    # ------------------------------------------------------------------
-
-    def get_cat(self, mb_obs):
-        """Run source detection or forced-position photometry.
-
-        When *x_pix* / *y_pix* were supplied at construction time, SEP
-        photometry is performed at those positions (shifted for sheared
-        branches), mirroring :class:`MetaDetectForcedPositions`.  Otherwise
-        the standard free-detection path from :class:`MetaDetect` is used.
-        """
-        if self._x_pix is None:
-            return super().get_cat(mb_obs)
-
-        # --- forced photometry path ---
-        if self._coadd_multiband:
-            img, weight = self.get_coadd_multiband(mb_obs)
-        else:
-            img = mb_obs[0][0].image
-            weight = mb_obs[0][0].weight
-
-        step = self.mcal_config["step"]
-        mcal_key = getattr(self, "_current_mcal_key", "noshear")
-        _type_shears = {
-            "noshear": (0.0, 0.0),
-            "1p": (step, 0.0),
-            "1m": (-step, 0.0),
-            "2p": (0.0, step),
-            "2m": (0.0, -step),
-        }
-        g1, g2 = _type_shears.get(mcal_key, (0.0, 0.0))
-        jacobian = mb_obs[0][0].jacobian if (g1 != 0.0 or g2 != 0.0) else None
-
-        cat, seg_map = get_cat_force(
-            img,
-            weight,
-            x_pix=self._x_pix,
-            y_pix=self._y_pix,
-            thresh=self._detect_thresh,
-            minarea=self._detect_minarea,
-            deblend_nthresh=self._detect_deblend_nthresh,
-            deblend_cont=self._detect_deblend_cont,
-            kernel=self._detect_kernel,
-            wcs=None,
-            g1=g1,
-            g2=g2,
-            jacobian=jacobian,
-        )
-        del img, weight
-        gc.collect()
-        return cat, seg_map
-
-    # ------------------------------------------------------------------
-    # Main pipeline
-    # ------------------------------------------------------------------
-
-    def go(self, mb_obs):
-        if isinstance(mb_obs, ngmix.MultiBandObsList):
-            nband = len(mb_obs)
-            scale = mb_obs[0][0].jacobian.get_scale()
-        else:
-            raise ValueError(
-                "mb_obs must be an instance of ngmix.MultiBandObsList"
-            )
-
-        self.gal_runners = get_fitters(
-            models=self._models,
-            fwhms=self._fwhms,
-            rng=self.rng,
-            nband=nband,
-            scale=scale,
-            stamp_size=self._stamp_size,
-        )
-
-        self._init_metacal(mb_obs)
-        # Always compute per-branch PSDs regardless of test_fixnoise flag.
-        self._set_all_power_spectra()
-
-        final_cat = {}
-        for mcal_key in self.mcal_config["types"]:
-            mcal_mbobs = self.mcal_mbobs[mcal_key]
-            self._current_mcal_key = mcal_key
-
-            T_psf = self.get_T_psf(mcal_mbobs)
-            all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
-            all_shape_cat = self.get_shape_cat(
-                mcal_mbobs,
-                all_sep_cat,
-                seg_map,
-                T_psf,
-            )
-
-            final_cat[mcal_key] = self.build_output_cat(
-                mcal_mbobs, all_sep_cat, all_shape_cat
-            )
-
-            del mcal_mbobs, all_sep_cat, seg_map, all_shape_cat
-            gc.collect()
-
-        return final_cat
-
-    # ------------------------------------------------------------------
-    # Per-object fitting with cross-PSD terms
-    # ------------------------------------------------------------------
-
-    def get_shape_cat(
-        self,
-        in_mbobs,
-        sep_cat,
-        seg_map,
-        T_psf,
-        do_uberseg=False,
-    ):
-        mcal_key = self._current_mcal_key
-        is_noshear = mcal_key == "noshear"
-        sheared_keys = [k for k in self.mcal_config["types"] if k != "noshear"]
-
-        all_shape_cat = {name: [] for name in self.gal_runners}
-        for det_obj in sep_cat:
-            cutout_size = self._stamp_size
-            mb_obs = get_stamp_mbobs(
-                in_mbobs,
-                det_obj,
-                min_stamp_size=cutout_size,
-                max_stamp_size=cutout_size,
-                do_uberseg=do_uberseg,
-                seg_map=seg_map,
-            )
-
-            for name, runner in self.gal_runners.items():
-                res_ = runner.go(mb_obs)
-                res = {k: v for k, v in res_.items()}
-                if "g" in res:
-                    res["g1"] = res["g"][0]
-                    res["g2"] = res["g"][1]
-                elif "e" in res:
-                    res["g1"] = res["e"][0]
-                    res["g2"] = res["e"][1]
-                res["Tpsf"] = T_psf
-                # Empirical NB correction is intentionally disabled.
-                res["delta_g1"] = 0.0
-                res["delta_g2"] = 0.0
-
-                base_ok = "fourier" in name and res.get("flags", 1) == 0
-
-                if is_noshear:
-                    # Noshear branch: fit I_ns with each sheared branch's PSD.
-                    for sk in sheared_keys:
-                        g1_key = f"g1_psd_{sk}"
-                        g2_key = f"g2_psd_{sk}"
-                        if base_ok and self._all_ps.get(sk) is not None:
-                            try:
-                                cross_ = runner.go(
-                                    self._make_mbobs_with_ps(
-                                        mb_obs, self._all_ps[sk]
-                                    )
-                                )
-                                cross = {k: v for k, v in cross_.items()}
-                                if "g" in cross:
-                                    cross["g1"] = cross["g"][0]
-                                    cross["g2"] = cross["g"][1]
-                                elif "e" in cross:
-                                    cross["g1"] = cross["e"][0]
-                                    cross["g2"] = cross["e"][1]
-                                if cross.get("flags", 1) == 0:
-                                    if "g" in cross:
-                                        res[g1_key] = cross["g"][0]
-                                        res[g2_key] = cross["g"][1]
-                                    else:
-                                        res[g1_key] = cross["pars"][2]
-                                        res[g2_key] = cross["pars"][3]
-                                else:
-                                    res[g1_key] = 0.0
-                                    res[g2_key] = 0.0
-                            except Exception:
-                                res[g1_key] = 0.0
-                                res[g2_key] = 0.0
-                        else:
-                            res[g1_key] = 0.0
-                            res[g2_key] = 0.0
-
-                all_shape_cat[name].append(res)
-        return all_shape_cat
-
-    # ------------------------------------------------------------------
-    # Output catalog
-    # ------------------------------------------------------------------
-
-    def build_output_cat(self, mb_obs, all_sep_cat, all_shape_cat):
-        SHAPE_CAT_DTYPE = []
-        for name in self.gal_runners:
-            SHAPE_CAT_DTYPE += get_shape_cat_dtype(name)
-            SHAPE_CAT_DTYPE += get_psd_pert_extra_dtype(
-                name, self._current_mcal_key, self.mcal_config["types"]
-            )
-            for i in range(len(mb_obs)):
-                SHAPE_CAT_DTYPE.append((f"{name}_flux_" + str(i), np.float64))
-                SHAPE_CAT_DTYPE.append(
-                    (f"{name}_flux_err_" + str(i), np.float64)
-                )
-        final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
-        final_cat = np.zeros(
-            len(all_sep_cat),
-            dtype=final_cat_dtype,
-        )
-        for i, sep_obj in enumerate(all_sep_cat):
-            for key in sep_obj.dtype.names:
-                final_cat[i][key] = sep_obj[key]
-            for key in np.dtype(SHAPE_CAT_DTYPE).names:
-                try:
-                    runner_name = key.split("_")[0]
-                    if runner_name == "fourier":
-                        runner_name = "_".join(key.split("_")[:2])
-                    shape_key = key.split(f"{runner_name}_")[1]
-                    if shape_key == "dx":
-                        final_cat[i][key] = all_shape_cat[runner_name][i][
-                            "pars"
-                        ][0]
-                    elif shape_key == "dy":
-                        final_cat[i][key] = all_shape_cat[runner_name][i][
-                            "pars"
-                        ][1]
-                    elif "flux_err" in shape_key:
-                        flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        final_cat[i][key] = np.atleast_1d(
-                            all_shape_cat[runner_name][i]["flux_err"]
-                        )[flux_ind]
-                    elif "flux" in shape_key:
-                        flux_ind = int(re.findall(r"\d+", shape_key)[0])
-                        final_cat[i][key] = np.atleast_1d(
-                            all_shape_cat[runner_name][i]["flux"]
-                        )[flux_ind]
-                    else:
-                        final_cat[i][key] = all_shape_cat[runner_name][i][
-                            shape_key
-                        ]
-                except Exception:
-                    continue
-        return final_cat
 
 
 def do_metadetect(
