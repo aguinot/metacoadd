@@ -481,6 +481,5 @@ def do_metadetect(
         fwhms=[fitter["weight"]["fwhm"] for fitter in config["fitters"]],
         stamp_size=config["meds"]["min_box_size"],
         mcal_config={},
-        test_fixnoise=False,
     )
     return md.go(mbobs)
