@@ -129,7 +129,7 @@ for band in bands:
         obs = ngmix.Observation(
             image=deepcopy(img),
             weight=deepcopy(simu_dict["Y106"][0]["weight"]),
-            noise=deepcopy(simu_dict[band][i]["noise"]),
+            noise=deepcopy(simu_dict[band][i]["noise"][0]),
             psf=psf_obs,
             jacobian=img_jacob,
             ormask=np.zeros(img.shape, dtype=np.int32),
@@ -142,7 +142,7 @@ for band in bands:
 METADETECT_CONFIG = {
     # Shape measurement method
     # wmom: weighted moments
-    "model": "wmom",
+    "model": "gauss",
     # Size of the weight function for the moments
     "weight": {
         "fwhm": 1.2,  # arcsec
