@@ -140,3 +140,4 @@ dmypy.json
 # Other
 data/
 notebooks/
+examples/*.dat
