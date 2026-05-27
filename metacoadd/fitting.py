@@ -1,5 +1,7 @@
 import ngmix
 from ngmix.gmix.gmix import _gmix_model_dict
+from ngmix.runners import Runner
+from ngmix.bootstrap import Bootstrapper, remove_failed_psf_obs
 
 from .moments.wmom_runner import MBMomRunner
 from .fitters.fourier_fitting import FourierFitter
@@ -77,7 +79,7 @@ def build_mb_wmom_runner(model, fwhm=None, rng=None):
             ngauss=1,
             guess_from_moms=True,
         )
-        runner = ngmix.runners.Runner(
+        runner = RunnerGuess(
             fitter=fitter,
             guesser=guesser,
             ntry=2,
@@ -94,7 +96,7 @@ def build_model_fitting_runner(model, rng, nband, scale):
     else:
         raise NotImplementedError(f"Model {model} not implemented yet")
     psf_runner = get_gauss_psf_runner(rng)
-    boot = ngmix.bootstrap.Bootstrapper(
+    boot = BootstrapperGuess(
         runner=gal_runner,
         psf_runner=psf_runner,
     )
@@ -112,7 +114,7 @@ def build_model_fitting_fourier_runner(
     else:
         raise NotImplementedError(f"Model {model} not implemented yet")
     psf_runner = get_gauss_psf_runner(rng)
-    boot = ngmix.bootstrap.Bootstrapper(
+    boot = BootstrapperGuess(
         runner=gal_runner,
         psf_runner=psf_runner,
     )
@@ -157,7 +159,7 @@ def get_single_model_runner(model, rng, nband, scale):
         T=0.25,
         prior=prior,
     )
-    runner = ngmix.runners.Runner(
+    runner = RunnerGuess(
         fitter=fitter,
         guesser=guesser,
         ntry=2,
@@ -184,7 +186,7 @@ def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
         T=0.02,
         prior=prior,
     )
-    runner = ngmix.runners.Runner(
+    runner = RunnerGuess(
         fitter=fitter,
         guesser=guesser,
         ntry=2,
@@ -237,3 +239,106 @@ def _make_prior(rng, scale, nband):
     )
 
     return prior
+
+
+class RunnerGuess(Runner):
+    def go(self, obs, guess=None):
+
+        if guess is None:
+            return super().go(obs)
+        else:
+            return run_fitter_guess(
+                obs=obs, fitter=self.fitter, guess=guess, ntry=self.ntry
+            )
+
+
+def run_fitter_guess(obs, fitter, guess, ntry=1):
+    """
+    run a fitter multiple times if needed, with guesses provided as input
+
+    Parameters
+    ----------
+    obs: ngmix Observation(s)
+        Observation, ObsList, or MultiBandObsList
+    fitter: ngmix fitter or measurer
+        An object to perform measurements, must have a go(obs=obs, guess=guess)
+        method.
+    guess: list or numpy array
+         An array of parameters to use as the guess for the fitter. Must be a list or numpy array of the same length as the number of parameters in the model.
+    ntry: int, optional
+        Number of times to try if there is failure
+
+    Returns
+    -------
+    result dictionary
+    """
+
+    for i in range(ntry):
+        res = fitter.go(obs=obs, guess=guess)
+
+        if res["flags"] == 0:
+            break
+
+    return res
+
+
+class BootstrapperGuess(Bootstrapper):
+    def go(self, obs, guess=None):
+        """
+        Run the runners on the input observation(s) with a provided guess
+
+        Parameters
+        ----------
+        obs: ngmix Observation(s)
+            Observation, ObsList, or MultiBandObsList
+        guess: list or numpy array
+             An array of parameters to use as the guess for the fitter. Must be a list or numpy array of the same length as the number of parameters in the model.
+        """
+        return bootstrap_guess(
+            obs=obs,
+            runner=self.runner,
+            guess=guess,
+            psf_runner=self.psf_runner,
+            ignore_failed_psf=self.ignore_failed_psf,
+        )
+
+
+def bootstrap_guess(
+    obs,
+    runner,
+    guess=None,
+    psf_runner=None,
+    ignore_failed_psf=True,
+):
+    """
+    Run a fitter on the input observations, possibly bootstrapping the fit
+    based on information inferred from the data or the psf model. This version can take a guess as input and passes it to the fitter.
+
+    Parameters
+    ----------
+    obs: ngmix Observation(s)
+        Observation, ObsList, or MultiBandObsList
+    runner: ngmix Runner
+        Must have go(obs=obs) method
+    guess: list or numpy array
+         An array of parameters to use as the guess for the fitter. Must be a list or numpy array of the same length as the number of parameters in the model.
+    psf_runner: ngmix PSFRunner, optional
+        Must have go(obs=obs) method
+    ignore_failed_psf: bool, optional
+        If set to True, remove observations where the psf fit fails, and
+        only fit the remaining.  Default True.
+
+    Side effects
+    ------------
+    the obs.psf.meta['result'] and the obs.psf.gmix may be set if a psf runner
+    is sent and the internal fitter has a get_gmix method.  gmix are only set
+    for successful fits
+    """
+
+    if psf_runner is not None:
+        psf_runner.go(obs=obs)
+
+        if ignore_failed_psf:
+            obs = remove_failed_psf_obs(obs=obs)
+
+    return runner.go(obs=obs, guess=guess)

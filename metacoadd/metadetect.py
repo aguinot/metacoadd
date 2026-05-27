@@ -5,7 +5,7 @@ import numpy as np
 
 import ngmix
 
-from .metacal_new import MetacalHandler
+from .metacal import MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
