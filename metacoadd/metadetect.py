@@ -9,6 +9,8 @@ from .metacal import MetacalHandler
 from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
+from .coadd import get_coadd_class
+from metacoadd import coadd
 
 
 def get_shape_cat_dtype(runner_name):
@@ -62,6 +64,7 @@ class MetaDetect:
         detect_deblend_cont=0.005,
         detect_kernel=None,
         detect_filter_type="conv",
+        coadd_type="average",
         coadd_multiband=True,
         models=None,
         fwhms=None,
@@ -87,7 +90,9 @@ class MetaDetect:
         self._detect_deblend_cont = detect_deblend_cont
         self._detect_kernel = detect_kernel
         self._detect_filter_type = detect_filter_type
+        self._coadd_type = coadd_type
         self._coadd_multiband = coadd_multiband
+
         self._models = models
         self._fwhms = fwhms
         # Temporary fix. If the stamp size is even, raise issues.
@@ -98,6 +103,9 @@ class MetaDetect:
     def go(
         self,
         mb_obs,
+        fscale=None,
+        zeropoints=None,
+        target_zp=30.0,
     ):
         """
         Run metadetect.
@@ -128,7 +136,7 @@ class MetaDetect:
 
         # print("Running metacalibration...")
         # ts = time()
-        self._init_metacal(mb_obs)
+        all_mcal_mbobs = self.get_metacal(mb_obs)
         # print(
         #     "Done running metacalibration.",
         #     "Time taken:",
@@ -136,18 +144,52 @@ class MetaDetect:
         #     "seconds",
         # )
 
+        # Check coadds
+        if (zeropoints is None and fscale is None) or (
+            zeropoints is not None and fscale is not None
+        ):
+            raise ValueError(
+                "Either zeropoints or fscale must be provided, but not both."
+            )
+        elif zeropoints is not None and fscale is None:
+            if len(zeropoints) != len(mb_obs):
+                raise ValueError(
+                    "zeropoints must have the same length as the number of "
+                    "bands."
+                )
+        elif zeropoints is None and fscale is not None:
+            if len(fscale) != len(mb_obs):
+                raise ValueError(
+                    "fscale must have the same length as the number of bands."
+                )
+
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
             # print("Looping over metacal type ", mcal_key)
-            mcal_mbobs = self.mcal_mbobs[mcal_key]
+            mcal_mbobs = all_mcal_mbobs[mcal_key]
             self._current_mcal_key = mcal_key
 
             # print("Getting T_psf...")
             T_psf = self.get_T_psf(mcal_mbobs)
             # print("Done getting T_psf.")
 
+            # print("Getting detection image...")
+            if self._coadd_multiband:
+                detect_image, detect_noise, detect_weight = (
+                    self.get_coadd_multiband(
+                        mcal_mbobs,
+                        fscale=fscale,
+                        zeropoints=zeropoints,
+                        target_zp=target_zp,
+                    )
+                )
+            else:
+                detect_image = mb_obs[0][0].image
+                detect_weight = mb_obs[0][0].weight
+            # print("Done getting detection image.")
+
             # print("Getting catalog...")
-            all_sep_cat, seg_map = self.get_cat(mcal_mbobs)
+            all_sep_cat, seg_map = self.get_cat(detect_image, detect_weight)
             # print(
             #     "Done getting catalog.", len(all_sep_cat), "objects detected."
             # )
@@ -176,7 +218,7 @@ class MetaDetect:
 
         return final_cat
 
-    def _init_metacal(self, mb_obs):
+    def get_metacal(self, mb_obs):
         mcal_handler = MetacalHandler(
             rng=self.rng,
             fixnoise=self.mcal_config["fixnoise"],
@@ -186,9 +228,8 @@ class MetaDetect:
                 "has_pixel": self.mcal_config["has_pixel"],
             },
         )
-        self.mcal_mbobs = mcal_handler.get_all(
-            mb_obs, self.mcal_config["types"]
-        )
+        mcal_mbobs = mcal_handler.get_all(mb_obs, self.mcal_config["types"])
+        return mcal_mbobs
 
     def _set_power_spectrum(self, mb_obs):
         do_ps = False
@@ -223,23 +264,19 @@ class MetaDetect:
                 W_psf += w_psf
         return T_psf_avg / W_psf
 
-    def get_coadd_multiband(self, mb_obs):
+    def get_coadd_multiband(
+        self, mb_obs, fscale=None, zeropoints=None, target_zp=30.0
+    ):
 
-        img_final = np.zeros_like(mb_obs[0][0].image)
-        weight_final = np.zeros_like(mb_obs[0][0].weight)
-        for obslist in mb_obs:
-            img_final += obslist[0].image * obslist[0].weight
-            weight_final += obslist[0].weight
-        img_final[weight_final != 0] /= weight_final[weight_final != 0]
+        coadd_maker = get_coadd_class(self._coadd_type)
+        coadd_maker = coadd_maker(
+            mb_obs, fscale=fscale, zeropoints=zeropoints, target_zp=target_zp
+        )
 
-        return img_final, weight_final
+        coadd_image, coadd_noise, coadd_weight = coadd_maker.make()
+        return coadd_image, coadd_noise, coadd_weight
 
-    def get_cat(self, mb_obs):
-        if self._coadd_multiband:
-            img, weight = self.get_coadd_multiband(mb_obs)
-        else:
-            img = mb_obs[0][0].image
-            weight = mb_obs[0][0].weight
+    def get_cat(self, img, weight):
 
         cat, seg_map = get_cat(
             img,

@@ -117,6 +117,10 @@ class MetacalHandler:
             self.mcal_handler = MetacalFitGaussPSF
         elif mcal_class == "fix_gauss_psf":
             self.mcal_handler = MetacalFixGaussPSF
+        else:
+            raise ValueError(
+                "mcal_class must be one of 'gauss_psf' or 'fix_gauss_psf'"
+            )
 
     def _get_noise_image(self, obs):
 
@@ -672,7 +676,7 @@ def _doadd_single_obs(obs, nobs):
     # automatically called upon exit
 
     with obs.writeable():
-        obs.image += nobs.image
+        obs.image += nobs.noise
         obs.noise += nobs.noise
 
         wpos = np.where((obs.weight != 0.0) & (nobs.weight != 0.0))
