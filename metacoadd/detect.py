@@ -267,7 +267,7 @@ def get_cat(
     rms[m] = np.sqrt(1 / weight[m])
     mask_rms[m] = 0
 
-    rms = np.median(np.sqrt(1 / weight[m]))
+    # rms = np.median(np.sqrt(1 / weight[m]))
     # rms = mad(img, scale="normal", axis=(0, 1))
 
     if (header is not None) and (wcs is not None):
@@ -275,14 +275,16 @@ def get_cat(
     elif header is not None:
         wcs = WCS(header)
 
-    if kernel is None:
-        kernel = DES_KERNEL
+    # if kernel is None:
+    #     kernel = DES_KERNEL
+    if kernel is not None:
+        kernel = np.asarray(kernel)
 
     # NOTE: Sometimes we end up with a non-zero background, I don't know why..
     bkg = sep.Background(img, mask=mask_rms)
 
     obj, seg = sep.extract(
-        img - bkg.globalback,
+        img,  # - bkg.globalback,
         thresh,
         err=rms,
         segmentation_map=True,
@@ -290,7 +292,7 @@ def get_cat(
         deblend_nthresh=deblend_nthresh,
         deblend_cont=deblend_cont,
         filter_type=filter_type,
-        filter_kernel=np.asarray(kernel),
+        filter_kernel=kernel,
     )
     n_obj = len(obj)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
