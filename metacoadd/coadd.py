@@ -33,11 +33,11 @@ class Coadd:
             passes = True
             self.fscale = []
             for i in range(self._n_band):
-                obq_fscale = np.atleast_1d(fscale[i])
-                if len(obq_fscale) != self._n_obs[i]:
+                obs_fscale = np.atleast_1d(fscale[i])
+                if len(obs_fscale) != self._n_obs[i]:
                     passes = False
                     break
-                self.fscale.append(obq_fscale)
+                self.fscale.append(obs_fscale)
             if not passes:
                 raise ValueError(
                     "fscale must have the same length as the number of "
@@ -52,11 +52,12 @@ class Coadd:
             passes = True
             self.fscale = []
             for i in range(self._n_band):
-                if len(zeropoints[i]) != self._n_obs[i]:
+                obs_zeropoints = np.atleast_1d(zeropoints[i])
+                if len(obs_zeropoints) != self._n_obs[i]:
                     passes = False
                     break
                 self.fscale.append(
-                    [10 ** (0.4 * (zp - target_zp)) for zp in zeropoints[i]]
+                    [10 ** (-0.4 * (zp - target_zp)) for zp in obs_zeropoints]
                 )
             if not passes:
                 raise ValueError(

@@ -5,6 +5,8 @@ from math import sqrt
 import numpy as np
 import numba as nb
 
+import galsim
+
 from ngmix import Observation, ObsList, MultiBandObsList, Jacobian
 
 import sep
@@ -247,9 +249,63 @@ def get_output_cat(n_obj):
     return out
 
 
+def get_pixel_scale(wcs):
+
+    if isinstance(wcs, WCS):
+        mat = wcs.pixel_scale_matrix
+        pixel_scale = mat[0, 0] * 3600.0  # arcsec/pixel
+    elif isinstance(wcs, galsim.wcs.BaseWCS):
+        pixel_scale = np.sqrt(wcs.pixelArea(wcs.origin))
+    elif wcs is None:
+        pixel_scale = 1.0
+    else:
+        raise ValueError(
+            "wcs must be an astropy.wcs.WCS or galsim.wcs.BaseWCS object"
+        )
+    return pixel_scale
+
+
+def get_filter_kernel(kernel, wcs=None):
+
+    if isinstance(kernel, list):
+        kernel = np.asarray(kernel)
+    elif isinstance(kernel, dict):
+        pixel_scale = get_pixel_scale(wcs)
+        obj, _ = galsim.config.BuildGSObject({"": kernel}, "")
+        if obj is None:
+            raise ValueError("Failed to build kernel from config.")
+        kernel = obj.drawImage(scale=pixel_scale).array
+    else:
+        raise ValueError(
+            "kernel must be a list or a dict, got {}".format(type(kernel))
+        )
+    return kernel
+
+
+def get_xyToradec_func(wcs):
+    if isinstance(wcs, WCS):
+
+        def xyToradec(x, y):
+            return wcs.all_pix2world(x, y, 0)
+    elif isinstance(wcs, galsim.wcs.BaseWCS):
+
+        def xyToradec(x, y):
+            if wcs.isCelestial():
+                return wcs.xyToradec(x, y, units=galsim.degrees)
+            else:
+                return wcs.xyTouv(x, y)
+    else:
+        raise ValueError(
+            "wcs must be an astropy.wcs.WCS or galsim.wcs.BaseWCS object"
+        )
+
+    return xyToradec
+
+
 def get_cat(
     img,
     weight,
+    thresh_type="relative",
     thresh=1.5,
     minarea=5,
     deblend_nthresh=32,
@@ -277,22 +333,29 @@ def get_cat(
 
     # if kernel is None:
     #     kernel = DES_KERNEL
-    if kernel is not None:
-        kernel = np.asarray(kernel)
+    filter_kernel = get_filter_kernel(kernel, wcs=wcs)
 
     # NOTE: Sometimes we end up with a non-zero background, I don't know why..
     bkg = sep.Background(img, mask=mask_rms)
 
+    if thresh_type == "relative":
+        detect_err = rms
+    elif thresh_type == "absolute":
+        detect_err = None
+    else:
+        raise ValueError(
+            f"Unknown thresh_type: {thresh_type}. Must be one of ['relative', 'absolute']."
+        )
     obj, seg = sep.extract(
         img,  # - bkg.globalback,
         thresh,
-        err=rms,
+        err=detect_err,
         segmentation_map=True,
         minarea=minarea,
         deblend_nthresh=deblend_nthresh,
         deblend_cont=deblend_cont,
         filter_type=filter_type,
-        filter_kernel=kernel,
+        filter_kernel=filter_kernel,
     )
     n_obj = len(obj)
     seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
@@ -354,8 +417,10 @@ def get_cat(
     good_snr = (fluxes > 0) & (fluxerrs > 0)
     snr[good_snr] = fluxes[good_snr] / fluxerrs[good_snr]
 
-    if wcs is not None:
-        ra, dec = wcs.all_pix2world(obj["x"], obj["y"], 0)
+    # Disable for now as we don't pass the WCS
+    # if wcs is not None:
+    #     xyToradec = get_xyToradec_func(wcs)
+    #     ra, dec = xyToradec(obj["x"], obj["y"])
 
     # Build the equivalent to IMAFLAGS_ISO
     # But you only know if the object is flagged or not, you don't get the flag
@@ -391,9 +456,9 @@ def get_cat(
     out["flags"] = obj["flag"]
     out["flux_flags"] = krflags | flags | flags_rad
     out["ext_flags"] = ext_flags
-    if wcs is not None:
-        out["ra"] = ra
-        out["dec"] = dec
+    # if wcs is not None:
+    #     out["ra"] = ra
+    #     out["dec"] = dec
 
     return out, seg
 
