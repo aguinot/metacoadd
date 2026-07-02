@@ -58,6 +58,7 @@ class MetaDetect:
         rng,
         step=0.01,
         types=["1m", "1p", "2m", "2p", "noshear"],
+        detect_type="relative",
         detect_thresh=1500,
         detect_minarea=5,
         detect_deblend_nthresh=32,
@@ -66,6 +67,9 @@ class MetaDetect:
         detect_filter_type="conv",
         coadd_type="average",
         coadd_multiband=True,
+        coadd_fscale=None,
+        coadd_zeropoints=None,
+        coadd_target_zp=30.0,
         models=None,
         fwhms=None,
         stamp_size=101,
@@ -84,6 +88,7 @@ class MetaDetect:
             raise ValueError("mcal_config must be a dictionary")
         self.mcal_config.update(mcal_config)
 
+        self._detect_type = detect_type
         self._detect_thresh = detect_thresh
         self._detect_minarea = detect_minarea
         self._detect_deblend_nthresh = detect_deblend_nthresh
@@ -92,6 +97,9 @@ class MetaDetect:
         self._detect_filter_type = detect_filter_type
         self._coadd_type = coadd_type
         self._coadd_multiband = coadd_multiband
+        self._coadd_fscale = coadd_fscale
+        self._coadd_zeropoints = coadd_zeropoints
+        self._coadd_target_zp = coadd_target_zp
 
         self._models = models
         self._fwhms = fwhms
@@ -103,9 +111,6 @@ class MetaDetect:
     def go(
         self,
         mb_obs,
-        fscale=None,
-        zeropoints=None,
-        target_zp=30.0,
     ):
         """
         Run metadetect.
@@ -145,22 +150,25 @@ class MetaDetect:
         # )
 
         # Check coadds
-        if (zeropoints is None and fscale is None) or (
-            zeropoints is not None and fscale is not None
+        if (self._coadd_zeropoints is None and self._coadd_fscale is None) or (
+            self._coadd_zeropoints is not None
+            and self._coadd_fscale is not None
         ):
             raise ValueError(
-                "Either zeropoints or fscale must be provided, but not both."
+                "Either coadd_zeropoints or coadd_fscale must be provided, "
+                "but not both."
             )
-        elif zeropoints is not None and fscale is None:
-            if len(zeropoints) != len(mb_obs):
+        elif self._coadd_zeropoints is not None and self._coadd_fscale is None:
+            if len(self._coadd_zeropoints) != len(mb_obs):
                 raise ValueError(
-                    "zeropoints must have the same length as the number of "
-                    "bands."
+                    "coadd_zeropoints must have the same length as the number "
+                    "of bands."
                 )
-        elif zeropoints is None and fscale is not None:
-            if len(fscale) != len(mb_obs):
+        elif self._coadd_zeropoints is None and self._coadd_fscale is not None:
+            if len(self._coadd_fscale) != len(mb_obs):
                 raise ValueError(
-                    "fscale must have the same length as the number of bands."
+                    "coadd_fscale must have the same length as the number "
+                    "of bands."
                 )
 
         final_cat = {}
@@ -178,18 +186,23 @@ class MetaDetect:
                 detect_image, detect_noise, detect_weight = (
                     self.get_coadd_multiband(
                         mcal_mbobs,
-                        fscale=fscale,
-                        zeropoints=zeropoints,
-                        target_zp=target_zp,
+                        fscale=self._coadd_fscale,
+                        zeropoints=self._coadd_zeropoints,
+                        target_zp=self._coadd_target_zp,
                     )
                 )
             else:
+                # Debug only
                 detect_image = mb_obs[0][0].image
                 detect_weight = mb_obs[0][0].weight
             # print("Done getting detection image.")
 
             # print("Getting catalog...")
-            all_sep_cat, seg_map = self.get_cat(detect_image, detect_weight)
+            all_sep_cat, seg_map = self.get_cat(
+                detect_image,
+                detect_weight,
+                wcs=mcal_mbobs[0][0].jacobian.get_galsim_wcs(),
+            )
             # print(
             #     "Done getting catalog.", len(all_sep_cat), "objects detected."
             # )
@@ -276,20 +289,19 @@ class MetaDetect:
         coadd_image, coadd_noise, coadd_weight = coadd_maker.make()
         return coadd_image, coadd_noise, coadd_weight
 
-    def get_cat(self, img, weight):
+    def get_cat(self, img, weight, wcs=None):
 
         cat, seg_map = get_cat(
             img,
             weight,
+            thresh_type=self._detect_type,
             thresh=self._detect_thresh,
             minarea=self._detect_minarea,
             deblend_nthresh=self._detect_deblend_nthresh,
             deblend_cont=self._detect_deblend_cont,
             kernel=self._detect_kernel,
-            wcs=None,
+            wcs=wcs,
         )
-        del img, weight
-        gc.collect()
 
         return cat, seg_map
 
@@ -499,13 +511,18 @@ def do_metadetect(
         types=config["metacal"].get(
             "types", ["1m", "1p", "2m", "2p", "noshear"]
         ),
+        detect_type=config["sx"].get("detect_type", "relative"),
         detect_thresh=config["sx"].get("detect_thresh", 1.5),
         detect_minarea=config["sx"].get("detect_minarea", 5),
         detect_deblend_nthresh=config["sx"].get("deblend_nthresh", 32),
         detect_deblend_cont=config["sx"].get("deblend_cont", 0.005),
         detect_kernel=config["sx"].get("filter_kernel", None),
         detect_filter_type=config["sx"].get("filter_type", "conv"),
+        coadd_type=config["coadd"].get("type", "average"),
         coadd_multiband=True,
+        coadd_fscale=config["coadd"].get("fscale", None),
+        coadd_zeropoints=config["coadd"].get("zeropoints", None),
+        coadd_target_zp=config["coadd"].get("target_zp", 30.0),
         models=[fitter["model"] for fitter in config["fitters"]],
         fwhms=[fitter["weight"]["fwhm"] for fitter in config["fitters"]],
         stamp_size=config["meds"]["min_box_size"],
