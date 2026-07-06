@@ -72,6 +72,7 @@ class MetaDetect:
         coadd_target_zp=30.0,
         models=None,
         fwhms=None,
+        symmetrizes=None,
         stamp_size=101,
         mcal_config={},
     ):
@@ -103,6 +104,7 @@ class MetaDetect:
 
         self._models = models
         self._fwhms = fwhms
+        self._symmetrizes = symmetrizes
         # Temporary fix. If the stamp size is even, raise issues.
         if stamp_size % 2 == 0:
             stamp_size += 1
@@ -127,6 +129,7 @@ class MetaDetect:
         self.gal_runners = get_fitters(
             models=self._models,
             fwhms=self._fwhms,
+            symmetrizes=self._symmetrizes,
             rng=self.rng,
             nband=nband,
             scale=scale,
@@ -524,7 +527,13 @@ def do_metadetect(
         coadd_zeropoints=config["coadd"].get("zeropoints", None),
         coadd_target_zp=config["coadd"].get("target_zp", 30.0),
         models=[fitter["model"] for fitter in config["fitters"]],
-        fwhms=[fitter["weight"]["fwhm"] for fitter in config["fitters"]],
+        fwhms=[
+            fitter.get("weight", {}).get("fwhm", None)
+            for fitter in config["fitters"]
+        ],
+        symmetrizes=[
+            fitter.get("symmetrize", True) for fitter in config["fitters"]
+        ],
         stamp_size=config["meds"]["min_box_size"],
         mcal_config={},
     )
