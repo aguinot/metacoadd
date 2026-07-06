@@ -74,6 +74,7 @@ class MetaDetect:
         fwhms=None,
         symmetrizes=None,
         stamp_size=101,
+        do_uberseg=False,
         mcal_config={},
     ):
         self.rng = rng
@@ -109,6 +110,7 @@ class MetaDetect:
         if stamp_size % 2 == 0:
             stamp_size += 1
         self._stamp_size = stamp_size
+        self._do_uberseg = do_uberseg
 
     def go(
         self,
@@ -219,6 +221,7 @@ class MetaDetect:
                 all_sep_cat,
                 seg_map,
                 T_psf,
+                do_uberseg=self._do_uberseg,
             )
             # print("Done getting shape catalog.")
             self.all_shape_cat = all_shape_cat
@@ -535,6 +538,7 @@ def do_metadetect(
             fitter.get("symmetrize", True) for fitter in config["fitters"]
         ],
         stamp_size=config["meds"]["min_box_size"],
+        do_uberseg=config["meds"].get("weight_type", None) == "uberseg",
         mcal_config={},
     )
     return md.go(mbobs)

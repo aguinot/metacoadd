@@ -131,24 +131,36 @@ def get_cutout(img, x, y, stamp_size):
     half_box_size = stamp_size // 2
     maxrow, maxcol = img.shape
 
-    ostart_row = orow - half_box_size + 1
-    ostart_col = ocol - half_box_size + 1
-    oend_row = orow + half_box_size + 2  # plus one for slices
-    oend_col = ocol + half_box_size + 2
+    # Requested bounds before clipping (keep your current centering convention)
+    req_row0 = orow - half_box_size + 1
+    req_col0 = ocol - half_box_size + 1
+    req_row1 = req_row0 + stamp_size
+    req_col1 = req_col0 + stamp_size
 
-    ostart_row = max(0, ostart_row)
-    ostart_col = max(0, ostart_col)
-    oend_row = min(maxrow, oend_row)
-    oend_col = min(maxcol, oend_col)
+    # Overlap with image
+    src_row0 = max(0, req_row0)
+    src_col0 = max(0, req_col0)
+    src_row1 = min(maxrow, req_row1)
+    src_col1 = min(maxcol, req_col1)
 
-    cutout_row = y - ostart_row
-    cutout_col = x - ostart_col
+    # Fixed-size zero-padded output
+    cutout = np.zeros((stamp_size, stamp_size), dtype=img.dtype)
 
-    return (
-        img[ostart_row:oend_row, ostart_col:oend_col],
-        cutout_row,
-        cutout_col,
-    )
+    if (src_row1 > src_row0) and (src_col1 > src_col0):
+        dst_row0 = src_row0 - req_row0
+        dst_col0 = src_col0 - req_col0
+        dst_row1 = dst_row0 + (src_row1 - src_row0)
+        dst_col1 = dst_col0 + (src_col1 - src_col0)
+
+        cutout[dst_row0:dst_row1, dst_col0:dst_col1] = img[
+            src_row0:src_row1, src_col0:src_col1
+        ]
+
+    # Coordinates in the padded cutout frame
+    cutout_row = y - req_row0
+    cutout_col = x - req_col0
+
+    return cutout, cutout_row, cutout_col
 
 
 def get_stamp_mbobs(
