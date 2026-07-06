@@ -93,9 +93,11 @@ class CoaddAverage(Coadd):
                     1 / self.mb_obs[i][j].weight[msk] * self.fscale[i][j] ** 2
                 )
                 n_image[msk] += 1
-        image /= n_image
-        noise /= n_image
-        weight = n_image**2 / weight
+        image[n_image != 0] /= n_image[n_image != 0]
+        noise[n_image != 0] /= n_image[n_image != 0]
+        weight[n_image != 0] = (
+            n_image[n_image != 0] ** 2 / weight[n_image != 0]
+        )
 
         return image, noise, weight
 

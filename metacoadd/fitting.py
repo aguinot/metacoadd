@@ -8,7 +8,13 @@ from .fitters.fourier_fitting import FourierFitter
 
 
 def get_fitters(
-    models, fwhms=None, rng=None, nband=None, scale=None, stamp_size=None
+    models,
+    fwhms=None,
+    symmetrizes=True,
+    rng=None,
+    nband=None,
+    scale=None,
+    stamp_size=None,
 ):
 
     if isinstance(models, str):
@@ -17,10 +23,11 @@ def get_fitters(
         raise ValueError("models must be a string or a list of strings")
 
     fitters = {}
-    for model, fwhm in zip(models, fwhms):
+    for model, fwhm, symmetrize in zip(models, fwhms, symmetrizes):
         fitters[model] = get_runner(
             model,
             fwhm=fwhm,
+            symmetrize=symmetrize,
             rng=rng,
             nband=nband,
             scale=scale,
@@ -49,13 +56,21 @@ def parse_model(model):
 
 
 def get_runner(
-    model, fwhm=None, rng=None, nband=None, scale=None, stamp_size=None
+    model,
+    fwhm=None,
+    symmetrize=True,
+    rng=None,
+    nband=None,
+    scale=None,
+    stamp_size=None,
 ):
 
     model = parse_model(model)
 
     if model in ["wmom", "pgauss", "am"]:
-        runner = build_mb_wmom_runner(model, fwhm=fwhm, rng=rng)
+        runner = build_mb_wmom_runner(
+            model, fwhm=fwhm, symmetrize=symmetrize, rng=rng
+        )
     elif "fourier" in model:
         runner = build_model_fitting_fourier_runner(
             model, rng=rng, nband=nband, scale=scale, stamp_size=stamp_size
@@ -67,7 +82,7 @@ def get_runner(
     return runner
 
 
-def build_mb_wmom_runner(model, fwhm=None, rng=None):
+def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
     if model == "wmom":
         runner = ngmix.gaussmom.GaussMom(fwhm=fwhm)
     elif model == "pgauss":
@@ -87,6 +102,7 @@ def build_mb_wmom_runner(model, fwhm=None, rng=None):
     return MBMomRunner(
         fitter=runner,
         fitter_name=model,
+        symmetrize=symmetrize,
     )
 
 
