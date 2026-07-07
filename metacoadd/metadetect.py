@@ -10,7 +10,11 @@ from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
 from .coadd import get_coadd_class
-from metacoadd import coadd
+from .ori_img_process import (
+    get_original_image_cat,
+    get_original_cat_dtype,
+    get_output_cat,
+)
 
 
 def get_shape_cat_dtype(runner_name):
@@ -76,6 +80,7 @@ class MetaDetect:
         stamp_size=101,
         do_uberseg=False,
         mcal_config={},
+        original_image_config=None,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -112,6 +117,24 @@ class MetaDetect:
         self._stamp_size = stamp_size
         self._do_uberseg = do_uberseg
 
+        self._do_original_image = False
+        if original_image_config is not None:
+            self._do_original_image = True
+            mcal_type_ref = original_image_config.get("mcal_type_ref", None)
+            if mcal_type_ref is None:
+                raise ValueError(
+                    "original_image_config must contain 'mcal_type_ref' in "
+                    "['noshear', '1p', '1m', '2p', '2m']"
+                )
+            elif mcal_type_ref not in self.mcal_config["types"]:
+                raise ValueError(
+                    f"original_image_config 'mcal_type_ref' must be one of "
+                    f"{self.mcal_config['types']}"
+                )
+            else:
+                self._original_image_mcal_type_ref = mcal_type_ref
+            self._original_config = original_image_config
+
     def go(
         self,
         mb_obs,
@@ -121,7 +144,7 @@ class MetaDetect:
         """
 
         if isinstance(mb_obs, ngmix.MultiBandObsList):
-            nband = len(mb_obs)
+            self._nband = len(mb_obs)
             scale = mb_obs[0][0].jacobian.get_scale()
         else:
             raise ValueError(
@@ -133,7 +156,7 @@ class MetaDetect:
             fwhms=self._fwhms,
             symmetrizes=self._symmetrizes,
             rng=self.rng,
-            nband=nband,
+            nband=self._nband,
             scale=scale,
             stamp_size=self._stamp_size,
         )
@@ -198,8 +221,8 @@ class MetaDetect:
                 )
             else:
                 # Debug only
-                detect_image = mb_obs[0][0].image
-                detect_weight = mb_obs[0][0].weight
+                detect_image = mcal_mbobs[0][0].image
+                detect_weight = mcal_mbobs[0][0].weight
             # print("Done getting detection image.")
 
             # print("Getting catalog...")
@@ -224,11 +247,36 @@ class MetaDetect:
                 do_uberseg=self._do_uberseg,
             )
             # print("Done getting shape catalog.")
-            self.all_shape_cat = all_shape_cat
+            # self.all_shape_cat = all_shape_cat
+
+            # print("Get measure on original image...")
+            original_cat = None
+            if self._do_original_image:
+                if self._original_image_mcal_type_ref == mcal_key:
+                    original_cat = get_original_image_cat(
+                        self.rng,
+                        mb_obs,
+                        all_sep_cat,
+                        seg_map=seg_map,
+                        cutout_size=self._stamp_size,
+                        do_uberseg=self._do_uberseg,
+                        wmom_fwhm=self._original_config.get("wmom_fwhm", 0.5),
+                        psf_fitter=self._original_config.get(
+                            "psf_fitter", "gauss"
+                        ),
+                    )
+                else:
+                    # We have to do this because the metadetect-driver
+                    # currently expect all shear type to have the same columns
+                    original_cat = get_output_cat(
+                        len(all_sep_cat), self._nband
+                    )
+                    for i in range(self._nband):
+                        original_cat[f"original_flags_{i}"] = 42
 
             # print("Building output catalog...")
             final_cat[mcal_key] = self.build_output_cat(
-                mcal_mbobs, all_sep_cat, all_shape_cat
+                all_sep_cat, all_shape_cat, original_cat
             )
             # print("Done building output catalog.")
 
@@ -348,16 +396,21 @@ class MetaDetect:
                 all_shape_cat[name].append(res)
         return all_shape_cat
 
-    def build_output_cat(self, mb_obs, all_sep_cat, all_shape_cat):
+    def build_output_cat(self, all_sep_cat, all_shape_cat, original_cat=None):
         SHAPE_CAT_DTYPE = []
         for name in self.gal_runners:
             SHAPE_CAT_DTYPE += get_shape_cat_dtype(name)
-            for i in range(len(mb_obs)):
+            for i in range(self._nband):
                 SHAPE_CAT_DTYPE.append((f"{name}_flux_" + str(i), np.float64))
                 SHAPE_CAT_DTYPE.append(
                     (f"{name}_flux_err_" + str(i), np.float64)
                 )
         final_cat_dtype = DET_CAT_DTYPE + SHAPE_CAT_DTYPE
+
+        if original_cat is not None:
+            ORI_CAT_DTYPE = get_original_cat_dtype(self._nband)
+            final_cat_dtype += ORI_CAT_DTYPE
+
         final_cat = np.zeros(
             len(all_sep_cat),
             dtype=final_cat_dtype,
@@ -365,6 +418,9 @@ class MetaDetect:
         for i, sep_obj in enumerate(all_sep_cat):
             for key in sep_obj.dtype.names:
                 final_cat[i][key] = sep_obj[key]
+            if original_cat is not None:
+                for key in np.dtype(ORI_CAT_DTYPE).names:
+                    final_cat[i][key] = original_cat[i][key]
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
                     runner_name = key.split("_")[0]
@@ -540,5 +596,6 @@ def do_metadetect(
         stamp_size=config["meds"]["min_box_size"],
         do_uberseg=config["meds"].get("weight_type", None) == "uberseg",
         mcal_config={},
+        original_image_config=config.get("original_image", None),
     )
     return md.go(mbobs)
