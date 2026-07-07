@@ -13,7 +13,13 @@ from .coadd import get_coadd_class
 from .ori_img_process import (
     get_original_image_cat,
     get_original_cat_dtype,
-    get_output_cat,
+    get_output_original_cat,
+)
+
+from .imcom_maps import (
+    extract_imcom_maps,
+    get_imcom_map_cat_dtype,
+    get_output_imcom_map_cat,
 )
 
 
@@ -81,6 +87,7 @@ class MetaDetect:
         do_uberseg=False,
         mcal_config={},
         original_image_config=None,
+        imcom_map_config=None,
     ):
         self.rng = rng
         self.mcal_config = {
@@ -134,6 +141,24 @@ class MetaDetect:
             else:
                 self._original_image_mcal_type_ref = mcal_type_ref
             self._original_config = original_image_config
+
+        self._do_imcom_map = False
+        if imcom_map_config is not None:
+            self._do_imcom_map = True
+            mcal_type_ref = imcom_map_config.get("mcal_type_ref", None)
+            if mcal_type_ref is None:
+                raise ValueError(
+                    "imcom_map_config must contain 'mcal_type_ref' in "
+                    "['noshear', '1p', '1m', '2p', '2m']"
+                )
+            elif mcal_type_ref not in self.mcal_config["types"]:
+                raise ValueError(
+                    f"imcom_map_config 'mcal_type_ref' must be one of "
+                    f"{self.mcal_config['types']}"
+                )
+            else:
+                self._imcom_map_mcal_type_ref = mcal_type_ref
+            self._imcom_map_config = imcom_map_config
 
     def go(
         self,
@@ -268,15 +293,34 @@ class MetaDetect:
                 else:
                     # We have to do this because the metadetect-driver
                     # currently expect all shear type to have the same columns
-                    original_cat = get_output_cat(
+                    original_cat = get_output_original_cat(
                         len(all_sep_cat), self._nband
                     )
                     for i in range(self._nband):
                         original_cat[f"original_flags_{i}"] = 42
 
+            # print("Get measure on IMCOM maps...")
+            imcom_map_cat = None
+            if self._do_imcom_map:
+                if self._imcom_map_mcal_type_ref == mcal_key:
+                    imcom_map_cat = extract_imcom_maps(
+                        mb_obs,
+                        all_sep_cat,
+                        seg_map,
+                        self._imcom_map_config,
+                    )
+                else:
+                    # We have to do this because the metadetect-driver
+                    # currently expect all shear type to have the same columns
+                    imcom_map_cat = get_output_imcom_map_cat(
+                        len(all_sep_cat),
+                        self._imcom_map_config["layers"],
+                        self._nband,
+                    )
+
             # print("Building output catalog...")
             final_cat[mcal_key] = self.build_output_cat(
-                all_sep_cat, all_shape_cat, original_cat
+                all_sep_cat, all_shape_cat, original_cat, imcom_map_cat
             )
             # print("Done building output catalog.")
 
@@ -396,7 +440,9 @@ class MetaDetect:
                 all_shape_cat[name].append(res)
         return all_shape_cat
 
-    def build_output_cat(self, all_sep_cat, all_shape_cat, original_cat=None):
+    def build_output_cat(
+        self, all_sep_cat, all_shape_cat, original_cat=None, imcom_map_cat=None
+    ):
         SHAPE_CAT_DTYPE = []
         for name in self.gal_runners:
             SHAPE_CAT_DTYPE += get_shape_cat_dtype(name)
@@ -411,6 +457,12 @@ class MetaDetect:
             ORI_CAT_DTYPE = get_original_cat_dtype(self._nband)
             final_cat_dtype += ORI_CAT_DTYPE
 
+        if imcom_map_cat is not None:
+            IMCOM_CAT_DTYPE = get_imcom_map_cat_dtype(
+                self._imcom_map_config["layers"], self._nband
+            )
+            final_cat_dtype += IMCOM_CAT_DTYPE
+
         final_cat = np.zeros(
             len(all_sep_cat),
             dtype=final_cat_dtype,
@@ -421,6 +473,9 @@ class MetaDetect:
             if original_cat is not None:
                 for key in np.dtype(ORI_CAT_DTYPE).names:
                     final_cat[i][key] = original_cat[i][key]
+            if imcom_map_cat is not None:
+                for key in np.dtype(IMCOM_CAT_DTYPE).names:
+                    final_cat[i][key] = imcom_map_cat[i][key]
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
                     runner_name = key.split("_")[0]
@@ -597,5 +652,6 @@ def do_metadetect(
         do_uberseg=config["meds"].get("weight_type", None) == "uberseg",
         mcal_config={},
         original_image_config=config.get("original_image", None),
+        imcom_map_config=config.get("IMCOM_maps", None),
     )
     return md.go(mbobs)

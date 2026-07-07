@@ -25,7 +25,7 @@ def get_original_cat_dtype(nband):
     return dtype
 
 
-def get_output_cat(n_obj, nband):
+def get_output_original_cat(n_obj, nband):
     CAT_DTYPE = get_original_cat_dtype(nband)
     out = np.array(
         list(map(tuple, np.zeros((len(CAT_DTYPE), n_obj)).T)),
@@ -45,7 +45,7 @@ def get_original_image_cat(
     psf_fitter="gauss",
 ):
 
-    output_cat = get_output_cat(len(sep_cat), len(mbobs))
+    output_cat = get_output_original_cat(len(sep_cat), len(mbobs))
     wmom_runner = ngmix.gaussmom.GaussMom(fwhm=wmom_fwhm)
 
     # Get PSF first
