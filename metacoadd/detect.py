@@ -226,6 +226,10 @@ def get_stamp_mbobs(
                 )
                 wgt = fast_uberseg(seg, wgt, det_row["number"])
 
+            # Temporary fix to avoid empty weight errors
+            if np.all(wgt == 0):
+                wgt[0, 0] = 1.0  # Avoid empty weight map
+
             jac = Jacobian(
                 row=dx,
                 col=dy,
