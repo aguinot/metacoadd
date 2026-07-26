@@ -45,12 +45,6 @@ def find_ellipmom1(
         TwoMinv_xy = -Mxy / detM * 2.0
         Minv_yy = Mxx / detM
 
-        # For computing the flux Jacobian wrt Q = (Q11, Q22, Q12)
-        Minv_00 = Minv_xx
-        Minv_01 = -0.5 * TwoMinv_xy
-        Minv_10 = Minv_01
-        Minv_11 = Minv_yy
-
         pixels = pixels_list[i_list]
         tmp_sums[:] = 0.0
         ivar_sum = 0.0
@@ -90,33 +84,6 @@ def find_ellipmom1(
                     tmp_sums[5] += rho2 * rho2 * intensity
                     tmp_sums[6 + band_ind] += 1.0 * intensity
                 else:
-                    # Accumulate flux Jacobian w.r.t Q = (Q11, Q22, Q12)
-                    # These are symmetric matrix derivatives
-                    Minv_r0 = Minv_00 * umod + Minv_01 * vmod
-                    Minv_r1 = Minv_10 * umod + Minv_11 * vmod
-
-                    # rᵀ Minv dM Minv r
-                    d_rho2_dQ11 = -(Minv_r1 * Minv_r1)
-                    d_rho2_dQ22 = -(Minv_r0 * Minv_r0)
-                    d_rho2_dQ12 = -(2.0 * Minv_r0 * Minv_r1)
-
-                    # Tr(Minv @ dM): for symmetric matrices
-                    tr_Q11 = Minv_11
-                    tr_Q22 = Minv_00
-                    tr_Q12 = 2.0 * Minv_01
-
-                    # d log(w) / dQk = 0.5 * (rᵀ Minv dM Minv r - Tr(Minv dM))
-                    dlogw_dQ11 = 0.5 * (-(d_rho2_dQ11) - tr_Q11)
-                    dlogw_dQ22 = 0.5 * (-(d_rho2_dQ22) - tr_Q22)
-                    dlogw_dQ12 = 0.5 * (-(d_rho2_dQ12) - tr_Q12)
-
-                    tmp["flux_jac"][i_list][0] -= intensity * Minv_r0  # dF/dx0  # fmt: skip
-                    tmp["flux_jac"][i_list][1] -= intensity * Minv_r1  # dF/dy0  # fmt: skip
-                    tmp["flux_jac"][i_list][2] += (intensity * dlogw_dQ22)  # dF/dQ11  # fmt: skip
-                    tmp["flux_jac"][i_list][3] += (intensity * dlogw_dQ12)  # dF/dQ12  # fmt: skip
-                    tmp["flux_jac"][i_list][4] += (intensity * dlogw_dQ11)  # dF/dQ22  # fmt: skip
-                    # tmp["flux_jac"][i_list][5] += 0                        # dF/drho2  # fmt: skip
-
                     win2 = win * win
                     var = 1.0 / ivar
                     F[0] = umod
@@ -347,7 +314,6 @@ def clear_tmp(tmp):
     """
     tmp["sums"][:] = 0.0
     tmp["sums_cov"][:, :] = 0.0
-    tmp["flux_jac"][:] = 0.0
 
 
 @njit(cache=True)
@@ -427,9 +393,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
 
     Sigma_array : ndarray, shape (N_obs, 7, 7)
         Covariance matrices for each observation
-
-    flux_jacobian_array : ndarray, shape (N_obs, 6)
-        Jacobians of flux w.r.t. [x0, y0, Q11, Q12, Q22, rho2]
 
     band_tracker : list of int
         List of number of observations per band. Length = N_bands

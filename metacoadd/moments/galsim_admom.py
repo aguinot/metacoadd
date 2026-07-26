@@ -322,7 +322,7 @@ def get_result(ares, jac_area, wgt_norm):
     # Allocate multi-band fluxes
     res["flux"] = np.full(n_bands, np.nan)
     res["flux_err"] = np.full(n_bands, np.nan)
-    res["flux_cov"] = np.full((n_bands, n_bands), np.nan)
+    res["flux_cov"] = np.zeros((n_bands, n_bands))
     res["flux_mean"] = np.nan
 
     if res["flags"] == 0:
@@ -494,7 +494,6 @@ def _get_admom_tmp_dtype(nobs):
     _admom_tmp_dtype = [
         ("sums", "f8", (nobs, 7)),
         ("sums_cov", "f8", (nobs, 7, 7)),
-        ("flux_jac", "f8", (nobs, 6)),
     ]
     return _admom_tmp_dtype
 
