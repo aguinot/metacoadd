@@ -6,7 +6,6 @@ https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cp
 
 import ngmix.flags
 import numpy as np
-from ngmix.gexceptions import GMixRangeError
 from ngmix.gmix import GMixModel
 from ngmix.gmix.gmix_nb import GMIX_LOW_DETVAL
 from ngmix.observation import MultiBandObsList, ObsList, Observation
@@ -16,6 +15,7 @@ from ngmix.util import get_ratio_error
 from .galsim_admom_nb import (
     compute_effective_flux,
     compute_flux_cross_covs,
+    get_flux_var,
     get_mom_var,
 )
 
@@ -333,7 +333,13 @@ def get_result(ares, jac_area, wgt_norm):
                     res["sums_cov"][6:, 6:],
                 )
             )
-            if any(flux_vars < 0):
+            if (
+                not np.isfinite(flux_eff_var)
+                or flux_eff_var <= 0
+                or not np.all(np.isfinite(flux_vars))
+                or np.any(flux_vars <= 0)
+            ):
+                res["flux_flags"] |= ngmix.flags.NONPOS_VAR
                 res["T_flags"] |= ngmix.flags.NONPOS_VAR
             else:
                 res["T"] = res["pars"][2] + res["pars"][4]
@@ -342,28 +348,39 @@ def get_result(ares, jac_area, wgt_norm):
 
                 # Also store per-band flux in pars if needed
                 res["pars"][6 : 6 + n_bands] = res["sums"][6:] / res["wsum"]
-        except np.linalg.LinAlgError:
+        except (np.linalg.LinAlgError, ZeroDivisionError):
+            res["flux_flags"] |= ngmix.flags.NONPOS_VAR
             res["T_flags"] |= ngmix.flags.NONPOS_VAR
 
-    if res["flags"] == 0 and res["T"] > GMIX_LOW_DETVAL:
-        pnorm = res["pars"][5]
+    if (
+        res["flags"] == 0
+        and res["flux_flags"] == 0
+        and res["T"] > GMIX_LOW_DETVAL
+    ):
         fnorm = jac_area * wgt_norm * res["wsum"]
-
-        res["flux"][:] = res["pars"][6:] * pnorm / fnorm
-        res["flux_err"][:] = np.sqrt(flux_vars) * pnorm / fnorm
-
-        # Store full flux covariance matrix
-        for i in range(n_bands):
-            for j in range(n_bands):
-                i_idx = 6 + i
-                j_idx = 6 + j
-                res["flux_cov"][i, j] = (
-                    res["sums_cov"][i_idx, j_idx] * (pnorm**2) / (fnorm**2)
+        rho4 = res["pars"][5]
+        res["flux"][:] = res["sums"][6:] * rho4 / fnorm
+        for band in range(n_bands):
+            flux_var = (
+                get_flux_var(
+                    res["sums"][6 + band],
+                    rho4,
+                    res["sums_cov"][6 + band, 6 + band],
+                    res["sums_cov"][5, 5],
+                    res["sums_cov"][6 + band, 5],
                 )
+                / fnorm**2
+            )
+            res["flux_cov"][band, band] = flux_var
+        flux_vars = np.diag(res["flux_cov"])
+        if np.all(np.isfinite(flux_vars)) and np.all(flux_vars > 0):
+            res["flux_err"][:] = np.sqrt(flux_vars)
+        else:
+            res["flux_flags"] |= ngmix.flags.NONPOS_VAR
     else:
         res["flux_flags"] |= res["flags"] | ngmix.flags.NONPOS_SIZE
 
-    if res["flags"] == 0:
+    if res["flags"] == 0 and res["flux_flags"] == 0:
         Q11_F_eff_cov, Q22_F_eff_cov = compute_flux_cross_covs(
             flux_weights=flux_weights,
             target_covs=np.array(
@@ -439,7 +456,7 @@ def get_result(ares, jac_area, wgt_norm):
             res["flags"] |= ngmix.flags.NONPOS_SIZE
 
     # handle rho4 for multiband
-    if res["flags"] == 0:
+    if res["flags"] == 0 and res["flux_flags"] == 0:
         res["rho4"] = res["pars"][5]
 
         R4_F_eff_cov = compute_flux_cross_covs(

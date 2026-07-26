@@ -134,11 +134,20 @@ def find_ellipmom1(
                             )
 
         if not do_cov:
+            if tmp_sums[6 + band_ind] <= 0.0:
+                res["flags"] = ngmix.flags.NONPOS_FLUX
+                return
             tmp_sums[:6] /= tmp_sums[6 + band_ind]
             res["sums"][:] += tmp_sums * ivar_sum
             flux_weights[band_ind] += ivar_sum
         else:
-            tmp["sums"][i_list][:6] /= tmp["sums"][i_list][6]
+            flux = tmp["sums"][i_list][6]
+            if flux <= 0.0:
+                res["flags"] = ngmix.flags.NONPOS_FLUX
+                return
+            normalize_moment_covariance(
+                tmp["sums"][i_list], tmp["sums_cov"][i_list]
+            )
             tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
@@ -147,15 +156,29 @@ def find_ellipmom1(
 
     if do_cov:
         combine_multiband_observations_array(res, tmp, band_tracker)
-
-        snr = np.sqrt(
-            res["sums"] @ np.linalg.inv(res["sums_cov"]) @ res["sums"]
+        res["s2n"] = sqrt(
+            res["sums"] @ np.linalg.solve(res["sums_cov"], res["sums"])
         )
-        res["s2n"] = snr
     else:
         res["sums"][:] /= np.sum(flux_weights)
 
     res["wsum"] /= n_list
+
+
+@njit(cache=True)
+def normalize_moment_covariance(sums, sums_cov):
+    """Transform raw weighted sums and covariance to flux-normalized moments."""
+    raw_cov = sums_cov.copy()
+    flux = sums[6]
+    jac = np.zeros((7, 7), dtype=np.float64)
+
+    for i in range(6):
+        jac[i, i] = 1.0 / flux
+        jac[i, 6] = -sums[i] / (flux * flux)
+    jac[6, 6] = 1.0
+
+    sums_cov[:, :] = jac @ raw_cov @ jac.T
+    sums[:6] /= flux
 
 
 @njit(cache=True)
@@ -199,6 +222,8 @@ def find_ellipmom2(
             conf,
             do_cov,
         )
+        if res["flags"] != 0:
+            return
         Bx, By, Cxx, Cxy, Cyy, rho4 = res["sums"][:6]
         Amps = res["sums"][6:]
         if do_cov:
@@ -211,6 +236,7 @@ def find_ellipmom2(
 
         if Amp <= 0:
             res["flags"] = ngmix.flags.NONPOS_FLUX
+            return
 
         two_psi = atan2(2 * Mxy, Mxx - Myy)
         semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + (
@@ -220,6 +246,7 @@ def find_ellipmom2(
 
         if semi_b2 <= 0:
             res["flags"] = ngmix.flags.NONPOS_SIZE
+            return
 
         shiftscale = sqrt(semi_b2)
         if res["numiter"] == 0:
@@ -279,6 +306,7 @@ def find_ellipmom2(
             abs(y0 - y00) > conf["shiftmax"] * pix_scale
         ):
             res["flags"] = ngmix.flags.CEN_SHIFT
+            return
 
         res["numiter"] = i + 1
 
@@ -336,10 +364,6 @@ def compute_effective_flux(fluxes, flux_cov):
     flux_cov : (B, B) array
         Covariance matrix of the flux vector.
 
-    target_covs : (N, B) array, optional
-        Covariances between each of N target parameters and the fluxes.
-        If provided, returns cross-covariances with F_eff.
-
     Returns
     -------
     F_eff : float
@@ -348,8 +372,11 @@ def compute_effective_flux(fluxes, flux_cov):
     F_eff_var : float
         Variance of the effective flux.
 
-    cross_covs : (N,) array, optional
-        Cross-covariances with F_eff, if target_covs was provided.
+    weights : (B,) array
+        BLUE weights applied to the input fluxes.
+
+    flux_vars : (B,) array
+        Marginal variances of the input fluxes.
     """
     ones = np.ones(len(fluxes), dtype=np.float64)
 
@@ -361,8 +388,7 @@ def compute_effective_flux(fluxes, flux_cov):
 
     F_eff = weights @ fluxes
     F_eff_var = 1.0 / denom
-
-    return F_eff, F_eff_var, weights, 1 / flux_weights
+    return F_eff, F_eff_var, weights, np.diag(flux_cov)
 
 
 @njit(cache=True)
@@ -426,8 +452,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
     # Unpack the input
     m_array = tmp["sums"]
     Sigma_array = tmp["sums_cov"]
-    flux_jacobian_array = tmp["flux_jac"]
-
     N_obs = m_array.shape[0]
     N_bands = len(band_tracker)
 
@@ -499,35 +523,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
 
         start += n_obs_b
 
-    # === Step 4: Add flux Jacobian contributions with cross-band terms ===
-    J_flux = np.zeros((N_bands, 6), dtype=np.float64)
-
-    start = 0
-    for b in range(N_bands):
-        n_obs_b = band_tracker[b]
-        for i in range(n_obs_b):
-            idx = start + i
-            w_flux = flux_weights[idx]
-            J_flux[b] += w_flux * flux_jacobian_array[idx, :]
-        start += n_obs_b
-
-    # Fill in covariance terms between shared and flux, and between fluxes
-    # NOTE: This part is problematic so we don't include the cross-band flux covariances.
-    # It needs to be revisited in the future
-    for b1 in range(N_bands):
-        J1 = J_flux[b1]
-
-        # Shared-flux covariances
-        # Sigma_M[6 + b1, :6] += J1 @ Sigma_shared_joint
-        # Sigma_M[:6, 6 + b1] += Sigma_shared_joint @ J1.T
-
-        # Flux-flux covariances (cross-band terms)
-        for b2 in range(N_bands):
-            # if b1 != b2:
-            if b1 == b2:
-                J2 = J_flux[b2]
-                Sigma_M[6 + b1, 6 + b2] += J1 @ Sigma_shared_joint @ J2.T
-
     res["sums"][:6] = x_shared_joint
     res["sums"][6:] = F_b
     res["sums_cov"] = Sigma_M
@@ -560,3 +555,13 @@ def get_mom_var(
     )
 
     return var_t
+
+
+@njit(cache=True)
+def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
+    """Propagate the variance of the product ``flux * rho4``."""
+    return (
+        flux * flux * var_rho4
+        + rho4 * rho4 * var_flux
+        + 2.0 * flux * rho4 * cov_flux_rho4
+    )
