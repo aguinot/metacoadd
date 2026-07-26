@@ -122,7 +122,6 @@ class GAdmomFitter:
     def __init__(
         self,
         guess_fwhm,
-        psf_deconv=False,
         maxiter=DEFAULT_MAXITER,
         shiftmax=DEFAULT_SHIFTMAX,
         tol=DEFAULT_TOL,
@@ -133,7 +132,6 @@ class GAdmomFitter:
         rng=None,
     ):
         self.guess_fwhm = guess_fwhm
-        self.psf_deconv = psf_deconv
         self._set_conf(
             maxiter=maxiter,
             shiftmax=shiftmax,
@@ -181,28 +179,13 @@ class GAdmomFitter:
 
         pixels_list = []
         band_tracker = []
-        if self.psf_deconv:
-            psf_moments = []
-            idx = 0
         for i, obslits in enumerate(mb_obs):
             k = 0
             for j, obs_ in enumerate(obslits):
                 pixels_list.append(obs_.pixels)
-                if self.psf_deconv:
-                    psf_obs = obs_.psf
-                    if psf_obs.has_gmix():
-                        psf_pars = psf_obs.gmix.get_full_pars()
-                        psf_moments.append(psf_pars[3:6])
-                        idx += 1
-                    else:
-                        raise ValueError("PSF has no gmix set.")
                 k += 1
             band_tracker.append(k)
         band_tracker = np.array(band_tracker)
-        if self.psf_deconv:
-            psf_moments = np.array(psf_moments)
-        else:
-            psf_moments = None
 
         ares = self._get_am_result(nband)
         atmp = self._get_am_tmp(sum(band_tracker))
@@ -220,7 +203,6 @@ class GAdmomFitter:
             ares,
             atmp,
             self.conf,
-            psf_moments=psf_moments,
         )
         # except:
         #     ares["flags"] = 2**16

@@ -17,14 +17,13 @@ def find_ellipmom1(
     band_tracker,
     x0,
     y0,
-    Mxx_,
-    Mxy_,
-    Myy_,
+    Mxx,
+    Mxy,
+    Myy,
     res,
     tmp,
     conf,
     do_cov=False,
-    psf_moments=None,
 ):
     F = res["F"]
 
@@ -38,15 +37,6 @@ def find_ellipmom1(
     band_ind = 0
     n_list = len(pixels_list)
     for i_list in range(n_list):
-        if psf_moments is not None:
-            Mxx = Mxx_ + psf_moments[i_list][0]
-            Mxy = Mxy_ + psf_moments[i_list][1]
-            Myy = Myy_ + psf_moments[i_list][2]
-        else:
-            Mxx = Mxx_
-            Mxy = Mxy_
-            Myy = Myy_
-        # We need to compute the normalization before without the PSF correction
         detM = Mxx * Myy - Mxy * Mxy
         w_norm = 1.0 / (2 * np.pi * sqrt(detM))
         res["wnorm"] = 1.0
@@ -145,14 +135,10 @@ def find_ellipmom1(
 
         if not do_cov:
             tmp_sums[:6] /= tmp_sums[6 + band_ind]
-            if psf_moments is not None:
-                tmp_sums[2:5] -= psf_moments[i_list] / 2
             res["sums"][:] += tmp_sums * ivar_sum
             flux_weights[band_ind] += ivar_sum
         else:
             tmp["sums"][i_list][:6] /= tmp["sums"][i_list][6]
-            if psf_moments is not None:
-                tmp["sums"][i_list][2:5] -= psf_moments[i_list] / 2
             tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
@@ -180,8 +166,6 @@ def find_ellipmom2(
     resarray,
     tmparray,
     confarray,
-    psf_moments=None,  # These are the true PSF moments
-    # fixed_psf_components=None,  # Add [Mxx_fixed, Mxy_fixed, Myy_fixed] here
 ):
     """ """
 
@@ -199,26 +183,6 @@ def find_ellipmom2(
     y00 = y0
     do_cov = False
 
-    # Prepare the effective PSF moments for deconvolution
-    psf_moms_for_ellipmom1 = None
-    fixed_psf_components = np.array([0.0, 0.0, 0.0])
-    if psf_moments is not None:  # true_psf_moments are provided
-        fixed_psf_components = np.array([0.0121, 0.0, 0.0121])
-        # fixed_psf_components = np.array([0.0, 0.0, 0.0])
-        if fixed_psf_components is not None:
-            # Calculate M_psf_effective = M_psf_true - M_psf_fixed for each observation
-            psf_moms_for_ellipmom1 = psf_moments - fixed_psf_components
-            # for true_psf_obs_i in psf_moments:
-            #     # Ensure fixed_psf_components is a NumPy array for element-wise subtraction
-            #     psf_moms_for_ellipmom1.append(
-            #         true_psf_obs_i
-            #         - np.array(fixed_psf_components, dtype=np.float64)
-            #     )
-        else:
-            # Original behavior: deconvolve by the true PSF
-            psf_moms_for_ellipmom1 = psf_moments
-    # If psf_moments is None, psf_moms_for_ellipmom1 remains None (no PSF deconvolution)
-
     for i in range(conf["maxiter"]):
         clear_result(res)
         clear_tmp(tmp)
@@ -234,7 +198,6 @@ def find_ellipmom2(
             tmp,
             conf,
             do_cov,
-            psf_moments=psf_moms_for_ellipmom1,  # Pass the effective PSF moments
         )
         Bx, By, Cxx, Cxy, Cyy, rho4 = res["sums"][:6]
         Amps = res["sums"][6:]
@@ -323,28 +286,12 @@ def find_ellipmom2(
             if not do_cov:
                 do_cov = True
                 continue
-            if psf_moments is not None:
-                Mxx_corr, Mxy_corr, Myy_corr = get_damped_intrinsic_moments(
-                    Mxx,
-                    Mxy,
-                    Myy,
-                    fixed_psf_components,
-                    conf["lambda_ell"],
-                    min_abs_T=conf["min_T_abs"],
-                )
-            else:
-                Mxx_corr = Mxx
-                Mxy_corr = Mxy
-                Myy_corr = Myy
             # rho4 /= Amp
             res["pars"][0] = x0
             res["pars"][1] = y0
-            # res["pars"][2] = Mxx - fixed_psf_components[0]
-            # res["pars"][3] = Mxy - fixed_psf_components[1]
-            # res["pars"][4] = Myy - fixed_psf_components[2]
-            res["pars"][2] = Mxx_corr
-            res["pars"][3] = Mxy_corr
-            res["pars"][4] = Myy_corr
+            res["pars"][2] = Mxx
+            res["pars"][3] = Mxy
+            res["pars"][4] = Myy
             res["pars"][5] = rho4
             res["pars"][6:] = Amps * rho4
             break
@@ -373,84 +320,6 @@ def clear_tmp(tmp):
     tmp["sums"][:] = 0.0
     tmp["sums_cov"][:, :] = 0.0
     tmp["flux_jac"][:] = 0.0
-
-
-@njit(cache=True)
-def get_damped_intrinsic_moments(
-    Mxx_reg, Mxy_reg, Myy_reg, fixed_psf_components, lambda_ell, min_abs_T=1e-3
-):
-    """
-    Calculates intrinsic second moments with a damped deconvolution for ellipticity.
-
-    The damping formula used is:
-        e_int = (e_reg * A) / (1 + lambda_ell * A**3)
-    where A = T_reg / T_int.
-
-    Args:
-        Mxx_reg (float): XX second moment of the regularized object.
-        Mxy_reg (float): XY second moment of the regularized object.
-        Myy_reg (float): YY second moment of the regularized object.
-        fixed_psf_components (list or array): Second moments of the fixed PSF
-                                             [mxx_fix, mxy_fix, myy_fix].
-        lambda_ell (float): Regularization parameter for ellipticity damping.
-        min_abs_T (float, optional): Minimum absolute value for T to be
-                                     considered non-zero. Defaults to 1e-9.
-
-    Returns:
-        tuple: (Mxx_int, Mxy_int, Myy_int, status_flag)
-               Mxx_int, Mxy_int, Myy_int are the calculated intrinsic moments.
-               status_flag:
-                 0 for success.
-                 1 if T_reg <= min_abs_T (regularized object too small).
-                 2 if T_int <= min_abs_T (intrinsic object too small or negative).
-                 4 if T_fix < min_abs_T (negligible PSF, direct assignment).
-                 8 if calculated |e_int|^2 >= 1 (unphysical ellipticity after damping).
-    """
-    mxx_fix, mxy_fix, myy_fix = fixed_psf_components
-    status_flag = 0
-
-    T_reg_val = Mxx_reg + Myy_reg
-    T_fix_val = mxx_fix + myy_fix
-
-    Mxx_int, Mxy_int, Myy_int = np.nan, np.nan, np.nan
-
-    if T_reg_val <= min_abs_T:
-        status_flag |= 1  # Regularized object has no size
-        return Mxx_int, Mxy_int, Myy_int  # , status_flag
-
-    T_int_val = T_reg_val - T_fix_val
-
-    if T_int_val < -min_abs_T:
-        status_flag |= 2  # Intrinsic size is zero or negative
-        return Mxx_int, Mxy_int, Myy_int  # , status_flag
-    if abs(T_int_val) < min_abs_T:
-        T_int_val = min_abs_T
-
-    # Proceed with ellipticity deconvolution using damping
-    e1_reg_val = (Mxx_reg - Myy_reg) / T_reg_val
-    e2_reg_val = (2 * Mxy_reg) / T_reg_val
-
-    amplification_factor_A = T_reg_val / T_int_val
-
-    # Your specified damping formula
-    denominator = 1.0 + lambda_ell * amplification_factor_A**3
-
-    e1_int_val = (e1_reg_val * amplification_factor_A) / denominator
-    e2_int_val = (e2_reg_val * amplification_factor_A) / denominator
-
-    e_int_sq = e1_int_val**2 + e2_int_val**2
-    if (
-        e_int_sq >= 1.0 - min_abs_T
-    ):  # Check for unphysical ellipticity even after damping
-        status_flag |= 8
-        # Mxx_int, etc., remain NaN
-    else:
-        Mxx_int = 0.5 * T_int_val * (1 + e1_int_val)
-        Myy_int = 0.5 * T_int_val * (1 - e1_int_val)
-        Mxy_int = 0.5 * T_int_val * e2_int_val
-        # status_flag remains 0 if no other flags were set
-
-    return Mxx_int, Mxy_int, Myy_int  # , status_flag
 
 
 @njit(cache=True)
