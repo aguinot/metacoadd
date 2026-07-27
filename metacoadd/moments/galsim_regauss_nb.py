@@ -9,8 +9,8 @@ This implementation is modified to allowed post-metacalibration PSF correction.
 from math import exp, sqrt, floor, ceil, log
 
 import numpy as np
-import pyfftw
-from numba import njit, objmode
+from numba import njit
+from numba.typed import List
 
 import ngmix
 from ngmix.moments import mom2e
@@ -129,13 +129,8 @@ def fast_convolve_image1(
     ]
     xim[b1[0] : b1[1] + 1, b1[2] : b1[3] + 1] = image1
 
-    # Do fft img1
-    kb = (int(N / 2), N - 1)
-    with objmode(kim1="complex128[:,:]"):
-        xim_pyfft = pyfftw.empty_aligned(xim.shape, dtype="float64")
-        xim_pyfft[:] = xim
-        fft_object_xim1 = pyfftw.builders.rfft2(xim_pyfft, s=(N, N))
-        kim1 = fft_object_xim1()
+    # NumPy FFT calls are compiled by rocket-fft's Numba overloads.
+    kim1 = np.fft.rfft2(xim, s=(N, N))
 
     # Do fft img2
     xim.fill(0)
@@ -146,23 +141,13 @@ def fast_convolve_image1(
         image2.shape[1] + offset - 1,
     ]
     xim[b2[0] : b2[1] + 1, b2[2] : b2[3] + 1] = image2
-    with objmode(kim2="complex128[:,:]"):
-        xim_pyfft = pyfftw.empty_aligned(xim.shape, dtype="float64")
-        xim_pyfft[:] = xim
-        fft_object_xim2 = pyfftw.builders.rfft2(xim_pyfft, s=(N, N))
-        kim2 = fft_object_xim2()
+    kim2 = np.fft.rfft2(xim, s=(N, N))
 
     # Conv
     kim2 *= kim1
 
     # Inverse fft
-    kb = (N, int(N / 2) + 1)
-    with objmode(xim="float64[:,:]"):
-        kim_pyfft = pyfftw.empty_aligned(kb, dtype="complex128")
-        kim_pyfft[:] = kim2
-        ifft_object_out = pyfftw.builders.irfft2(kim_pyfft, s=(N, N))
-        xim = ifft_object_out()
-        xim = np.fft.fftshift(xim).real
+    xim = np.fft.irfft2(kim2, s=(N, N))
 
     shift_x = orig_img1[0] + orig_img2[0]
     shift_y = orig_img1[1] + orig_img2[1]
@@ -181,9 +166,14 @@ def fast_convolve_image1(
     if b3[3] > xim.shape[1]:
         b3[3] = xim.shape[1] - 1
     b4 = [b3[0] + shift_x, b3[1] + shift_x, b3[2] + shift_y, b3[3] + shift_y]
-    image_out[b4[0] : b4[1], b4[2] : b4[3]] += xim[
-        b3[0] : b3[1], b3[2] : b3[3]
-    ]
+    half_n = N // 2
+    for row in range(b3[0], b3[1]):
+        shifted_row = (row + half_n) % N
+        out_row = row + shift_x
+        for col in range(b3[2], b3[3]):
+            shifted_col = (col + half_n) % N
+            out_col = col + shift_y
+            image_out[out_row, out_col] += xim[shifted_row, shifted_col]
 
 
 def get_resi_img(
@@ -200,25 +190,30 @@ def get_resi_img(
     nsig_rg = 3.0
     nsig_rg2 = 3.6
 
+    jac = obs.jacobian
+    psf_obs = obs.psf
+    psf_jac = psf_obs.jacobian
+    jac_area = jac.area
+
     x_gal_min, y_gal_min = 0, 0
     x_gal_max, y_gal_max = obs.image.shape
     x_psf_min, y_psf_min = 0, 0
-    x_psf_max, y_psf_max = obs.psf.image.shape
+    x_psf_max, y_psf_max = psf_obs.image.shape
 
-    if xx_f <= obs.jacobian.area:
-        xx_f = obs.jacobian.area
-    if yy_f <= obs.jacobian.area:
-        yy_f = obs.jacobian.area
+    if xx_f <= jac_area:
+        xx_f = jac_area
+    if yy_f <= jac_area:
+        yy_f = jac_area
 
     # Get fgauss bounds
     fgauss_xmin = x_gal_min - x_psf_max
     fgauss_xmax = x_gal_max - x_psf_min
     fgauss_ymin = y_gal_min - y_psf_max
     fgauss_ymax = y_gal_max - y_psf_min
-    fgauss_xctr = obs.jacobian.row0 - obs.psf.jacobian.row0
-    fgauss_yctr = obs.jacobian.col0 - obs.psf.jacobian.col0
-    fgauss_xsig = np.sqrt(xx_f / obs.jacobian.area)
-    fgauss_ysig = np.sqrt(yy_f / obs.jacobian.area)
+    fgauss_xctr = jac.row0 - psf_jac.row0
+    fgauss_yctr = jac.col0 - psf_jac.col0
+    fgauss_xsig = np.sqrt(xx_f / jac_area)
+    fgauss_ysig = np.sqrt(yy_f / jac_area)
     if fgauss_xmin < fgauss_xctr - nsig_rg * fgauss_xsig:
         fgauss_xmin = int(floor(fgauss_xctr - nsig_rg * fgauss_xsig))
     if fgauss_xmax > fgauss_xctr + nsig_rg * fgauss_xsig:
@@ -233,36 +228,34 @@ def get_resi_img(
     f_col0 = f_dim_y / 2
     f_dim_x += 1
     f_dim_y += 1
-    f_jac = ngmix.Jacobian(
-        row=f_row0, col=f_col0, wcs=obs.jacobian.get_galsim_wcs()
-    )
+    f_jac = ngmix.Jacobian(row=f_row0, col=f_col0, wcs=jac.get_galsim_wcs())
 
     # Get PSF bounds
     p_xmin = int(
         floor(
-            obs.psf.jacobian.row0
-            - nsig_rg2 * sqrt(xx_f / obs.jacobian.area)
+            psf_jac.row0
+            - nsig_rg2 * sqrt(xx_f / jac_area)
             - nsig_rg * fgauss_xsig
         )
     )
     p_xmax = int(
         ceil(
-            obs.psf.jacobian.row0
-            + nsig_rg2 * sqrt(xx_f / obs.jacobian.area)
+            psf_jac.row0
+            + nsig_rg2 * sqrt(xx_f / jac_area)
             + nsig_rg * fgauss_xsig
         )
     )
     p_ymin = int(
         floor(
-            obs.psf.jacobian.col0
-            - nsig_rg2 * sqrt(yy_f / obs.jacobian.area)
+            psf_jac.col0
+            - nsig_rg2 * sqrt(yy_f / jac_area)
             - nsig_rg * fgauss_ysig
         )
     )
     p_ymax = int(
         ceil(
-            obs.psf.jacobian.col0
-            + nsig_rg2 * sqrt(yy_f / obs.jacobian.area)
+            psf_jac.col0
+            + nsig_rg2 * sqrt(yy_f / jac_area)
             + nsig_rg * fgauss_ysig
         )
     )
@@ -281,7 +274,7 @@ def get_resi_img(
     p_dim_x += 1
     p_dim_y += 1
     p_jac = ngmix.Jacobian(
-        row=p_row0, col=p_col0, wcs=obs.psf.jacobian.get_galsim_wcs()
+        row=p_row0, col=p_col0, wcs=psf_jac.get_galsim_wcs()
     )
 
     g1, g2, T = ngmix.moments.mom2g(yy_f, xy_f, xx_f)
@@ -305,7 +298,7 @@ def get_resi_img(
     fpsf_img = gmix_psf.make_image((p_dim_x, p_dim_y), p_jac, fast_exp=True)
 
     PSF_resid_img = (
-        -obs.psf.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
+        -psf_obs.image[p_xmin : p_xmax + 1, p_ymin : p_ymax + 1] + fpsf_img
     )
 
     fgauss_img *= flux_gal / np.sum(fgauss_img)
@@ -377,6 +370,7 @@ def regauss(
     resarray,
     tmp_func,
     confarray,
+    do_covariance=True,
 ):
     pixels_list = []
     band_tracker = []
@@ -397,43 +391,59 @@ def regauss(
         band_tracker.append(k)
     psf_moments = np.array(psf_moments)
     band_tracker = np.array(band_tracker)
+    pixels_list = List(pixels_list)
+    values_list = List([pixels["val"] for pixels in pixels_list])
 
-    tmparray = tmp_func(sum(band_tracker))
+    tmparray = tmp_func(sum(band_tracker), len(band_tracker))
 
     # Gal
     find_ellipmom2(
         pixels_list,
+        values_list,
         band_tracker,
         guess,
         resarray,
         tmparray,
         confarray,
+        False,
     )
+
+    psf_moments_eff = np.zeros(3, dtype=np.float64)
+    for i in range(len(psf_moments)):
+        psf_moments_eff += tmparray[0]["norm_weights"][i] * psf_moments[i]
 
     x0_f, y0_f, yy_g, xy_g, xx_g = resarray[0]["pars"][:5]
-    yy_f = yy_g - psf_moments[0][0]
-    xy_f = xy_g - psf_moments[0][1]
-    xx_f = xx_g - psf_moments[0][2]
+    yy_f = yy_g - psf_moments_eff[0]
+    xy_f = xy_g - psf_moments_eff[1]
+    xx_f = xx_g - psf_moments_eff[2]
 
-    # We need to add a test here to make sure the deconvolution went well
-
-    # if abs(xx_f) < 1e-3:
-    #     xx_f = 1e-3
-    # if abs(yy_f) < 1e-3:
-    #     yy_f = 1e-3
-    # # if abs(xy_f) < 1e-3:
-    # #     xy_f = 0.0
     if resarray[0]["flags"] != 0:
         return
+    if (
+        (not np.isfinite(xx_f))
+        or (not np.isfinite(xy_f))
+        or (not np.isfinite(yy_f))
+        or xx_f <= 0.0
+        or yy_f <= 0.0
+        or xx_f * yy_f - xy_f * xy_f <= 0.0
+    ):
+        resarray[0]["flags"] = ngmix.flags.NONPOS_SIZE
+        return
 
-    flux_gal = (
-        resarray[0]["pars"][6:]
-        / resarray[0]["wnorm"]
-        / mbobs[0][0].jacobian.area
-    )
+    flux_gal = np.zeros(len(band_tracker), dtype=np.float64)
+    obs_index = 0
+    for band in range(len(band_tracker)):
+        band_weight = 0.0
+        band_amplitude = 0.0
+        for _ in range(band_tracker[band]):
+            weight = tmparray[0]["norm_weights"][obs_index]
+            band_weight += weight
+            band_amplitude += weight * tmparray[0]["raw_flux"][obs_index]
+            obs_index += 1
+        flux_gal[band] = resarray[0]["pars"][5] * band_amplitude / band_weight
 
     # Correct for PSF residuals
-    pixels_list_resi = []
+    values_list_resi = List()
     k = 0
     for nb, obslits in enumerate(mbobs):
         for obs in obslits:
@@ -461,9 +471,9 @@ def regauss(
                     flux_gal[nb],
                     obs.meta["psf_resi"],
                 )
-            resi_obs = obs.copy()
-            resi_obs.set_image(resi_img, update_pixels=True)
-            pixels_list_resi.append(resi_obs.pixels)
+            values_list_resi.append(
+                np.ascontiguousarray(resi_img[obs.weight > 0.0])
+            )
             k += 1
 
     # Get resi
@@ -478,17 +488,21 @@ def regauss(
     )
 
     find_ellipmom2(
-        pixels_list_resi,
+        pixels_list,
+        values_list_resi,
         band_tracker,
         guess_resi,
         resarray,
         tmparray,
         confarray,
+        do_covariance,
     )
-    xx_resi, xy_resi, yy_resi = resarray[0]["pars"][2:5]
+    if resarray[0]["flags"] != 0:
+        return
+    yy_resi, xy_resi, xx_resi = resarray[0]["pars"][2:5]
 
     e1_psf, e2_psf, T_psf = mom2e(
-        psf_moments[0][0], psf_moments[0][1], psf_moments[0][2]
+        psf_moments_eff[0], psf_moments_eff[1], psf_moments_eff[2]
     )
     xx_final, xy_final, yy_final = BJ_correction(
         yy_resi,
@@ -500,10 +514,22 @@ def regauss(
         T_psf,
     )
 
-    if np.isnan(xx_final) or np.isnan(yy_final) or np.isnan(xy_final):
+    if (
+        (not np.isfinite(xx_final))
+        or (not np.isfinite(xy_final))
+        or (not np.isfinite(yy_final))
+        or xx_final <= 0.0
+        or yy_final <= 0.0
+        or xx_final * yy_final - xy_final * xy_final <= 0.0
+    ):
         # NOTE: Probably not the best flags
         resarray[0]["flags"] = ngmix.flags.LOW_DET
         return
+
+    # Result moments use ngmix's (row-row, row-col, col-col) ordering.
+    resarray[0]["pars"][2] = yy_final
+    resarray[0]["pars"][3] = xy_final
+    resarray[0]["pars"][4] = xx_final
 
     # NOTE: I think this is not technically correct as the PSF uncertainties
     # should be included. We could also consider that they are really small and
