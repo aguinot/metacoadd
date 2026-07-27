@@ -28,7 +28,6 @@ def find_ellipmom1(
 ):
     F = res["F"]
 
-    n_bands = len(band_tracker)
     if not do_cov:
         flux_weights = tmp["flux_weights"]
         flux_weights[:] = 0.0

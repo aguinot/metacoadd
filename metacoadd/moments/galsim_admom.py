@@ -259,7 +259,7 @@ class GAdmomFitter:
         return self.rng
 
     def _generate_guess(self, scale, nband, guess_fwhm):  # noqa
-        rng = self._get_rng()
+        # rng = self._get_rng()
 
         pars = np.zeros(5, dtype=np.float64)
         half_T = guess_fwhm * guess_fwhm / self._fwhm2sig_sq
@@ -337,9 +337,11 @@ def get_result(ares, jac_area, wgt_norm):
                 flux_weights = np.ones(1, dtype=np.float64)
                 flux_vars = res["sums_cov"][6:7, 6:7].diagonal()
             else:
-                flux_eff, flux_eff_var, flux_weights, flux_vars = compute_effective_flux(
-                    res["sums"][6:],
-                    res["sums_cov"][6:, 6:],
+                flux_eff, flux_eff_var, flux_weights, flux_vars = (
+                    compute_effective_flux(
+                        res["sums"][6:],
+                        res["sums_cov"][6:, 6:],
+                    )
                 )
             if (
                 not np.isfinite(flux_eff_var)

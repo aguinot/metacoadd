@@ -165,7 +165,6 @@ def fast_convolve_image1(
         b3[2] = 0
     if b3[3] > xim.shape[1]:
         b3[3] = xim.shape[1] - 1
-    b4 = [b3[0] + shift_x, b3[1] + shift_x, b3[2] + shift_y, b3[3] + shift_y]
     half_n = N // 2
     for row in range(b3[0], b3[1]):
         shifted_row = (row + half_n) % N
