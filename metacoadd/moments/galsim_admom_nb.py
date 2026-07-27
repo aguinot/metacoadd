@@ -14,68 +14,57 @@ from numba import njit
 @njit(cache=True)
 def find_ellipmom1(
     pixels_list,
+    values_list,
     band_tracker,
     x0,
     y0,
-    Mxx_,
-    Mxy_,
-    Myy_,
+    Mxx,
+    Mxy,
+    Myy,
     res,
     tmp,
     conf,
     do_cov=False,
-    psf_moments=None,
 ):
     F = res["F"]
 
-    n_bands = len(band_tracker)
     if not do_cov:
-        flux_weights = np.zeros(n_bands, dtype=np.float64)
+        flux_weights = tmp["flux_weights"]
+        flux_weights[:] = 0.0
+        tmp["norm_weights"][:] = 0.0
+        tmp["raw_flux"][:] = 0.0
 
-    tmp_sums = np.zeros(6 + n_bands, dtype=np.float64)
+    tmp_sums = tmp["tmp_sums"]
+
+    detM = Mxx * Myy - Mxy * Mxy
+    w_norm = 1.0 / (2 * np.pi * sqrt(detM))
+    Minv_xx = Myy / detM
+    TwoMinv_xy = -Mxy / detM * 2.0
+    Minv_yy = Mxx / detM
+    res["wnorm"] = 1.0
 
     tracking = 0
     band_ind = 0
     n_list = len(pixels_list)
     for i_list in range(n_list):
-        if psf_moments is not None:
-            Mxx = Mxx_ + psf_moments[i_list][0]
-            Mxy = Mxy_ + psf_moments[i_list][1]
-            Myy = Myy_ + psf_moments[i_list][2]
-        else:
-            Mxx = Mxx_
-            Mxy = Mxy_
-            Myy = Myy_
-        # We need to compute the normalization before without the PSF correction
-        detM = Mxx * Myy - Mxy * Mxy
-        w_norm = 1.0 / (2 * np.pi * sqrt(detM))
-        res["wnorm"] = 1.0
-
-        Minv_xx = Myy / detM
-        TwoMinv_xy = -Mxy / detM * 2.0
-        Minv_yy = Mxx / detM
-
-        # For computing the flux Jacobian wrt Q = (Q11, Q22, Q12)
-        Minv_00 = Minv_xx
-        Minv_01 = -0.5 * TwoMinv_xy
-        Minv_10 = Minv_01
-        Minv_11 = Minv_yy
-
         pixels = pixels_list[i_list]
+        values = values_list[i_list]
         tmp_sums[:] = 0.0
         ivar_sum = 0.0
         n_pixels = pixels.size
         for i_pix in range(n_pixels):
             pixel = pixels[i_pix]
 
-            ivar = pixel["ierr"] * pixel["ierr"]
-
             umod = pixel["u"] - x0
             vmod = pixel["v"] - y0
 
-            Minv_xx__x_x0__x_x0 = Minv_xx * vmod * vmod
-            TwoMinv_xy__y_y0__x_x0 = TwoMinv_xy * vmod * umod
-            Minv_yy__y_y0__y_y0 = Minv_yy * umod * umod
+            vvmod = vmod * vmod
+            uvmod = umod * vmod
+            uumod = umod * umod
+
+            Minv_xx__x_x0__x_x0 = Minv_xx * vvmod
+            TwoMinv_xy__y_y0__x_x0 = TwoMinv_xy * uvmod
+            Minv_yy__y_y0__y_y0 = Minv_yy * uumod
 
             rho2 = (
                 Minv_yy__y_y0__y_y0
@@ -86,7 +75,9 @@ def find_ellipmom1(
             res["npix"] += 1
             if rho2 < conf["max_moment_nsig2"]:
                 win = exp(-0.5 * rho2) * w_norm * pixel["area"]
-                intensity = win * pixel["val"]
+                intensity = win * values[i_pix]
+
+                ivar = pixel["ierr"] * pixel["ierr"]
 
                 res["wsum"] += win
                 ivar_sum += ivar
@@ -94,65 +85,52 @@ def find_ellipmom1(
                 if not do_cov:
                     tmp_sums[0] += umod * intensity
                     tmp_sums[1] += vmod * intensity
-                    tmp_sums[2] += vmod * vmod * intensity
-                    tmp_sums[3] += umod * vmod * intensity
-                    tmp_sums[4] += umod * umod * intensity
+                    tmp_sums[2] += vvmod * intensity
+                    tmp_sums[3] += uvmod * intensity
+                    tmp_sums[4] += uumod * intensity
                     tmp_sums[5] += rho2 * rho2 * intensity
                     tmp_sums[6 + band_ind] += 1.0 * intensity
                 else:
-                    # Accumulate flux Jacobian w.r.t Q = (Q11, Q22, Q12)
-                    # These are symmetric matrix derivatives
-                    Minv_r0 = Minv_00 * umod + Minv_01 * vmod
-                    Minv_r1 = Minv_10 * umod + Minv_11 * vmod
-
-                    # rᵀ Minv dM Minv r
-                    d_rho2_dQ11 = -(Minv_r1 * Minv_r1)
-                    d_rho2_dQ22 = -(Minv_r0 * Minv_r0)
-                    d_rho2_dQ12 = -(2.0 * Minv_r0 * Minv_r1)
-
-                    # Tr(Minv @ dM): for symmetric matrices
-                    tr_Q11 = Minv_11
-                    tr_Q22 = Minv_00
-                    tr_Q12 = 2.0 * Minv_01
-
-                    # d log(w) / dQk = 0.5 * (rᵀ Minv dM Minv r - Tr(Minv dM))
-                    dlogw_dQ11 = 0.5 * (-(d_rho2_dQ11) - tr_Q11)
-                    dlogw_dQ22 = 0.5 * (-(d_rho2_dQ22) - tr_Q22)
-                    dlogw_dQ12 = 0.5 * (-(d_rho2_dQ12) - tr_Q12)
-
-                    tmp["flux_jac"][i_list][0] -= intensity * Minv_r0  # dF/dx0  # fmt: skip
-                    tmp["flux_jac"][i_list][1] -= intensity * Minv_r1  # dF/dy0  # fmt: skip
-                    tmp["flux_jac"][i_list][2] += (intensity * dlogw_dQ22)  # dF/dQ11  # fmt: skip
-                    tmp["flux_jac"][i_list][3] += (intensity * dlogw_dQ12)  # dF/dQ12  # fmt: skip
-                    tmp["flux_jac"][i_list][4] += (intensity * dlogw_dQ11)  # dF/dQ22  # fmt: skip
-                    # tmp["flux_jac"][i_list][5] += 0                        # dF/drho2  # fmt: skip
-
                     win2 = win * win
                     var = 1.0 / ivar
                     F[0] = umod
                     F[1] = vmod
-                    F[2] = vmod * vmod
-                    F[3] = umod * vmod
-                    F[4] = umod * umod
+                    F[2] = vvmod
+                    F[3] = uvmod
+                    F[4] = uumod
                     F[5] = rho2 * rho2
                     F[6] = 1.0
                     for i in range(7):
                         tmp["sums"][i_list][i] += intensity * F[i]
-                        for j in range(7):
+                        for j in range(i, 7):
                             tmp["sums_cov"][i_list][i, j] += (
                                 win2 * var * F[i] * F[j]
                             )
 
         if not do_cov:
+            if tmp_sums[6 + band_ind] <= 0.0:
+                res["flags"] = ngmix.flags.NONPOS_FLUX
+                return
+            tmp["raw_flux"][i_list] = tmp_sums[6 + band_ind] / (
+                w_norm * pixels[0]["area"]
+            )
             tmp_sums[:6] /= tmp_sums[6 + band_ind]
-            if psf_moments is not None:
-                tmp_sums[2:5] -= psf_moments[i_list] / 2
             res["sums"][:] += tmp_sums * ivar_sum
             flux_weights[band_ind] += ivar_sum
+            tmp["norm_weights"][i_list] = ivar_sum
         else:
-            tmp["sums"][i_list][:6] /= tmp["sums"][i_list][6]
-            if psf_moments is not None:
-                tmp["sums"][i_list][2:5] -= psf_moments[i_list] / 2
+            for i in range(7):
+                for j in range(i + 1, 7):
+                    tmp["sums_cov"][i_list][j, i] = tmp["sums_cov"][i_list][
+                        i, j
+                    ]
+            flux = tmp["sums"][i_list][6]
+            if flux <= 0.0:
+                res["flags"] = ngmix.flags.NONPOS_FLUX
+                return
+            normalize_moment_covariance(
+                tmp["sums"][i_list], tmp["sums_cov"][i_list]
+            )
             tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
@@ -161,27 +139,42 @@ def find_ellipmom1(
 
     if do_cov:
         combine_multiband_observations_array(res, tmp, band_tracker)
-
-        snr = np.sqrt(
-            res["sums"] @ np.linalg.inv(res["sums_cov"]) @ res["sums"]
+        res["s2n"] = sqrt(
+            res["sums"] @ np.linalg.solve(res["sums_cov"], res["sums"])
         )
-        res["s2n"] = snr
     else:
         res["sums"][:] /= np.sum(flux_weights)
+        tmp["norm_weights"][:] /= np.sum(tmp["norm_weights"])
 
     res["wsum"] /= n_list
 
 
 @njit(cache=True)
+def normalize_moment_covariance(sums, sums_cov):
+    """Transform raw weighted sums and covariance to flux-normalized moments."""
+    raw_cov = sums_cov.copy()
+    flux = sums[6]
+    jac = np.zeros((7, 7), dtype=np.float64)
+
+    for i in range(6):
+        jac[i, i] = 1.0 / flux
+        jac[i, 6] = -sums[i] / (flux * flux)
+    jac[6, 6] = 1.0
+
+    sums_cov[:, :] = jac @ raw_cov @ jac.T
+    sums[:6] /= flux
+
+
+@njit(cache=True)
 def find_ellipmom2(
     pixels_list,
+    values_list,
     band_tracker,
     guess,
     resarray,
     tmparray,
     confarray,
-    psf_moments=None,  # These are the true PSF moments
-    # fixed_psf_components=None,  # Add [Mxx_fixed, Mxy_fixed, Myy_fixed] here
+    do_covariance=True,
 ):
     """ """
 
@@ -199,31 +192,12 @@ def find_ellipmom2(
     y00 = y0
     do_cov = False
 
-    # Prepare the effective PSF moments for deconvolution
-    psf_moms_for_ellipmom1 = None
-    fixed_psf_components = np.array([0.0, 0.0, 0.0])
-    if psf_moments is not None:  # true_psf_moments are provided
-        fixed_psf_components = np.array([0.0121, 0.0, 0.0121])
-        # fixed_psf_components = np.array([0.0, 0.0, 0.0])
-        if fixed_psf_components is not None:
-            # Calculate M_psf_effective = M_psf_true - M_psf_fixed for each observation
-            psf_moms_for_ellipmom1 = psf_moments - fixed_psf_components
-            # for true_psf_obs_i in psf_moments:
-            #     # Ensure fixed_psf_components is a NumPy array for element-wise subtraction
-            #     psf_moms_for_ellipmom1.append(
-            #         true_psf_obs_i
-            #         - np.array(fixed_psf_components, dtype=np.float64)
-            #     )
-        else:
-            # Original behavior: deconvolve by the true PSF
-            psf_moms_for_ellipmom1 = psf_moments
-    # If psf_moments is None, psf_moms_for_ellipmom1 remains None (no PSF deconvolution)
-
     for i in range(conf["maxiter"]):
-        clear_result(res)
-        clear_tmp(tmp)
+        clear_result(res, clear_covariance=do_cov)
+        clear_tmp(tmp, clear_covariance=do_cov)
         find_ellipmom1(
             pixels_list,
+            values_list,
             band_tracker,
             x0,
             y0,
@@ -234,8 +208,9 @@ def find_ellipmom2(
             tmp,
             conf,
             do_cov,
-            psf_moments=psf_moms_for_ellipmom1,  # Pass the effective PSF moments
         )
+        if res["flags"] != 0:
+            return
         Bx, By, Cxx, Cxy, Cyy, rho4 = res["sums"][:6]
         Amps = res["sums"][6:]
         if do_cov:
@@ -248,6 +223,7 @@ def find_ellipmom2(
 
         if Amp <= 0:
             res["flags"] = ngmix.flags.NONPOS_FLUX
+            return
 
         two_psi = atan2(2 * Mxy, Mxx - Myy)
         semi_a2 = 0.5 * ((Mxx + Myy) + (Mxx - Myy) * cos(two_psi)) + (
@@ -257,6 +233,7 @@ def find_ellipmom2(
 
         if semi_b2 <= 0:
             res["flags"] = ngmix.flags.NONPOS_SIZE
+            return
 
         shiftscale = sqrt(semi_b2)
         if res["numiter"] == 0:
@@ -289,20 +266,13 @@ def find_ellipmom2(
         if dyy < -conf["bound_correct_wt"]:
             dyy = -conf["bound_correct_wt"]
 
-        if abs(dx) > abs(dy):
-            convergence_factor = abs(dx)
-        else:
-            convergence_factor = abs(dy)
-        convergence_factor = convergence_factor * convergence_factor
-
-        if abs(dxx) > convergence_factor:
-            convergence_factor = abs(dxx)
-        if abs(dxy) > convergence_factor:
-            convergence_factor = abs(dxy)
-        if abs(dyy) > convergence_factor:
-            convergence_factor = abs(dyy)
-
-        convergence_factor = sqrt(convergence_factor)
+        convergence_factor = max(
+            abs(dx),
+            abs(dy),
+            abs(dxx),
+            abs(dxy),
+            abs(dyy),
+        )
         if shiftscale < shiftscale0:
             convergence_factor *= shiftscale0 / shiftscale
 
@@ -316,35 +286,20 @@ def find_ellipmom2(
             abs(y0 - y00) > conf["shiftmax"] * pix_scale
         ):
             res["flags"] = ngmix.flags.CEN_SHIFT
+            return
 
         res["numiter"] = i + 1
 
         if convergence_factor < conf["tol"]:  # or do_cov:
-            if not do_cov:
+            if not do_cov and do_covariance:
                 do_cov = True
                 continue
-            if psf_moments is not None:
-                Mxx_corr, Mxy_corr, Myy_corr = get_damped_intrinsic_moments(
-                    Mxx,
-                    Mxy,
-                    Myy,
-                    fixed_psf_components,
-                    conf["lambda_ell"],
-                    min_abs_T=conf["min_T_abs"],
-                )
-            else:
-                Mxx_corr = Mxx
-                Mxy_corr = Mxy
-                Myy_corr = Myy
-            # rho4 /= Amp
+
             res["pars"][0] = x0
             res["pars"][1] = y0
-            # res["pars"][2] = Mxx - fixed_psf_components[0]
-            # res["pars"][3] = Mxy - fixed_psf_components[1]
-            # res["pars"][4] = Myy - fixed_psf_components[2]
-            res["pars"][2] = Mxx_corr
-            res["pars"][3] = Mxy_corr
-            res["pars"][4] = Myy_corr
+            res["pars"][2] = Mxx
+            res["pars"][3] = Mxy
+            res["pars"][4] = Myy
             res["pars"][5] = rho4
             res["pars"][6:] = Amps * rho4
             break
@@ -354,103 +309,26 @@ def find_ellipmom2(
 
 
 @njit(cache=True)
-def clear_result(res):
+def clear_result(res, clear_covariance=True):
     """
     clear some fields in the result structure
     """
     res["npix"] = 0
     res["wsum"] = 0.0
     res["sums"][:] = 0.0
-    res["sums_cov"][:, :] = 0.0
+    if clear_covariance:
+        res["sums_cov"][:, :] = 0.0
     res["pars"][:] = np.nan
 
 
 @njit(cache=True)
-def clear_tmp(tmp):
+def clear_tmp(tmp, clear_covariance=True):
     """
     clear some fields in the result structure
     """
-    tmp["sums"][:] = 0.0
-    tmp["sums_cov"][:, :] = 0.0
-    tmp["flux_jac"][:] = 0.0
-
-
-@njit(cache=True)
-def get_damped_intrinsic_moments(
-    Mxx_reg, Mxy_reg, Myy_reg, fixed_psf_components, lambda_ell, min_abs_T=1e-3
-):
-    """
-    Calculates intrinsic second moments with a damped deconvolution for ellipticity.
-
-    The damping formula used is:
-        e_int = (e_reg * A) / (1 + lambda_ell * A**3)
-    where A = T_reg / T_int.
-
-    Args:
-        Mxx_reg (float): XX second moment of the regularized object.
-        Mxy_reg (float): XY second moment of the regularized object.
-        Myy_reg (float): YY second moment of the regularized object.
-        fixed_psf_components (list or array): Second moments of the fixed PSF
-                                             [mxx_fix, mxy_fix, myy_fix].
-        lambda_ell (float): Regularization parameter for ellipticity damping.
-        min_abs_T (float, optional): Minimum absolute value for T to be
-                                     considered non-zero. Defaults to 1e-9.
-
-    Returns:
-        tuple: (Mxx_int, Mxy_int, Myy_int, status_flag)
-               Mxx_int, Mxy_int, Myy_int are the calculated intrinsic moments.
-               status_flag:
-                 0 for success.
-                 1 if T_reg <= min_abs_T (regularized object too small).
-                 2 if T_int <= min_abs_T (intrinsic object too small or negative).
-                 4 if T_fix < min_abs_T (negligible PSF, direct assignment).
-                 8 if calculated |e_int|^2 >= 1 (unphysical ellipticity after damping).
-    """
-    mxx_fix, mxy_fix, myy_fix = fixed_psf_components
-    status_flag = 0
-
-    T_reg_val = Mxx_reg + Myy_reg
-    T_fix_val = mxx_fix + myy_fix
-
-    Mxx_int, Mxy_int, Myy_int = np.nan, np.nan, np.nan
-
-    if T_reg_val <= min_abs_T:
-        status_flag |= 1  # Regularized object has no size
-        return Mxx_int, Mxy_int, Myy_int  # , status_flag
-
-    T_int_val = T_reg_val - T_fix_val
-
-    if T_int_val < -min_abs_T:
-        status_flag |= 2  # Intrinsic size is zero or negative
-        return Mxx_int, Mxy_int, Myy_int  # , status_flag
-    if abs(T_int_val) < min_abs_T:
-        T_int_val = min_abs_T
-
-    # Proceed with ellipticity deconvolution using damping
-    e1_reg_val = (Mxx_reg - Myy_reg) / T_reg_val
-    e2_reg_val = (2 * Mxy_reg) / T_reg_val
-
-    amplification_factor_A = T_reg_val / T_int_val
-
-    # Your specified damping formula
-    denominator = 1.0 + lambda_ell * amplification_factor_A**3
-
-    e1_int_val = (e1_reg_val * amplification_factor_A) / denominator
-    e2_int_val = (e2_reg_val * amplification_factor_A) / denominator
-
-    e_int_sq = e1_int_val**2 + e2_int_val**2
-    if (
-        e_int_sq >= 1.0 - min_abs_T
-    ):  # Check for unphysical ellipticity even after damping
-        status_flag |= 8
-        # Mxx_int, etc., remain NaN
-    else:
-        Mxx_int = 0.5 * T_int_val * (1 + e1_int_val)
-        Myy_int = 0.5 * T_int_val * (1 - e1_int_val)
-        Mxy_int = 0.5 * T_int_val * e2_int_val
-        # status_flag remains 0 if no other flags were set
-
-    return Mxx_int, Mxy_int, Myy_int  # , status_flag
+    if clear_covariance:
+        tmp["sums"][:] = 0.0
+        tmp["sums_cov"][:, :] = 0.0
 
 
 @njit(cache=True)
@@ -467,10 +345,6 @@ def compute_effective_flux(fluxes, flux_cov):
     flux_cov : (B, B) array
         Covariance matrix of the flux vector.
 
-    target_covs : (N, B) array, optional
-        Covariances between each of N target parameters and the fluxes.
-        If provided, returns cross-covariances with F_eff.
-
     Returns
     -------
     F_eff : float
@@ -479,8 +353,11 @@ def compute_effective_flux(fluxes, flux_cov):
     F_eff_var : float
         Variance of the effective flux.
 
-    cross_covs : (N,) array, optional
-        Cross-covariances with F_eff, if target_covs was provided.
+    weights : (B,) array
+        BLUE weights applied to the input fluxes.
+
+    flux_vars : (B,) array
+        Marginal variances of the input fluxes.
     """
     ones = np.ones(len(fluxes), dtype=np.float64)
 
@@ -492,8 +369,7 @@ def compute_effective_flux(fluxes, flux_cov):
 
     F_eff = weights @ fluxes
     F_eff_var = 1.0 / denom
-
-    return F_eff, F_eff_var, weights, 1 / flux_weights
+    return F_eff, F_eff_var, weights, np.diag(flux_cov)
 
 
 @njit(cache=True)
@@ -533,9 +409,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
     Sigma_array : ndarray, shape (N_obs, 7, 7)
         Covariance matrices for each observation
 
-    flux_jacobian_array : ndarray, shape (N_obs, 6)
-        Jacobians of flux w.r.t. [x0, y0, Q11, Q12, Q22, rho2]
-
     band_tracker : list of int
         List of number of observations per band. Length = N_bands
 
@@ -557,8 +430,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
     # Unpack the input
     m_array = tmp["sums"]
     Sigma_array = tmp["sums_cov"]
-    flux_jacobian_array = tmp["flux_jac"]
-
     N_obs = m_array.shape[0]
     N_bands = len(band_tracker)
 
@@ -630,35 +501,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
 
         start += n_obs_b
 
-    # === Step 4: Add flux Jacobian contributions with cross-band terms ===
-    J_flux = np.zeros((N_bands, 6), dtype=np.float64)
-
-    start = 0
-    for b in range(N_bands):
-        n_obs_b = band_tracker[b]
-        for i in range(n_obs_b):
-            idx = start + i
-            w_flux = flux_weights[idx]
-            J_flux[b] += w_flux * flux_jacobian_array[idx, :]
-        start += n_obs_b
-
-    # Fill in covariance terms between shared and flux, and between fluxes
-    # NOTE: This part is problematic so we don't include the cross-band flux covariances.
-    # It needs to be revisited in the future
-    for b1 in range(N_bands):
-        J1 = J_flux[b1]
-
-        # Shared-flux covariances
-        # Sigma_M[6 + b1, :6] += J1 @ Sigma_shared_joint
-        # Sigma_M[:6, 6 + b1] += Sigma_shared_joint @ J1.T
-
-        # Flux-flux covariances (cross-band terms)
-        for b2 in range(N_bands):
-            # if b1 != b2:
-            if b1 == b2:
-                J2 = J_flux[b2]
-                Sigma_M[6 + b1, 6 + b2] += J1 @ Sigma_shared_joint @ J2.T
-
     res["sums"][:6] = x_shared_joint
     res["sums"][6:] = F_b
     res["sums_cov"] = Sigma_M
@@ -691,3 +533,118 @@ def get_mom_var(
     )
 
     return var_t
+
+
+@njit(cache=True)
+def get_T_and_e_cov(
+    Q22,
+    Q11,
+    Q12,
+    var_Q22,
+    var_Q11,
+    var_Q12,
+    cov_Q22_Q11,
+    cov_Q22_Q12,
+    cov_Q11_Q12,
+):
+    """
+    Propagate fixed-weight moment covariance to adaptive size and ellipticity.
+
+    Parameters are the flux-normalized second moments and their covariance in
+    ngmix/image-coordinate ordering: ``Q22`` is the row-row moment, ``Q11`` is
+    the column-column moment, and ``Q12`` is the row-column cross moment. The
+    reported ellipticity convention is
+    ``e1 = (Q11 - Q22) / (Q11 + Q22)`` and
+    ``e2 = 2 * Q12 / (Q11 + Q22)``.
+
+    The input covariance describes moments measured with the final fixed
+    Gaussian weight. At the adaptive-moment fixed point the fitted covariance
+    matrix is ``M = 2 C``, so first-order perturbations in the fitted moments
+    include an additional adaptive-response factor relative to fixed-weight
+    moment errors. The returned variances include this response factor.
+
+    Parameters
+    ----------
+    Q22 : float
+        Row-row second moment.
+    Q11 : float
+        Column-column second moment.
+    Q12 : float
+        Row-column second moment.
+    var_Q22 : float
+        Variance of ``Q22``.
+    var_Q11 : float
+        Variance of ``Q11``.
+    var_Q12 : float
+        Variance of ``Q12``.
+    cov_Q22_Q11 : float
+        Covariance between ``Q22`` and ``Q11``.
+    cov_Q22_Q12 : float
+        Covariance between ``Q22`` and ``Q12``.
+    cov_Q11_Q12 : float
+        Covariance between ``Q11`` and ``Q12``.
+
+    Returns
+    -------
+    T_var : float
+        Variance of ``T = Q11 + Q22`` after adaptive-response scaling.
+    e1_var : float
+        Variance of ``e1`` after adaptive-response scaling.
+    e2_var : float
+        Variance of ``e2`` after adaptive-response scaling.
+    e12_cov : float
+        Covariance between ``e1`` and ``e2`` after adaptive-response scaling.
+    """
+    T = Q22 + Q11
+    inv_T = 1.0 / T
+    inv_T2 = inv_T * inv_T
+
+    de1_dQ22 = 2.0 * Q11 * inv_T2
+    de1_dQ11 = -2.0 * Q22 * inv_T2
+    de2_dQ22 = -2.0 * Q12 * inv_T2
+    de2_dQ11 = de2_dQ22
+    de2_dQ12 = 2.0 * inv_T
+
+    fixed_e1_var = (
+        de1_dQ22 * de1_dQ22 * var_Q22
+        + de1_dQ11 * de1_dQ11 * var_Q11
+        + 2.0 * de1_dQ22 * de1_dQ11 * cov_Q22_Q11
+    )
+    fixed_e2_var = (
+        de2_dQ22 * de2_dQ22 * var_Q22
+        + de2_dQ11 * de2_dQ11 * var_Q11
+        + de2_dQ12 * de2_dQ12 * var_Q12
+        + 2.0 * de2_dQ22 * de2_dQ11 * cov_Q22_Q11
+        + 2.0 * de2_dQ22 * de2_dQ12 * cov_Q22_Q12
+        + 2.0 * de2_dQ11 * de2_dQ12 * cov_Q11_Q12
+    )
+    fixed_e12_cov = (
+        de1_dQ22 * de2_dQ22 * var_Q22
+        + de1_dQ11 * de2_dQ11 * var_Q11
+        + (de1_dQ22 * de2_dQ11 + de1_dQ11 * de2_dQ22) * cov_Q22_Q11
+        + de1_dQ22 * de2_dQ12 * cov_Q22_Q12
+        + de1_dQ11 * de2_dQ12 * cov_Q11_Q12
+    )
+
+    # At the adaptive fixed point M = 2 C. Noise perturbs the fitted
+    # covariance by delta M = 2 delta C to first order, so adaptive-moment
+    # covariance is four times the fixed-weight covariance.
+    adaptive_response2 = 4.0
+    # The fitted covariance is M = 2 C, so its trace contributes another
+    # factor two in standard deviation in addition to adaptive response.
+    T_var = 4.0 * adaptive_response2 * (var_Q22 + var_Q11 + 2.0 * cov_Q22_Q11)
+    e1_var = adaptive_response2 * fixed_e1_var
+    e2_var = adaptive_response2 * fixed_e2_var
+    e12_cov = adaptive_response2 * fixed_e12_cov
+
+    return T_var, e1_var, e2_var, e12_cov
+
+
+@njit(cache=True)
+def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
+    """Propagate the variance of the product ``flux * rho4``."""
+    return (
+        flux * flux * var_rho4
+        + rho4 * rho4 * var_flux
+        + 2.0 * flux * rho4 * cov_flux_rho4
+    )
