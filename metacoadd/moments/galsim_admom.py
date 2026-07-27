@@ -6,6 +6,7 @@ https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cp
 
 import ngmix.flags
 import numpy as np
+from numba.typed import List
 from ngmix.gmix import GMixModel
 from ngmix.gmix.gmix_nb import GMIX_LOW_DETVAL
 from ngmix.observation import MultiBandObsList, ObsList, Observation
@@ -16,7 +17,7 @@ from .galsim_admom_nb import (
     compute_effective_flux,
     compute_flux_cross_covs,
     get_flux_var,
-    get_mom_var,
+    get_T_and_e_cov,
 )
 
 
@@ -186,9 +187,11 @@ class GAdmomFitter:
                 k += 1
             band_tracker.append(k)
         band_tracker = np.array(band_tracker)
+        pixels_list = List(pixels_list)
+        values_list = List([pixels["val"] for pixels in pixels_list])
 
         ares = self._get_am_result(nband)
-        atmp = self._get_am_tmp(sum(band_tracker))
+        atmp = self._get_am_tmp(sum(band_tracker), nband)
 
         scale = mb_obs[0][0].jacobian.scale
         guess = self._get_guess(
@@ -198,6 +201,7 @@ class GAdmomFitter:
         # try:
         find_ellipmom2(
             pixels_list,
+            values_list,
             band_tracker,
             guess,
             ares,
@@ -244,8 +248,8 @@ class GAdmomFitter:
         dt = np.dtype(_get_admom_result_dtype(nband), align=True)
         return np.zeros(1, dtype=dt)
 
-    def _get_am_tmp(self, nobs):
-        dt = np.dtype(_get_admom_tmp_dtype(nobs), align=True)
+    def _get_am_tmp(self, nobs, nband=1):
+        dt = np.dtype(_get_admom_tmp_dtype(nobs, nband), align=True)
         return np.zeros(1, dtype=dt)
 
     def _get_rng(self):
@@ -327,12 +331,16 @@ def get_result(ares, jac_area, wgt_norm):
 
     if res["flags"] == 0:
         try:
-            flux_eff, flux_eff_var, flux_weights, flux_vars = (
-                compute_effective_flux(
+            if n_bands == 1:
+                flux_eff = res["sums"][6]
+                flux_eff_var = res["sums_cov"][6, 6]
+                flux_weights = np.ones(1, dtype=np.float64)
+                flux_vars = res["sums_cov"][6:7, 6:7].diagonal()
+            else:
+                flux_eff, flux_eff_var, flux_weights, flux_vars = compute_effective_flux(
                     res["sums"][6:],
                     res["sums_cov"][6:, 6:],
                 )
-            )
             if (
                 not np.isfinite(flux_eff_var)
                 or flux_eff_var <= 0
@@ -372,43 +380,46 @@ def get_result(ares, jac_area, wgt_norm):
                 / fnorm**2
             )
             res["flux_cov"][band, band] = flux_var
-        flux_vars = np.diag(res["flux_cov"])
-        if np.all(np.isfinite(flux_vars)) and np.all(flux_vars > 0):
-            res["flux_err"][:] = np.sqrt(flux_vars)
+        flux_vars = res["flux_cov"].diagonal()
+        if np.isfinite(flux_vars).all() and (flux_vars > 0).all():
+            np.sqrt(flux_vars, out=res["flux_err"])
         else:
             res["flux_flags"] |= ngmix.flags.NONPOS_VAR
     else:
         res["flux_flags"] |= res["flags"] | ngmix.flags.NONPOS_SIZE
 
     if res["flags"] == 0 and res["flux_flags"] == 0:
-        Q11_F_eff_cov, Q22_F_eff_cov = compute_flux_cross_covs(
-            flux_weights=flux_weights,
-            target_covs=np.array(
-                [
-                    res["sums_cov"][2, 6:],
-                    res["sums_cov"][4, 6:],
-                ]
-            ),
-        )
+        if n_bands == 1:
+            Q11_F_eff_cov = res["sums_cov"][2, 6]
+            Q22_F_eff_cov = res["sums_cov"][4, 6]
+        else:
+            Q11_F_eff_cov, Q22_F_eff_cov = compute_flux_cross_covs(
+                flux_weights=flux_weights,
+                target_covs=np.array(
+                    [
+                        res["sums_cov"][2, 6:],
+                        res["sums_cov"][4, 6:],
+                    ]
+                ),
+            )
 
         if (
             res["sums_cov"][2, 2] > 0
             and res["sums_cov"][4, 4] > 0
             and flux_eff > 0
         ):
-            T_var = get_mom_var(
+            T_var, e1_var, e2_var, e12_cov = get_T_and_e_cov(
                 res["sums"][2],
                 res["sums"][4],
-                flux_eff,
+                res["sums"][3],
                 res["sums_cov"][2, 2],
                 res["sums_cov"][4, 4],
-                flux_eff_var,
+                res["sums_cov"][3, 3],
                 res["sums_cov"][2, 4],
-                Q11_F_eff_cov,
-                Q22_F_eff_cov,
-                kind="T",
+                res["sums_cov"][2, 3],
+                res["sums_cov"][4, 3],
             )
-            res["T_err"] = 4 * np.sqrt(T_var)
+            res["T_err"] = np.sqrt(T_var)
         else:
             res["T_flags"] |= ngmix.flags.NONPOS_VAR
     else:
@@ -419,37 +430,18 @@ def get_result(ares, jac_area, wgt_norm):
         if res["T"] > 0.0:
             res["e1"] = (res["pars"][4] - res["pars"][2]) / res["T"]
             res["e2"] = 2.0 * res["pars"][3] / res["T"]
-            res["e"][:] = np.array([res["e1"], res["e2"]])
+            res["e"][0] = res["e1"]
+            res["e"][1] = res["e2"]
 
-            e1_var = get_mom_var(
-                res["sums"][4],
-                res["sums"][2],
-                res["sums"][3],
-                res["sums_cov"][4, 4],
-                res["sums_cov"][2, 2],
-                res["sums_cov"][3, 3],
-                res["sums_cov"][4, 2],
-                res["sums_cov"][4, 3],
-                res["sums_cov"][3, 2],
-                kind="e1",
-            )
-            e2_var = get_mom_var(
-                res["sums"][4],
-                res["sums"][2],
-                res["sums"][3],
-                res["sums_cov"][4, 4],
-                res["sums_cov"][2, 2],
-                res["sums_cov"][3, 3],
-                res["sums_cov"][4, 2],
-                res["sums_cov"][4, 3],
-                res["sums_cov"][3, 2],
-                kind="e2",
-            )
             if np.isfinite(e1_var) and np.isfinite(e2_var):
-                res["e1err"] = 2.0 * np.sqrt(e1_var)
-                res["e2err"] = 2.0 * np.sqrt(e2_var)
-                res["e_err"] = np.array([res["e1err"], res["e2err"]])
-                res["e_cov"] = np.diag(res["e_err"] ** 2)
+                res["e1err"] = np.sqrt(e1_var)
+                res["e2err"] = np.sqrt(e2_var)
+                res["e_err"][0] = res["e1err"]
+                res["e_err"][1] = res["e2err"]
+                res["e_cov"][0, 0] = e1_var
+                res["e_cov"][0, 1] = e12_cov
+                res["e_cov"][1, 0] = e12_cov
+                res["e_cov"][1, 1] = e2_var
             else:
                 res["flags"] |= ngmix.flags.NONPOS_SHAPE_VAR
         else:
@@ -459,9 +451,13 @@ def get_result(ares, jac_area, wgt_norm):
     if res["flags"] == 0 and res["flux_flags"] == 0:
         res["rho4"] = res["pars"][5]
 
-        R4_F_eff_cov = compute_flux_cross_covs(
-            flux_weights=flux_weights, target_covs=res["sums_cov"][5, 6:]
-        )
+        if n_bands == 1:
+            R4_F_eff_cov = res["sums_cov"][5, 6]
+        else:
+            R4_F_eff_cov = compute_flux_cross_covs(
+                flux_weights=flux_weights,
+                target_covs=res["sums_cov"][5, 6:],
+            )
 
         if res["sums_cov"][5, 5] > 0 and flux_eff > 0:
             rho4_err = 4 * get_ratio_error(
@@ -478,22 +474,38 @@ def get_result(ares, jac_area, wgt_norm):
     else:
         res["T_flags"] |= res["flags"]
 
-    if not np.all(np.diag(res["sums_cov"][2:, 2:]) > 0):
+    if not (res["sums_cov"].diagonal()[2:] > 0).all():
         res["flags"] |= ngmix.flags.NONPOS_VAR
 
-    res["flagstr"] = ngmix.flags.get_flags_str(res["flags"])
-    res["flux_flagstr"] = ngmix.flags.get_flags_str(res["flux_flags"])
-    res["T_flagstr"] = ngmix.flags.get_flags_str(res["T_flags"])
+    res["flagstr"] = (
+        "" if res["flags"] == 0 else ngmix.flags.get_flags_str(res["flags"])
+    )
+    res["flux_flagstr"] = (
+        ""
+        if res["flux_flags"] == 0
+        else ngmix.flags.get_flags_str(res["flux_flags"])
+    )
+    res["T_flagstr"] = (
+        ""
+        if res["T_flags"] == 0
+        else ngmix.flags.get_flags_str(res["T_flags"])
+    )
     res["g1"], res["g2"] = e1e2_to_g1g2(res["e1"], res["e2"])
-    res["g"] = np.array([res["g1"], res["g2"]])
+    res["g"] = np.empty(2, dtype=np.float64)
+    res["g"][0] = res["g1"]
+    res["g"][1] = res["g2"]
 
     return res
 
 
-def _get_admom_tmp_dtype(nobs):
+def _get_admom_tmp_dtype(nobs, nband=1):
     _admom_tmp_dtype = [
         ("sums", "f8", (nobs, 7)),
         ("sums_cov", "f8", (nobs, 7, 7)),
+        ("norm_weights", "f8", nobs),
+        ("raw_flux", "f8", nobs),
+        ("flux_weights", "f8", nband),
+        ("tmp_sums", "f8", 6 + nband),
     ]
     return _admom_tmp_dtype
 

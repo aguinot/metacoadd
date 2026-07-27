@@ -14,6 +14,7 @@ from numba import njit
 @njit(cache=True)
 def find_ellipmom1(
     pixels_list,
+    values_list,
     band_tracker,
     x0,
     y0,
@@ -29,37 +30,42 @@ def find_ellipmom1(
 
     n_bands = len(band_tracker)
     if not do_cov:
-        flux_weights = np.zeros(n_bands, dtype=np.float64)
+        flux_weights = tmp["flux_weights"]
+        flux_weights[:] = 0.0
+        tmp["norm_weights"][:] = 0.0
+        tmp["raw_flux"][:] = 0.0
 
-    tmp_sums = np.zeros(6 + n_bands, dtype=np.float64)
+    tmp_sums = tmp["tmp_sums"]
+
+    detM = Mxx * Myy - Mxy * Mxy
+    w_norm = 1.0 / (2 * np.pi * sqrt(detM))
+    Minv_xx = Myy / detM
+    TwoMinv_xy = -Mxy / detM * 2.0
+    Minv_yy = Mxx / detM
+    res["wnorm"] = 1.0
 
     tracking = 0
     band_ind = 0
     n_list = len(pixels_list)
     for i_list in range(n_list):
-        detM = Mxx * Myy - Mxy * Mxy
-        w_norm = 1.0 / (2 * np.pi * sqrt(detM))
-        res["wnorm"] = 1.0
-
-        Minv_xx = Myy / detM
-        TwoMinv_xy = -Mxy / detM * 2.0
-        Minv_yy = Mxx / detM
-
         pixels = pixels_list[i_list]
+        values = values_list[i_list]
         tmp_sums[:] = 0.0
         ivar_sum = 0.0
         n_pixels = pixels.size
         for i_pix in range(n_pixels):
             pixel = pixels[i_pix]
 
-            ivar = pixel["ierr"] * pixel["ierr"]
-
             umod = pixel["u"] - x0
             vmod = pixel["v"] - y0
 
-            Minv_xx__x_x0__x_x0 = Minv_xx * vmod * vmod
-            TwoMinv_xy__y_y0__x_x0 = TwoMinv_xy * vmod * umod
-            Minv_yy__y_y0__y_y0 = Minv_yy * umod * umod
+            vvmod = vmod * vmod
+            uvmod = umod * vmod
+            uumod = umod * umod
+
+            Minv_xx__x_x0__x_x0 = Minv_xx * vvmod
+            TwoMinv_xy__y_y0__x_x0 = TwoMinv_xy * uvmod
+            Minv_yy__y_y0__y_y0 = Minv_yy * uumod
 
             rho2 = (
                 Minv_yy__y_y0__y_y0
@@ -70,7 +76,9 @@ def find_ellipmom1(
             res["npix"] += 1
             if rho2 < conf["max_moment_nsig2"]:
                 win = exp(-0.5 * rho2) * w_norm * pixel["area"]
-                intensity = win * pixel["val"]
+                intensity = win * values[i_pix]
+
+                ivar = pixel["ierr"] * pixel["ierr"]
 
                 res["wsum"] += win
                 ivar_sum += ivar
@@ -78,9 +86,9 @@ def find_ellipmom1(
                 if not do_cov:
                     tmp_sums[0] += umod * intensity
                     tmp_sums[1] += vmod * intensity
-                    tmp_sums[2] += vmod * vmod * intensity
-                    tmp_sums[3] += umod * vmod * intensity
-                    tmp_sums[4] += umod * umod * intensity
+                    tmp_sums[2] += vvmod * intensity
+                    tmp_sums[3] += uvmod * intensity
+                    tmp_sums[4] += uumod * intensity
                     tmp_sums[5] += rho2 * rho2 * intensity
                     tmp_sums[6 + band_ind] += 1.0 * intensity
                 else:
@@ -88,14 +96,14 @@ def find_ellipmom1(
                     var = 1.0 / ivar
                     F[0] = umod
                     F[1] = vmod
-                    F[2] = vmod * vmod
-                    F[3] = umod * vmod
-                    F[4] = umod * umod
+                    F[2] = vvmod
+                    F[3] = uvmod
+                    F[4] = uumod
                     F[5] = rho2 * rho2
                     F[6] = 1.0
                     for i in range(7):
                         tmp["sums"][i_list][i] += intensity * F[i]
-                        for j in range(7):
+                        for j in range(i, 7):
                             tmp["sums_cov"][i_list][i, j] += (
                                 win2 * var * F[i] * F[j]
                             )
@@ -104,10 +112,19 @@ def find_ellipmom1(
             if tmp_sums[6 + band_ind] <= 0.0:
                 res["flags"] = ngmix.flags.NONPOS_FLUX
                 return
+            tmp["raw_flux"][i_list] = tmp_sums[6 + band_ind] / (
+                w_norm * pixels[0]["area"]
+            )
             tmp_sums[:6] /= tmp_sums[6 + band_ind]
             res["sums"][:] += tmp_sums * ivar_sum
             flux_weights[band_ind] += ivar_sum
+            tmp["norm_weights"][i_list] = ivar_sum
         else:
+            for i in range(7):
+                for j in range(i + 1, 7):
+                    tmp["sums_cov"][i_list][j, i] = tmp["sums_cov"][i_list][
+                        i, j
+                    ]
             flux = tmp["sums"][i_list][6]
             if flux <= 0.0:
                 res["flags"] = ngmix.flags.NONPOS_FLUX
@@ -128,6 +145,7 @@ def find_ellipmom1(
         )
     else:
         res["sums"][:] /= np.sum(flux_weights)
+        tmp["norm_weights"][:] /= np.sum(tmp["norm_weights"])
 
     res["wsum"] /= n_list
 
@@ -151,11 +169,13 @@ def normalize_moment_covariance(sums, sums_cov):
 @njit(cache=True)
 def find_ellipmom2(
     pixels_list,
+    values_list,
     band_tracker,
     guess,
     resarray,
     tmparray,
     confarray,
+    do_covariance=True,
 ):
     """ """
 
@@ -174,10 +194,11 @@ def find_ellipmom2(
     do_cov = False
 
     for i in range(conf["maxiter"]):
-        clear_result(res)
-        clear_tmp(tmp)
+        clear_result(res, clear_covariance=do_cov)
+        clear_tmp(tmp, clear_covariance=do_cov)
         find_ellipmom1(
             pixels_list,
+            values_list,
             band_tracker,
             x0,
             y0,
@@ -246,20 +267,13 @@ def find_ellipmom2(
         if dyy < -conf["bound_correct_wt"]:
             dyy = -conf["bound_correct_wt"]
 
-        if abs(dx) > abs(dy):
-            convergence_factor = abs(dx)
-        else:
-            convergence_factor = abs(dy)
-        convergence_factor = convergence_factor * convergence_factor
-
-        if abs(dxx) > convergence_factor:
-            convergence_factor = abs(dxx)
-        if abs(dxy) > convergence_factor:
-            convergence_factor = abs(dxy)
-        if abs(dyy) > convergence_factor:
-            convergence_factor = abs(dyy)
-
-        convergence_factor = sqrt(convergence_factor)
+        convergence_factor = max(
+            abs(dx),
+            abs(dy),
+            abs(dxx),
+            abs(dxy),
+            abs(dyy),
+        )
         if shiftscale < shiftscale0:
             convergence_factor *= shiftscale0 / shiftscale
 
@@ -278,10 +292,10 @@ def find_ellipmom2(
         res["numiter"] = i + 1
 
         if convergence_factor < conf["tol"]:  # or do_cov:
-            if not do_cov:
+            if not do_cov and do_covariance:
                 do_cov = True
                 continue
-            # rho4 /= Amp
+
             res["pars"][0] = x0
             res["pars"][1] = y0
             res["pars"][2] = Mxx
@@ -296,24 +310,26 @@ def find_ellipmom2(
 
 
 @njit(cache=True)
-def clear_result(res):
+def clear_result(res, clear_covariance=True):
     """
     clear some fields in the result structure
     """
     res["npix"] = 0
     res["wsum"] = 0.0
     res["sums"][:] = 0.0
-    res["sums_cov"][:, :] = 0.0
+    if clear_covariance:
+        res["sums_cov"][:, :] = 0.0
     res["pars"][:] = np.nan
 
 
 @njit(cache=True)
-def clear_tmp(tmp):
+def clear_tmp(tmp, clear_covariance=True):
     """
     clear some fields in the result structure
     """
-    tmp["sums"][:] = 0.0
-    tmp["sums_cov"][:, :] = 0.0
+    if clear_covariance:
+        tmp["sums"][:] = 0.0
+        tmp["sums_cov"][:, :] = 0.0
 
 
 @njit(cache=True)
@@ -518,6 +534,111 @@ def get_mom_var(
     )
 
     return var_t
+
+
+@njit(cache=True)
+def get_T_and_e_cov(
+    Q22,
+    Q11,
+    Q12,
+    var_Q22,
+    var_Q11,
+    var_Q12,
+    cov_Q22_Q11,
+    cov_Q22_Q12,
+    cov_Q11_Q12,
+):
+    """
+    Propagate fixed-weight moment covariance to adaptive size and ellipticity.
+
+    Parameters are the flux-normalized second moments and their covariance in
+    ngmix/image-coordinate ordering: ``Q22`` is the row-row moment, ``Q11`` is
+    the column-column moment, and ``Q12`` is the row-column cross moment. The
+    reported ellipticity convention is
+    ``e1 = (Q11 - Q22) / (Q11 + Q22)`` and
+    ``e2 = 2 * Q12 / (Q11 + Q22)``.
+
+    The input covariance describes moments measured with the final fixed
+    Gaussian weight. At the adaptive-moment fixed point the fitted covariance
+    matrix is ``M = 2 C``, so first-order perturbations in the fitted moments
+    include an additional adaptive-response factor relative to fixed-weight
+    moment errors. The returned variances include this response factor.
+
+    Parameters
+    ----------
+    Q22 : float
+        Row-row second moment.
+    Q11 : float
+        Column-column second moment.
+    Q12 : float
+        Row-column second moment.
+    var_Q22 : float
+        Variance of ``Q22``.
+    var_Q11 : float
+        Variance of ``Q11``.
+    var_Q12 : float
+        Variance of ``Q12``.
+    cov_Q22_Q11 : float
+        Covariance between ``Q22`` and ``Q11``.
+    cov_Q22_Q12 : float
+        Covariance between ``Q22`` and ``Q12``.
+    cov_Q11_Q12 : float
+        Covariance between ``Q11`` and ``Q12``.
+
+    Returns
+    -------
+    T_var : float
+        Variance of ``T = Q11 + Q22`` after adaptive-response scaling.
+    e1_var : float
+        Variance of ``e1`` after adaptive-response scaling.
+    e2_var : float
+        Variance of ``e2`` after adaptive-response scaling.
+    e12_cov : float
+        Covariance between ``e1`` and ``e2`` after adaptive-response scaling.
+    """
+    T = Q22 + Q11
+    inv_T = 1.0 / T
+    inv_T2 = inv_T * inv_T
+
+    de1_dQ22 = 2.0 * Q11 * inv_T2
+    de1_dQ11 = -2.0 * Q22 * inv_T2
+    de2_dQ22 = -2.0 * Q12 * inv_T2
+    de2_dQ11 = de2_dQ22
+    de2_dQ12 = 2.0 * inv_T
+
+    fixed_e1_var = (
+        de1_dQ22 * de1_dQ22 * var_Q22
+        + de1_dQ11 * de1_dQ11 * var_Q11
+        + 2.0 * de1_dQ22 * de1_dQ11 * cov_Q22_Q11
+    )
+    fixed_e2_var = (
+        de2_dQ22 * de2_dQ22 * var_Q22
+        + de2_dQ11 * de2_dQ11 * var_Q11
+        + de2_dQ12 * de2_dQ12 * var_Q12
+        + 2.0 * de2_dQ22 * de2_dQ11 * cov_Q22_Q11
+        + 2.0 * de2_dQ22 * de2_dQ12 * cov_Q22_Q12
+        + 2.0 * de2_dQ11 * de2_dQ12 * cov_Q11_Q12
+    )
+    fixed_e12_cov = (
+        de1_dQ22 * de2_dQ22 * var_Q22
+        + de1_dQ11 * de2_dQ11 * var_Q11
+        + (de1_dQ22 * de2_dQ11 + de1_dQ11 * de2_dQ22) * cov_Q22_Q11
+        + de1_dQ22 * de2_dQ12 * cov_Q22_Q12
+        + de1_dQ11 * de2_dQ12 * cov_Q11_Q12
+    )
+
+    # At the adaptive fixed point M = 2 C. Noise perturbs the fitted
+    # covariance by delta M = 2 delta C to first order, so adaptive-moment
+    # covariance is four times the fixed-weight covariance.
+    adaptive_response2 = 4.0
+    # The fitted covariance is M = 2 C, so its trace contributes another
+    # factor two in standard deviation in addition to adaptive response.
+    T_var = 4.0 * adaptive_response2 * (var_Q22 + var_Q11 + 2.0 * cov_Q22_Q11)
+    e1_var = adaptive_response2 * fixed_e1_var
+    e2_var = adaptive_response2 * fixed_e2_var
+    e12_cov = adaptive_response2 * fixed_e12_cov
+
+    return T_var, e1_var, e2_var, e12_cov
 
 
 @njit(cache=True)
