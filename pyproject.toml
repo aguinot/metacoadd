@@ -1,50 +1,96 @@
-[build-system]
-requires = ["setuptools>=64.0", "setuptools_scm[toml]>=6.2", "wheel"]
-build-backend = "setuptools.build_meta"
 
 [project]
 name = "metacoadd"
-version = "0.0.1"
-authors = [
-  { name="Axel Guinot", email="axel.guinot.astro@gmail.com" },
-]
-description = "Shear image and coadd them to run metadetection"
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.7"
-license = {text = "MIT"}
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+authors = [
+    { name = "Axel Guinot", email = "axel.guinot.astro@gmail.com" }
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+]
+dynamic = ["version"]
+requires-python = ">=3.12"
 dependencies = [
-    "numba>0.54",
-    "galsim>=2.4",
-    "reproject>=0.12",
-    "ngmix @ git+https://github.com/esheldon/ngmix.git",
-    "esutil",
-    "pyfftw>=0.12",
-    # "lanczos @ git+https://github.com/aguinot/lanczos.git",
-    "rocket-fft"
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/aguinot/metacoadd"
-"Bug Tracker" = "https://github.com/aguinot/metacoadd/issues"
+"Source Code" = "https://github.com/aguinot/metacoadd"
 
+# On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
-dev = ["pre-commit", "black", "ruff"]
-test = ["pytest", "pytest-cov", "pytest-mock", "joblib", "tqdm", "astropy", "matplotlib"]
+dev = [
+    "jupyter", # Clears output from Jupyter notebooks
+    "pre-commit", # Used to run checks before finalizing a git commit
+    "pytest",
+    "pytest-cov", # Used to report total code coverage
+    "ruff", # Used for static linting of files
+]
 
-[tool.setuptools]
-packages = ["metacoadd", "metacoadd.moments"]
+[build-system]
+requires = [
+    "setuptools>=62", # Used to build and package the Python project
+    "setuptools_scm>=6.2", # Gets release version from git. Makes it available programmatically
+]
+build-backend = "setuptools.build_meta"
 
-#[tool.ruff]
-#select = ["E", "F", "UP", "I"]
-#line-length = 80
-#[tool.ruff.per-file-ignores]
-#"__init__.py" = ["F401"]
+[tool.setuptools_scm]
+write_to = "src/metacoadd/_version.py"
 
-#[tool.black]
-#line-length = 80
-#target-version = ['py37']
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+    "src",
+    "docs",
+]
+addopts = "--doctest-modules --doctest-glob=*.rst"
+
+[tool.ruff]
+line-length = 80
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    "W",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # docstrings
+    "D101",
+    "D102",
+    "D103",
+    "D106",
+    "D206",
+    "D207",
+    "D208",
+    "D300",
+    "D417",
+    "D419",
+    # Numpy v2.0 compatibility
+    "NPY201",
+]
+ignore = [
+    "I", # Ignore import order
+    "N", # Ignore naming conventions
+    "UP006", # Allow non standard library generics in type hints
+    "UP007", # Allow Union in type hints
+    "SIM114", # Allow if with same arms
+    "B028", # Allow default warning level
+    "SIM117", # Allow nested with
+    "UP015", # Allow redundant open parameters
+    "UP028", # Allow yield in for loop
+]
+
+
+[tool.coverage.run]
+omit=["src/metacoadd/_version.py"]

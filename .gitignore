@@ -3,9 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# MacOS
-.DS_Store
-
 # C extensions
 *.so
 
@@ -29,6 +26,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+_version.py
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -73,6 +71,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+_readthedocs/
 
 # PyBuilder
 target/
@@ -131,13 +130,24 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Ruff cache folder
-.ruff_cache
-
 # vscode
 .vscode/
 
-# Other
+# dask
+dask-worker-space/
+
+# tmp directory
+tmp/
+
+# Mac OS
+.DS_Store
+
+# Airspeed Velocity performance results
+_results/
+_html/
+
+# Project initialization script
+.initialize_new_project.sh
+
 data/
 notebooks/
-examples/*.dat
