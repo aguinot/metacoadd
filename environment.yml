@@ -13,4 +13,4 @@ dependencies:
   - reproject
   - pip:
     - rocket-fft
-  #   - lanczos @ git+https://github.com/aguinot/lanczos.git
+    - lanczos @ git+https://github.com/aguinot/lanczos.git
