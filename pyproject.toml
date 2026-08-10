@@ -16,8 +16,6 @@ classifiers = [
 ]
 dynamic = ["version"]
 requires-python = ">=3.12"
-dependencies = [
-]
 
 [project.urls]
 "Source Code" = "https://github.com/aguinot/metacoadd"
@@ -30,6 +28,12 @@ dev = [
     "pytest",
     "pytest-cov", # Used to report total code coverage
     "ruff", # Used for static linting of files
+]
+docs = [
+    "sphinx",
+    "sphinx-autoapi",
+    "sphinx-copybutton",
+    "sphinx-rtd-theme",
 ]
 
 [build-system]

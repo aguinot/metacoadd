@@ -1,0 +1,15 @@
+channels:
+  - conda-forge
+dependencies:
+  - python >= 3.12
+  - pip
+  - numpy
+  - numba
+  - galsim
+  - ngmix
+  - sep
+  - astropy
+  - metadetect
+  - pip:
+    - rocket-fft
+  #   - lanczos @ git+https://github.com/aguinot/lanczos.git

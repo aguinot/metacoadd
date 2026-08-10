@@ -8,7 +8,6 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,18 +20,23 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v7
+
+    - uses: mamba-org/setup-micromamba@v3
       with:
-        python-version: '3.13'
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-    - name: Install dependencies
+        environment-name: metacoadd
+        environment-file: environment.yml
+        cache-environment: true
+        generate-run-shell: true
+
+    - name: Install package and docs dependencies
+      shell: micromamba-shell {0}
       run: |
-        sudo apt-get update
-        uv pip install --system -e .
-        if [ -f docs/requirements.txt ]; then uv pip install --system -r docs/requirements.txt; fi
-        if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+        pip install -e ".[docs]"
+
     - name: Build docs
+      shell: micromamba-shell {0}
       run: |
-        sphinx-build -T -E -b html -d docs/build/doctrees ./docs docs/build/html
+        sphinx-build -T -E -b html \
+          -d docs/build/doctrees \
+          docs \
+          docs/build/html
