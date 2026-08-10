@@ -16,7 +16,7 @@ def pad_arr(arr, target_dim):
 
     Parameters
     ----------
-    arr : ndarray
+    arr : np.ndarray
         Input 2D array to be padded.
     target_dim : int
         Target dimension for the padded array. Must be greater than or equal to
@@ -24,7 +24,7 @@ def pad_arr(arr, target_dim):
 
     Returns
     -------
-    padded_arr : ndarray
+    padded_arr : np.ndarray
         2D array of shape (target_dim, target_dim) with `arr` centered and
         padded with zeros.
 
@@ -46,16 +46,16 @@ def meshgrid_2d(x, y):
 
     Parameters
     ----------
-    x : ndarray
+    x : np.ndarray
         1D array of x-coordinates.
-    y : ndarray
+    y : np.ndarray
         1D array of y-coordinates.
 
     Returns
     -------
-    xx : ndarray
+    xx : np.ndarray
         2D array of x-coordinates.
-    yy : ndarray
+    yy : np.ndarray
         2D array of y-coordinates.
 
     """
@@ -74,14 +74,14 @@ def zero_pad_fft(im, target_dim):
 
     Parameters
     ----------
-    im : ndarray
+    im : np.ndarray
         Input 2D array to be zero-padded and FFT'd.
     target_dim : int
         Target dimension for the zero-padded array.
 
     Returns
     -------
-    k : ndarray
+    k : np.ndarray
         2D array of the FFT of the zero-padded image.
 
     """
@@ -99,12 +99,12 @@ def compute_noise_power_spectrum(
 
     Parameters
     ----------
-    noise_image : ndarray (N, N)
+    noise_image : np.ndarray (N, N)
         Square 2-D array containing pure noise (should be mean-subtracted).
 
     Returns
     -------
-    power_spectrum : ndarray (N, N // 2 + 1)
+    power_spectrum : np.ndarray (N, N // 2 + 1)
 
     """
     N = noise_image.shape[0]
@@ -147,7 +147,7 @@ def estimate_noise_ps_analytic(
 
     Parameters
     ----------
-    noise_image : ndarray (L, L)
+    noise_image : np.ndarray (L, L)
         One or more square noise template images
     stamp_size : int
         Side length of the fitting stamps.
@@ -160,7 +160,7 @@ def estimate_noise_ps_analytic(
 
     Returns
     -------
-    ps : ndarray (stamp_size, stamp_size // 2 + 1)
+    ps : np.ndarray (stamp_size, stamp_size // 2 + 1)
         One-sided rfft2 power spectrum at stamp resolution.
 
     """

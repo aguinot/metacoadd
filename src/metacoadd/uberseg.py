@@ -12,16 +12,16 @@ def fast_uberseg(
 
     Parameters.
     ----------
-    seg: np.ndarray
+    seg : np.ndarray
         Segmentation map.
-    weight: np.ndarray
+    weight : np.ndarray
         Weight map.
-    object_number: int
+    object_number : int
         Object number to keep in the weight map.
 
     Returns
     -------
-    weight: np.ndarray
+    weight : np.ndarray
         Weight map with only the object_number kept.
 
     """

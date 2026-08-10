@@ -56,26 +56,26 @@ class Exposure:
 
     Structure to store all the information for an exposure.
 
-    TODO: Add consistency check if several images are provided:
+    TODO : Add consistency check if several images are provided:
         Same size. Other?
 
     Parameters
     ----------
-    image: numpy.ndarray or galsim.Image
+    image : np.ndarray or galsim.Image
         Science image.
-    header: astropy.io.fits.header.Header
+    header : astropy.io.fits.header.Header
         Image header containing all the WCS information. Either header or wcs
         has to be provided, not both.
-    wcs: galsim.BaseWCS or astropy.wcs.wcs.WCS
+    wcs : galsim.BaseWCS or astropy.wcs.wcs.WCS
         wcs corresponding to the images. Either header or wcs has to be
         provided, not both.
-    weight: numpy.ndarray or galsim.Image, optional
+    weight : np.ndarray or galsim.Image, optional
         Weight image. Defaults to None.
-    flag: numpy.ndarray or galsim.Image, optional
+    flag : np.ndarray or galsim.Image, optional
         Flag image. Defaults to None.
-    noise: numpy.ndarray or galsim.Image, optional
+    noise : np.ndarray or galsim.Image, optional
         Noise image. Defaults to None.
-    meta: dict
+    meta : dict
         Add metadata information in the form of a dictionary. For
         example, it can be used to store the exposure ID as follow:
         meta = {'ID': 12345}. Defaults to None.
@@ -134,12 +134,12 @@ class Exposure:
 
         Parameters
         ----------
-        bounds: galsim.BoundsI
+        bounds : galsim.BoundsI
             Bounds of the subimages to return.
 
         Returns
         -------
-        new_exposure: Exposure
+        new_exposure : Exposure
             A new Exposure instance with the corresponding subimages and
             WCS.
 
@@ -205,7 +205,7 @@ class Exposure:
 
         Parameters
         ----------
-        galsim_image: galsim.Image
+        galsim_image : galsim.Image
             A galsim image.
 
         """
@@ -223,12 +223,12 @@ class Exposure:
 
         Parameters
         ----------
-        image: numpy.ndarray
+        image : np.ndarray
             Image to transform to a galsim.Image.
 
         Returns
         -------
-        galsim_image: galsim.Image
+        galsim_image : galsim.Image
             The corresponding galsim.Image.
 
         """
@@ -252,9 +252,9 @@ class Exposure:
 
         Parameters
         ----------
-        image: numpy.ndarray or galsim.Image
+        image : np.ndarray or galsim.Image
             Image to setup.
-        image_kind: str
+        image_kind : str
             Name of the image to set. Must be in ['image', 'weight', 'flag',
             'noise'].
 
@@ -292,7 +292,7 @@ class Exposure:
 
         Parameters
         ----------
-        meta: dict
+        meta : dict
             Metadata information to set.
 
         """
@@ -327,7 +327,7 @@ class ExpList(list):
 
         Parameters
         ----------
-        exp: metacoadd.Exposure
+        exp : metacoadd.Exposure
             Exposure to add.
 
         """
@@ -340,9 +340,9 @@ class ExpList(list):
 
         Parameters
         ----------
-        index: int
+        index : int
             Index of the list to set.
-        exp: metacoadd.Exposure
+        exp : metacoadd.Exposure
             Exposure to set.
 
         """
@@ -372,7 +372,7 @@ class MultiBandExpList(list):
 
         Parameters
         ----------
-        explist: metacoadd.ExpList
+        explist : metacoadd.ExpList
             ExpList to add.
 
         """
@@ -383,9 +383,9 @@ class MultiBandExpList(list):
     def __setitem__(self, index, explist):
         """Parameters
         ----------
-        index: int
+        index : int
             Index of the list to set.
-        explist: metacoadd.ExpList
+        explist : metacoadd.ExpList
             ExpList to set.
 
         """
@@ -403,33 +403,33 @@ class CoaddImage:
 
     Parameters
     ----------
-    explist: metacoadd.ExpList
+    explist : metacoadd.ExpList
         ExpList object that store all the exposure
         to build the coadd. It can also include images that do not
         contribute to the coadd area and they will be automatically
         ignored.
-    world_coadd_center: galsim.celestial.CelestialCoord
+    world_coadd_center : galsim.celestial.CelestialCoord
         Position of the coadd center in world coordinates.
-    scale: float
+    scale : float
         Pixel scale of the coadd. In arcsec.
-    image_coadd_size: tuple, list or int
+    image_coadd_size : tuple, list or int
         Size of the coadd in image coordinates. If a `int` is provided, will
         assume the coadd to be square.  Otherwise, has to be a `list` or
         `tuple` of `int`. Either `image_coadd_size` or `world_coadd_size` as to
         be provided.
-    world_coadd_size: tuple, list or galsim.angle.Angle
+    world_coadd_size : tuple, list or galsim.angle.Angle
         Size of the coadd in world coordinates, in arcmin.
         If a `galsim.angle.Angle` is provided, will assume the coadd to be
         square. Otherwise, has to be a `list` or `tuple` of
         `galsim.angle.Angle`. Either `image_coadd_size` or `world_coadd_size
         as to be provided.
-    interp_config: dict, optional
+    interp_config : dict, optional
         Set of parameters for the interpolation. If `None` use the default
         configuration. Defaults to None.
-    resamp_config: dict, optional
+    resamp_config : dict, optional
         Set of parameters for the resampling. If `None` use the default
         configuration. Defaults to None.
-    resize_exposure: bool, optional
+    resize_exposure : bool, optional
         Whether to resize the exposures before doing the interpolation. It is
         recommended to leave this to `True` since it will save computing time
         and memory. We use a "relax" parameters to make the resizing slightly
@@ -437,13 +437,13 @@ class CoaddImage:
         interpolation. This avoid to cut a part of the exposure due to
         projection effect later. See `relax_resize`. This is not
         related to the padding for the interpolation. Defaults to True.
-    relax_resize: float, optional
+    relax_resize : float, optional
         Default relax parameters for the resizing (see above). Correspond to a
         percentage of the coadd size for both axes. Has to be in ]0, 1]
         (no good reason to go for more than 1 given that distortion effect are
         small). This can be internally change in case we reach one of the
         border of the exposure. Default to 0.10.
-    gsparams: galsim.GSParams, optional
+    gsparams : galsim.GSParams, optional
         Set of parameters for the galsim objects. If `None` use the default
         configuration. Defaults to None.
 
@@ -686,7 +686,7 @@ class CoaddImage:
 
         Parameters
         ----------
-        exp: metacoadd.Exposure
+        exp : metacoadd.Exposure
             Exposure to resize.
         relax_resize : float
             Resize relax parameter.
@@ -917,9 +917,9 @@ class CoaddImage:
 
         Returns
         -------
-        resamp_img : numpy.ndarray
+        resamp_img : np.ndarray
             Resampled image array.
-        footprint : numpy.ndarray
+        footprint : np.ndarray
             Footprint of the resampled image, indicating which pixels are
             valid.
 
@@ -987,9 +987,9 @@ class CoaddImage:
 
         Parameters
         ----------
-        exp: metacoadd.Exposure
+        exp : metacoadd.Exposure
             Exposure to resize.
-        rms_keyword: str
+        rms_keyword : str
             Keyword to use for the RMS.
 
         Returns
@@ -1014,7 +1014,7 @@ class CoaddImage:
 
         Parameters
         ----------
-        kwargs: dict
+        kwargs : dict
             Any additional keywords arguments for galsim.InterpolatedImage.
 
         """
@@ -1054,21 +1054,21 @@ class CoaddImage:
 
         Parameters
         ----------
-        image: numpy.ndarray
+        image : np.ndarray
             Image to interpolate.
-        wcs: galsim.BaseWCS
+        wcs : galsim.BaseWCS
             WCS of the Image.
-        interp_method: str
+        interp_method : str
             Select which interpolation to use. Hard coded.
             Must be in ['classic', 'weight', 'flag']. Will set the
             interpolation to 'nearest' for the weight and flag images.
-        kwargs: dict
+        kwargs : dict
             Any additional keywords arguments for
                 galsim.InterpolatedImage.
 
         Returns
         -------
-        interp_image: galsim.interpolatedimage.InterpolatedImage
+        interp_image : galsim.interpolatedimage.InterpolatedImage
             Interpolated image.
 
         """
@@ -1120,7 +1120,7 @@ class CoaddImage:
 
         Parameters
         ----------
-        types: list
+        types : list
             Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
 
         """
@@ -1162,7 +1162,7 @@ class CoaddImage:
 
         Parameters
         ----------
-        types: list
+        types : list
             Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
 
         """

@@ -394,11 +394,11 @@ def _make_prior(rng, scale, nband):
 
     Parameters
     ----------
-    rng: np.random.RandomState
+    rng : np.random.RandomState
         The random number generator
-    scale: float
+    scale : float
         Pixel scale
-    nband: int
+    nband : int
         number of bands
 
     """
@@ -446,9 +446,9 @@ class RunnerGuess(Runner):
 
         Parameters
         ----------
-        obs: ngmix Observation(s)
+        obs : ngmix Observation(s)
             Observation, ObsList, or MultiBandObsList
-        guess: list or numpy array
+        guess : list or np.ndarray
              An array of parameters to use as the guess for the fitter.
              Must be a list or numpy array of the same length as the number of
              parameters in the model.
@@ -471,16 +471,16 @@ def run_fitter_guess(obs, fitter, guess, ntry=1):
 
     Parameters
     ----------
-    obs: ngmix Observation(s)
+    obs : ngmix Observation(s)
         Observation, ObsList, or MultiBandObsList
-    fitter: ngmix fitter or measurer
+    fitter : ngmix fitter or measurer
         An object to perform measurements, must have a go(obs=obs, guess=guess)
         method.
-    guess: list or numpy array
+    guess : list or np.ndarray
         An array of parameters to use as the guess for the fitter. Must be a
         list or numpy array of the same length as the number of parameters in
         the model.
-    ntry: int, optional
+    ntry : int, optional
         Number of times to try if there is failure
 
     Returns
@@ -507,9 +507,9 @@ class BootstrapperGuess(Bootstrapper):
 
         Parameters
         ----------
-        obs: ngmix Observation(s)
+        obs : ngmix Observation(s)
             Observation, ObsList, or MultiBandObsList
-        guess: list or numpy array
+        guess : list or np.ndarray
             An array of parameters to use as the guess for the fitter.
             Must be a list or numpy array of the same length as the number of
             parameters in the model.
@@ -537,17 +537,17 @@ def bootstrap_guess(
 
     Parameters
     ----------
-    obs: ngmix Observation(s)
+    obs : ngmix Observation(s)
         Observation, ObsList, or MultiBandObsList
-    runner: ngmix Runner
+    runner : ngmix Runner
         Must have go(obs=obs) method
-    guess: list or numpy array
+    guess : list or np.ndarray
         An array of parameters to use as the guess for the fitter. Must be a
         list or numpy array of the same length as the number of parameters in
         the model.
-    psf_runner: ngmix PSFRunner, optional
+    psf_runner : ngmix PSFRunner, optional
         Must have go(obs=obs) method
-    ignore_failed_psf: bool, optional
+    ignore_failed_psf : bool, optional
         If set to True, remove observations where the psf fit fails, and
         only fit the remaining.  Default True.
 

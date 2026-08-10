@@ -30,12 +30,12 @@ class MBMomRunner:
 
         Parameters
         ----------
-        obs: MultiBandObsList or ObsList or Observation
+        obs : MultiBandObsList or ObsList or Observation
             The input observation(s) to fit.
 
         Returns
         -------
-        res: dict
+        res : dict
             The results of the fit.
 
         """

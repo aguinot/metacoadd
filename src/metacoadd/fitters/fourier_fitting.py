@@ -34,13 +34,13 @@ class FourierFitter(Fitter):
 
     Parameters
     ----------
-    model: str
+    model : str
         The model to fit
-    prior: ngmix prior
+    prior : ngmix prior
         A prior for fitting
-    fit_pars: dict
+    fit_pars : dict
         Parameters to send to the leastsq fitting routine
-    stamp_size: int
+    stamp_size : int
         The size of the stamp to use for the Fourier fitting. This is used to
         set the size of the Fourier data and the PSD. If None, the size is
         inferred from the first observation's image shape.
@@ -56,9 +56,9 @@ class FourierFitter(Fitter):
 
         Parameters
         ----------
-        obs: Observation, ObsList, or MultiBandObsList
+        obs : Observation, ObsList, or MultiBandObsList
             Observation(s) to fit
-        guess: array
+        guess : np.ndarray
             Array of initial parameters for the fit
 
         Returns
@@ -152,19 +152,19 @@ class FourierFitModel(FitModel):
 
     Parameters
     ----------
-    obs: observation(s)
+    obs : observation(s)
         Observation, ObsList, or MultiBandObsList
-    model: str
+    model : str
         The model to fit
-    prior: ngmix prior
+    prior : ngmix prior
         A prior for fitting
-    guess: ngmix guess
+    guess : ngmix guess
         A guess for the initial parameters of the fit
-    stamp_size: int
+    stamp_size : int
         The size of the stamp to use for the Fourier fitting. This is used to
         set the size of the Fourier data and the PSD. If None, the size is
         inferred from the first observation's image shape.
-    ps_ind: int
+    ps_ind : int
         The index of the PSD to use for the fit. If the observation has
         multiple PSDs, this index selects which one to use. If the observation
         has only one PSD, this should be 0.
@@ -196,7 +196,7 @@ class FourierFitModel(FitModel):
             Convolved Gaussian mixture for this observation.
         obs : Observation
             The ngmix Observation (used to check masking and get Jacobian).
-        kim : ndarray, complex128
+        kim : np.ndarray, complex128
             Pre-computed Fourier data for this observation; its shape gives
             the target rfft2 dimension.
 
@@ -219,7 +219,7 @@ class FourierFitModel(FitModel):
 
         Parameters
         ----------
-        pars : array
+        pars : np.ndarray
             The parameters of the model.
         more : bool, optional
             If True, return additional information (s2n_numer, s2n_denom, npix)
@@ -290,12 +290,12 @@ class FourierFitModel(FitModel):
 
         Parameters
         ----------
-        pars : array_like
+        pars : array-like
             The parameters of the model.
 
         Returns
         -------
-        fdiff : numpy.ndarray
+        fdiff : np.ndarray
             The difference between the model and the data in Fourier space.
 
         """

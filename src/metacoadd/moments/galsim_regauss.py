@@ -33,11 +33,11 @@ def get_psf_fit(obs, fitter, guess_fwhm=1.2):
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The PSF observation to fit.
-    fitter: ngmix.fitter.Fitter
+    fitter : ngmix.fitter.Fitter
         The fitter to use for the PSF fit.
-    guess_fwhm: float, optional
+    guess_fwhm : float, optional
         The initial guess for the PSF FWHM. Default is 1.2 arcsec.
 
     """
@@ -54,17 +54,17 @@ def check_exp(obs, psf_res, safe_factor=2):
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The observation to check.
-    psf_res: dict
+    psf_res : dict
         The PSF fit results from get_psf_fit.
-    safe_factor: float, optional
+    safe_factor : float, optional
         The factor to multiply the PSF size by to get the weight function size.
         Default is 2.
 
     Returns
     -------
-    w_sum: float
+    w_sum : float
         The sum of the weight function applied to the observation.
 
     """
@@ -89,21 +89,21 @@ class ReGaussFitter(GAdmomFitter):
 
     Parameters
     ----------
-    maxiter: integer, optional
+    maxiter : int, optional
         Maximum number of iterations, default 200
-    etol: float, optional
+    etol : float, optional
         absolute tolerance in e1 or e2 to determine convergence,
         default 1.0e-5
-    Ttol: float, optional
+    Ttol : float, optional
         relative tolerance in T <x^2> + <y^2> to determine
         convergence, default 1.0e-3
-    shiftmax: float, optional
+    shiftmax : float, optional
         Largest allowed shift in the centroid, relative to
         the initial guess.  Default 5.0 (5 pixels if the jacobian
         scale is 1)
-    cenonly: bool, optional
+    cenonly : bool, optional
         If set to True, only vary the center
-    rng: np.random.RandomState
+    rng : np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
 
@@ -141,9 +141,9 @@ class ReGaussFitter(GAdmomFitter):
 
         Parameters
         ----------
-        obs: Observation or ObsList
+        obs : Observation or ObsList
             ngmix.Observation
-        guess: ngmix.GMix or a float
+        guess : ngmix.GMix or a float
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.

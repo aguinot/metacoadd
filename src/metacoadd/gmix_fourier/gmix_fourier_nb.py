@@ -172,7 +172,7 @@ def gmix_eval_fourier_analytic_inplace(
 
     Parameters
     ----------
-    gmix : structured ndarray
+    gmix : structured np.ndarray
         Gaussian mixture data array as returned by ``GMix.get_data()``.
         Must have fields: ``p``, ``row``, ``col``, ``irr``, ``irc``, ``icc``.
         Moments and centroids are in sky (arcsec) coordinates.
@@ -184,7 +184,7 @@ def gmix_eval_fourier_analytic_inplace(
         Elements of the 2x2 Jacobian matrix J that maps pixel offsets to sky
         offsets: [v, u] = J * [delta_row, delta_col].  For a diagonal
         Jacobian with pixel scale h: dvdrow=h, dudcol=h, dvdcol=dudrow=0.
-    out : ndarray, complex128, shape (N, N//2+1)
+    out : np.ndarray, complex128, shape (N, N//2+1)
         Pre-allocated output array.  Caller is responsible for zeroing before
         calling.
 
@@ -230,7 +230,7 @@ def gmix_eval_fourier_analytic(
 
     Parameters
     ----------
-    gmix : structured ndarray
+    gmix : structured np.ndarray
         Gaussian mixture data array (``GMix.get_data()``).
         Moments and centroids are in sky (arcsec) coordinates.
     N : int
@@ -242,7 +242,7 @@ def gmix_eval_fourier_analytic(
 
     Returns
     -------
-    out : ndarray, complex128, shape (N, N//2+1)
+    out : np.ndarray, complex128, shape (N, N//2+1)
 
     """
     Nc = N // 2 + 1

@@ -26,22 +26,22 @@ class MetacalHandler:
 
     Parameters
     ----------
-    rng: numpy.random.RandomState
+    rng : np.random.RandomState
         Random state for generating noise fields.  Not needed if metacal if
         using the noise field in the observations
-    mcal_class: str
+    mcal_class : str
         The metacal class to use.  One of 'gauss_psf' or 'fix_gauss_psf'
-    fixnoise: bool
+    fixnoise : bool
         If True, add a noise field to the metacalibrated images to keep the
         noise properties the same as the original image.  If False, the noise
         properties will be different for the metacalibrated images.  This is
         not recommended, as it can lead to biases in the shear measurement.
-    use_noise_image: bool
+    use_noise_image : bool
         If True, use the noise image in the observation to add noise to the
         metacalibrated images.  If False, the noise properties will be
         different for the metacalibrated images.  This is not recommended, as
         it can lead to biases in the shear measurement.
-    mcal_config: dict
+    mcal_config : dict
         Additional configuration for the metacal class.See the metacal class
         for details.  This can be used to set the step size, whether to use
         pixel convolution, etc.
@@ -77,17 +77,17 @@ class MetacalHandler:
 
         Parameters
         ----------
-        obs: ngmix.Observation, ngmix.ObsList, or ngmix.MultiBandObsList
+        obs : ngmix.Observation, ngmix.ObsList, or ngmix.MultiBandObsList
             The observation to metacalibrate.  If an ObsList or
             MultiBandObsList is provided, the metacalibration will be applied
             to each observation in the list.
-        mcal_types: list of str
+        mcal_types : list of str
             The types of metacalibration to apply. In ["noshear", "1p", "1m",
             "2p", "2m"].
 
         Returns
         -------
-        mcal_obs: dict of ngmix.Observation
+        mcal_obs : dict of ngmix.Observation
             A dictionary of metacalibrated observations, with keys
             corresponding to the input mcal_types.
 
@@ -184,19 +184,19 @@ class MetacalFixGaussPSF:
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The observation must have a psf observation set, holding
         the psf image
-    step: float
+    step : float
         The shear step size to use for metacalibration.  This is the amount of
         shear to apply to the image for the metacalibration.  Default is 0.01.
-    fwhm_target: float
+    fwhm_target : float
         The target FWHM for the dilated PSF.  This is the FWHM of the Gaussian
         that will be used to dilate the PSF.  The default is 0.3.
-    has_pixel: bool
+    has_pixel : bool
         If True, the pixel convolution is included in the metacalibration.
         If False, the pixel convolution is not included.  Default is True.
-    rng: numpy.random.RandomState
+    rng : np.random.RandomState
         Random state for generating noise fields. Not needed if metacal if
         using the noise field in the observations.
 
@@ -238,13 +238,13 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        mcal_type: str
+        mcal_type : str
             The type of shear to apply.  One of ["noshear", "1p", "1m", "2p",
             "2m"]
 
         Returns
         -------
-        newobs: ngmix.Observation
+        newobs : ngmix.Observation
             The metacalibrated observation with the specified shear applied.
 
         """
@@ -284,12 +284,12 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        shear: ngmix.Shape
+        shear : ngmix.Shape
             The shear to apply
 
         Returns
         -------
-        newobs: ngmix.Observation
+        newobs : ngmix.Observation
             The metacalibrated observation with the specified shear applied to
             the PSF.
 
@@ -306,15 +306,15 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        shear: ngmix.Shape
+        shear : ngmix.Shape
             The shear to apply to the PSF
-        doshear: bool
+        doshear : bool
             If True, shear the PSF by the input shear.  If False, do not shear
             the PSF.
 
         Returns
         -------
-        psf_grown: galsim object
+        psf_grown : galsim object
             The dilated, possibly sheared, PSF object
 
         """
@@ -348,10 +348,10 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        psf_obj: A galsim object
+        psf_obj : A galsim object
             psf object by which to convolve.  An interpolated image,
             or surface brightness profile
-        shear: ngmix.Shape, optional
+        shear : ngmix.Shape, optional
             The shear to apply
 
         Returns
@@ -389,7 +389,7 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        shear: ngmix.Shape
+        shear : ngmix.Shape
             The shear to apply
 
         Returns
@@ -407,9 +407,9 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        shear: ngmix.Shape
+        shear : ngmix.Shape
             The applied shear
-        type: string
+        type : str
             Type of psf target.  For type='gal_shear', the psf is just dilated
             to deal with noise amplification.  For type='psf_shear' the psf is
             also sheared for calculating Rpsf
@@ -520,14 +520,14 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        img: numpy array
+        img : np.ndarray
             The image data
-        wcs: galsim wcs
+        wcs : galsim wcs
             The wcs to use for the interpolated image
-        stepk: float
+        stepk : float
             The stepk to use for the interpolated image.  If 0.0, the default
             stepk will be used.
-        maxk: float
+        maxk : float
             The maxk to use for the interpolated image.  If 0.0, the default
             maxk will be used.
 
@@ -559,14 +559,14 @@ class MetacalFixGaussPSF:
 
         Parameters
         ----------
-        im: galsim.Image
+        im : galsim.Image
             The new image
-        psf_im: galsim.Image
+        psf_im : galsim.Image
             The new psf
 
         Returns
         -------
-        newobs: ngmix.Observation
+        newobs : ngmix.Observation
             The new observation with the new image and psf
 
         """
@@ -589,15 +589,15 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The observation must have a psf observation set, holding the psf image
-    step: float
+    step : float
         The shear step size to use for metacalibration.  This is the amount of
         shear to apply to the image for the metacalibration.  Default is 0.01.
-    has_pixel: bool
+    has_pixel : bool
         If True, the pixel convolution is included in the metacalibration.
         If False, the pixel convolution is not included.  Default is True.
-    rng: numpy.random.RandomState
+    rng : np.random.RandomState
         Random state for generating noise fields. Not needed if metacal if
         using the noise field in the observations.
 
@@ -625,9 +625,9 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
 
         Parameters
         ----------
-        shear: ngmix.Shape
+        shear : ngmix.Shape
             The applied shear
-        type: string
+        type : str
             Type of psf target.  For type='gal_shear', the psf is just dilated
             to deal with noise amplification.  For type='psf_shear' the psf is
             also sheared for calculating Rpsf

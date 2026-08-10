@@ -38,9 +38,9 @@ class GAdmomResult(dict):
 
     Parameters
     ----------
-    obs: observation(s)
+    obs : observation(s)
         Observation, ObsList, or MultiBandObsList
-    result: dict
+    result : dict
         The basic fit result, to bad added to this object's keys
 
     """
@@ -75,7 +75,7 @@ class GAdmomResult(dict):
 
         Returns.
         -------
-        image: array
+        image : np.ndarray
             Image of the model, including the PSF if a psf was sent
 
         """
@@ -100,21 +100,21 @@ class GAdmomFitter:
 
     Parameters
     ----------
-    maxiter: integer, optional
+    maxiter : int, optional
         Maximum number of iterations, default 200
-    etol: float, optional
+    etol : float, optional
         absolute tolerance in e1 or e2 to determine convergence,
         default 1.0e-5
-    Ttol: float, optional
+    Ttol : float, optional
         relative tolerance in T <x^2> + <y^2> to determine
         convergence, default 1.0e-3
-    shiftmax: float, optional
+    shiftmax : float, optional
         Largest allowed shift in the centroid, relative to
         the initial guess.  Default 5.0 (5 pixels if the jacobian
         scale is 1)
-    cenonly: bool, optional
+    cenonly : bool, optional
         If set to True, only vary the center
-    rng: np.random.RandomState
+    rng : np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
 
@@ -153,9 +153,9 @@ class GAdmomFitter:
 
         Parameters
         ----------
-        obs: Observation
+        obs : Observation
             ngmix.Observation
-        guess: ngmix.GMix or a float
+        guess : ngmix.GMix or a float
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.

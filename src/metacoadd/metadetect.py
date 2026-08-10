@@ -77,7 +77,7 @@ class MetaDetect:
 
     Parameters
     ----------
-    rng : numpy.random.Generator
+    rng : np.random.Generator
         The random number generator.
     step : float, optional
         The step size for the metacalibration.
@@ -715,7 +715,7 @@ class MetaDetectForcedPositions(MetaDetect):
 
     Parameters
     ----------
-    rng : numpy.random.RandomState
+    rng : np.random.RandomState
     x_pix : array-like
         0-indexed column positions (sep convention).
     y_pix : array-like
@@ -800,36 +800,36 @@ def do_metadetect(
 
     Parameters
     ----------
-    config: dict
+    config : dict
         Configuration dictionary. Possible entries are:
             metacal
             weight
             model
 
-    mbobs: ngmix.MultiBandObsList
+    mbobs : ngmix.MultiBandObsList
         We will do detection and measurements on these images
-    rng: numpy.random.RandomState
+    rng : np.random.RandomState
         Random number generator
-    shear_band_combs: list of list of int, optional
+    shear_band_combs : list of list of int, optional
         If given, each element of the outer list is a list of indices into
         mbobs to use for shear measurement. Shear measurements will be made for
         each element of the outer list. If None, then shear measurements will
         be made for all entries in mbobs.
-    det_band_combs: list of list of int or str, optional
+    det_band_combs : list of list of int or str, optional
         If given, the set of bands to use for detection. The default of None
         uses all of the bands. If the string "shear_bands" is passed, the code
         uses the bands used for shear.
-    color_key_func: function, optional
+    color_key_func : function, optional
         If given, a function that computes a color or tuple of colors to key
         the `color_dep_mbobs` dictionary given an input set of fluxes from the
         mbobs.
-    color_dep_mbobs: dict of mbobs, optional
+    color_dep_mbobs : dict of mbobs, optional
         A dictionary of color-dependently rendered observations of the mbobs
         for use in color-dependent metadetect.
 
     Returns
     -------
-    res: dict
+    res : dict
         The fitting data keyed on the shear component.
 
     """

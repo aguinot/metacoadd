@@ -32,12 +32,12 @@ def find_ellipmom1(
 
     Parameters
     ----------
-    pixels_list : list of structured arrays
+    pixels_list : list[np.ndarray]
         Each structured array contains the pixel data for one observation. The
         fields should include 'u', 'v', 'area', and 'ierr'.
-    values_list : list of arrays
+    values_list : list[np.ndarray]
         Each array contains the pixel values for one observation.
-    band_tracker : list of integers
+    band_tracker : list[int]
         A list of integers that tracks the number of observations in each band.
     x0 : float
         The x-coordinate of the initial guess for the centroid.
@@ -188,10 +188,10 @@ def normalize_moment_covariance(sums, sums_cov):
 
     Parameters
     ----------
-    sums : ndarray, shape (7,)
+    sums : np.ndarray, shape (7,)
         Weighted sums of moments and flux. The first 6 elements are the
         moments, and the 7th element is the flux.
-    sums_cov : ndarray, shape (7, 7)
+    sums_cov : np.ndarray, shape (7, 7)
         Covariance matrix of the weighted sums. The first 6 rows and columns
         correspond to the moments, and the 7th row and column correspond to the
         flux.
@@ -225,21 +225,21 @@ def find_ellipmom2(
 
     Parameters
     ----------
-    pixels_list : list of structured arrays
+    pixels_list : list[np.ndarray]
         Each structured array contains the pixel data for one observation. The
         fields should include 'u', 'v', 'area', and 'ierr'.
-    values_list : list of arrays
+    values_list : list[np.ndarray]
         Each array contains the pixel values for one observation.
-    band_tracker : list of integers
+    band_tracker : list[int]
         A list of integers indicating which band each observation belongs to.
     guess : tuple of floats
         Initial guess for the centroid and second moments
         (x0, y0, Mxx, Mxy, Myy).
-    resarray : ndarray, shape (1,)
+    resarray : np.ndarray, shape (1,)
         Array to store the results of the computation.
-    tmparray : ndarray, shape (1,)
+    tmparray : np.ndarray, shape (1,)
         Array to store temporary values during the computation.
-    confarray : ndarray, shape (1,)
+    confarray : np.ndarray, shape (1,)
         Array containing configuration parameters for the computation.
     do_covariance : bool, optional
         If True, compute the covariance matrix of the adaptive moments.
@@ -420,10 +420,10 @@ def compute_effective_flux(fluxes, flux_cov):
 
     Parameters
     ----------
-    fluxes : (B,) array
+    fluxes : (B,) np.ndarray
         The flux vector (e.g. from multiple bands).
 
-    flux_cov : (B, B) array
+    flux_cov : (B, B) np.ndarray
         Covariance matrix of the flux vector.
 
     Returns
@@ -434,10 +434,10 @@ def compute_effective_flux(fluxes, flux_cov):
     F_eff_var : float
         Variance of the effective flux.
 
-    weights : (B,) array
+    weights : (B,) np.ndarray
         BLUE weights applied to the input fluxes.
 
-    flux_vars : (B,) array
+    flux_vars : (B,) np.ndarray
         Marginal variances of the input fluxes.
 
     """
@@ -461,15 +461,15 @@ def compute_flux_cross_covs(flux_weights, target_covs):
 
     Parameters
     ----------
-    flux_weights: numpy.ndarray
+    flux_weights : np.ndarray
         BLUE weights applied to the input fluxes.
-    target_covs: numpy.ndarray
+    target_covs : np.ndarray
         Covariances between each of N target parameters and the fluxes.
         If provided, returns cross-covariances with F_eff.
 
     Returns
     -------
-    cross_covs : numpy.ndarray
+    cross_covs : np.ndarray
         Cross-covariances with F_eff, if target_covs was provided.
 
     """

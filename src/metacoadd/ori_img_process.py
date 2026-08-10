@@ -11,12 +11,12 @@ def get_original_cat_dtype(nband):
 
     Parameters
     ----------
-    nband: int
+    nband : int
         The number of bands.
 
     Returns
     -------
-    dtype: list
+    dtype : list
         The dtype for the original image catalog.
 
     """
@@ -43,14 +43,14 @@ def get_output_original_cat(n_obj, nband):
 
     Parameters
     ----------
-    n_obj: int
+    n_obj : int
         The number of objects.
-    nband: int
+    nband : int
         The number of bands.
 
     Returns
     -------
-    out: np.ndarray
+    out : np.ndarray
         The output catalog for the original image measurements.
 
     """
@@ -76,26 +76,26 @@ def get_original_image_cat(
 
     Parameters
     ----------
-    rng: np.random.Generator
+    rng : np.random.Generator
         The random number generator.
-    mbobs: MultiBandObsList
+    mbobs : MultiBandObsList
         The multi-band observations.
-    sep_cat: np.ndarray
+    sep_cat : np.ndarray
         The separation catalog.
-    seg_map: np.ndarray, optional
+    seg_map : np.ndarray, optional
         The segmentation map.
-    cutout_size: int, optional
+    cutout_size : int, optional
         The size of the cutout.
-    do_uberseg: bool, optional
+    do_uberseg : bool, optional
         Whether to do uber segmentation.
-    wmom_fwhm: float, optional
+    wmom_fwhm : float, optional
         The FWHM for the weighted moment fitter.
-    psf_fitter: str, optional
+    psf_fitter : str, optional
         The PSF fitter to use.
 
     Returns
     -------
-    output_cat: np.ndarray
+    output_cat : np.ndarray
         The output catalog for the original image measurements.
 
     """

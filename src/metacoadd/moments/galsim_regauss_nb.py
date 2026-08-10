@@ -48,26 +48,26 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
 
     Parameters
     ----------
-    T_ratio: float
+    T_ratio : float
         The ratio of the PSF size to the galaxy size.
-    e1_gal: float
+    e1_gal : float
         The first component of the galaxy's ellipticity.
-    e2_gal: float
+    e2_gal : float
         The second component of the galaxy's ellipticity.
-    rho4_gal: float
+    rho4_gal : float
         The fourth-order moment of the galaxy.
-    e1_psf: float
+    e1_psf : float
         The first component of the PSF's ellipticity.
-    e2_psf: float
+    e2_psf : float
         The second component of the PSF's ellipticity.
-    rho4_psf: float
+    rho4_psf : float
         The fourth-order moment of the PSF.
 
     Returns
     -------
-    e1_new: float
+    e1_new : float
         The first component of the corrected galaxy's ellipticity.
-    e2_new: float
+    e2_new : float
         The second component of the corrected galaxy's ellipticity.
 
     """
@@ -105,28 +105,28 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
 
     Parameters
     ----------
-    yy_gal: float
+    yy_gal : float
         The yy moment of the galaxy.
-    xy_gal: float
+    xy_gal : float
         The xy moment of the galaxy.
-    xx_gal: float
+    xx_gal : float
         The xx moment of the galaxy.
-    rho4gal: float
+    rho4gal : float
         The fourth-order moment of the galaxy.
-    e1_psf: float
+    e1_psf : float
         The first component of the PSF's ellipticity.
-    e2_psf: float
+    e2_psf : float
         The second component of the PSF's ellipticity.
-    T_psf: float
+    T_psf : float
         The size of the PSF.
 
     Returns
     -------
-    xx_final: float
+    xx_final : float
         The corrected xx moment of the galaxy.
-    xy_final: float
+    xy_final : float
         The corrected xy moment of the galaxy.
-    yy_final: float
+    yy_final : float
         The corrected yy moment of the galaxy.
 
     """
@@ -153,12 +153,12 @@ def goodFFTSize(N):
 
     Parameters
     ----------
-    N: int
+    N : int
         The input size.
 
     Returns
     -------
-    Nk: int
+    Nk : int
         The next good size for FFTs.
 
     """
@@ -182,15 +182,15 @@ def fast_convolve_image1(
 
     Parameters
     ----------
-    image1: 2D array
+    image1 : np.ndarray
         The first input image.
-    image2: 2D array
+    image2 : np.ndarray
         The second input image.
-    image_out: 2D array
+    image_out : np.ndarray
         The output image, which will be modified in place.
-    orig_img1: tuple of int, optional
+    orig_img1 : tuple of int, optional
         The (row, col) coordinates of the origin of image1 in the output image.
-    orig_img2: tuple of int, optional
+    orig_img2 : tuple of int, optional
         The (row, col) coordinates of the origin of image2 in the output image.
 
     """
@@ -273,28 +273,28 @@ def get_resi_img(
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The observation object containing the galaxy image and PSF.
-    xx_f: float
+    xx_f : float
         The xx moment of the galaxy best fitted gaussian.
-    xy_f: float
+    xy_f : float
         The xy moment of the galaxy best fitted gaussian.
-    yy_f: float
+    yy_f : float
         The yy moment of the galaxy best fitted gaussian.
-    flux_gal: float
+    flux_gal : float
         The flux of the galaxy.
-    xx_psf: float
+    xx_psf : float
         The xx moment of the PSF.
-    xy_psf: float
+    xy_psf : float
         The xy moment of the PSF.
-    yy_psf: float
+    yy_psf : float
         The yy moment of the PSF.
-    flux_psf: float
+    flux_psf : float
         The flux of the PSF.
 
     Returns
     -------
-    out_image_img: 2D array
+    out_image_img : np.ndarray
         The residual image after PSF correction.
 
     """
@@ -440,26 +440,26 @@ def get_true_resi_img(
 
     Parameters
     ----------
-    obs: ngmix.Observation
+    obs : ngmix.Observation
         The observation object containing the galaxy image and PSF.
-    x0_gal: float
+    x0_gal : float
         The x-coordinate of the galaxy's center.
-    y0_gal: float
+    y0_gal : float
         The y-coordinate of the galaxy's center.
-    xx_f: float
+    xx_f : float
         The xx moment of the galaxy best fitted gaussian.
-    yy_f: float
+    yy_f : float
         The yy moment of the galaxy best fitted gaussian.
-    xy_f: float
+    xy_f : float
         The xy moment of the galaxy best fitted gaussian.
-    flux_gal: float
+    flux_gal : float
         The flux of the galaxy.
-    psf_resi: 2D array, optional
+    psf_resi : np.ndarray, optional
         The pre-computed PSF residual image.
 
     Returns
     -------
-    out_image_img2: 2D array
+    out_image_img2 : np.ndarray
         The residual image after PSF correction.
 
     """
@@ -514,17 +514,17 @@ def regauss(
 
     Parameters
     ----------
-    mbobs: ngmix.MultiBandObsList
+    mbobs : ngmix.MultiBandObsList
         The multi-band observation list containing the galaxy images and PSFs.
-    guess: array-like
+    guess : array-like
         Initial guess for the galaxy parameters.
-    resarray: array-like
+    resarray : array-like
         Array to store the results of the fitting.
-    tmp_func: callable
+    tmp_func : callable
         Temporary function for intermediate calculations.
-    confarray: array-like
+    confarray : array-like
         Array to store configuration information.
-    do_covariance: bool, optional
+    do_covariance : bool, optional
         Whether to compute the covariance matrix. Default is True.
 
     """

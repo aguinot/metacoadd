@@ -13,24 +13,24 @@ class ExposureBound:
 
     Structure to store all the information for an exposure bound.
 
-    TODO: Add consistency check if several images are provided:
+    TODO : Add consistency check if several images are provided:
         Same size. Other?
 
     Parameters
     ----------
-    image_bounds: numpy.ndarray, list or galsim.BoundsI
+    image_bounds : np.ndarray, list or galsim.BoundsI
         The bounds of the exposure in image coordinates. If a `numpy.ndarray`
         or `list` is provided, it has to be of shape (4,) and contain the
         following values: [xmin, xmax, ymin, ymax]. If a `galsim.BoundsI` is
         provided, it will be used directly.
-    header: astropy.io.fits.header.Header, optional
+    header : astropy.io.fits.header.Header, optional
         The FITS header of the exposure. If provided, it will be used to set
         the WCS of the exposure. Either `header` or `wcs` has to be provided,
         not both.
-    wcs: galsim.BaseWCS or astropy.wcs.wcs.WCS, optional
+    wcs : galsim.BaseWCS or astropy.wcs.wcs.WCS, optional
         The WCS of the exposure. If provided, it will be used to set the WCS of
         the exposure. Either `header` or `wcs` has to be provided, not both.
-    meta: dict, optional
+    meta : dict, optional
         Metadata to add to the exposure. At the moment, only the image bounds
         are saved in the metadata. If not provided, an empty dictionary will be
         created.
@@ -81,14 +81,14 @@ class ExposureBound:
 
         Parameters
         ----------
-        bounds: galsim.BoundsI
+        bounds : galsim.BoundsI
             The new bounds to set for the exposure. It has to be a
             `galsim.BoundsI` instance. The new bounds have to be within the
             original bounds of the exposure.
 
         Returns
         -------
-        new_exposure: ExposureBound
+        new_exposure : ExposureBound
             A new ExposureBound instance with the new bounds and updated WCS.
 
         """
@@ -145,7 +145,7 @@ class ExposureBound:
 
         Parameters
         ----------
-        galsim_bound: galsim.BoundsI
+        galsim_bound : galsim.BoundsI
             The bounds of the image in galsim format. It is used to set the
             astropy WCS.
 
@@ -162,13 +162,13 @@ class ExposureBound:
 
         Parameters.
         ----------
-        image_bounds: numpy.ndarray or list
+        image_bounds : np.ndarray or list
             The bounds of the image in image coordinates. It has to be of shape
             (4,) and contain the following values: [xmin, xmax, ymin, ymax].
 
         Returns
         -------
-        galsim_bound: galsim.BoundsI
+        galsim_bound : galsim.BoundsI
             The bounds of the image in galsim format.
 
         """
@@ -191,7 +191,7 @@ class ExposureBound:
 
         Parameters
         ----------
-        image_bounds: numpy.ndarray or list
+        image_bounds : np.ndarray or list
             The bounds of the image in image coordinates. It has to be of shape
             (4,) and contain the following values: [xmin, xmax, ymin, ymax].
 
@@ -225,7 +225,7 @@ class ExposureBound:
 
         Parameters
         ----------
-        meta: dict
+        meta : dict
             Metadata to add to the exposure. If not provided, an empty
             dictionary will be created.
 
@@ -256,7 +256,7 @@ class ExpBList(list):
 
         Parameters
         ----------
-        exp: ExposureBound
+        exp : ExposureBound
             The ExposureBound to add to the list.
 
         """
@@ -269,9 +269,9 @@ class ExpBList(list):
 
         Parameters
         ----------
-        index: int
+        index : int
             The index at which to set the ExposureBound.
-        exp: ExposureBound
+        exp : ExposureBound
             The ExposureBound to set at the given index.
 
         """
@@ -287,31 +287,31 @@ class PrepCoaddBound:
     This class do not build the coadd but will pre-compute the exposure
     boundaries within the coadd footprint.
 
-    NOTE: This class is aimed at being used in simulation to only prepare the
+    NOTE : This class is aimed at being used in simulation to only prepare the
     area of an exposure that will enter a coadd and avoid to simulate the
     entire exposure.
 
     Parameters
     ----------
-    expblist: metacoadd.ExpBList
+    expblist : metacoadd.ExpBList
         The ExpBList object that store all the exposure bound to build the
         coadd. It can also include bound that do not contribute to the coadd
         area and they will be automatically ignored.
-    world_coadd_center: galsim.celestial.CelestialCoord
+    world_coadd_center : galsim.celestial.CelestialCoord
         Position of the coadd center in world coordinates.
-    scale: float
+    scale : float
         Pixel scale of the coadd. In arcsec.
-    image_coadd_size: tuple, list or int
+    image_coadd_size : tuple, list or int
         Size of the coadd in image coordinates. If a `int` is provided, will
         assume the coadd to be square.  Otherwise, has to be a `list` or
         `tuple` of `int`. Either `image_coadd_size` or `world_coadd_size` as to
         be provided.
-    world_coadd_size: tuple, list or galsim.angle.Angle
+    world_coadd_size : tuple, list or galsim.angle.Angle
         Size of the coadd in world coordinates, in arcmin. If a
         `galsim.angle.Angle` is provided, will assume the coadd to be square.
         Otherwise, has to be a `list` or `tuple` of `galsim.angle.Angle`.
         Either `image_coadd_size` or `world_coadd_size` as to be provided.
-    resize_exposure: bool, optional
+    resize_exposure : bool, optional
         Whether to resize the exposures before doing the interpolation. It is
         recommended to leave this to `True` since it will save computing tim
         and memory. We use a "relax" parameters to make the resizing slightly
@@ -319,7 +319,7 @@ class PrepCoaddBound:
         interpolation. This avoid to cut a part of the exposure due to
         projection effect later. See `relax_resize`. This is not
         related to the padding for the interpolation. Defaults to True.
-    relax_resize: float, optional
+    relax_resize : float, optional
         Default relax parameters for the resizing (see above). Correspond to a
         percentage of the coadd size for both axes. Has to be in ]0, 1]
         (no good reason to go for more than 1 given that distortion effect are
@@ -428,10 +428,10 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        world_coadd_size: list or tuple of galsim.angle.Angle
+        world_coadd_size : list or tuple of galsim.angle.Angle
             Size of the coadd in world coordinates, in arcmin. Has to be a list
             or tuple of galsim.angle.Angle.
-        scale: float
+        scale : float
             Pixel scale of the coadd. In arcsec.
 
         """
@@ -464,7 +464,7 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        scale: float
+        scale : float
             Pixel scale of the coadd. In arcsec.
 
         """
@@ -493,7 +493,7 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        galsim_image: galsim.Image
+        galsim_image : galsim.Image
             The galsim image of the coadd. It is used to set the astropy WCS.
 
         """
@@ -508,7 +508,7 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        relax_resize: float
+        relax_resize : float
             Resize relax parameter.
 
         """
@@ -531,9 +531,9 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        expb: metacoadd.ExposureBound
+        expb : metacoadd.ExposureBound
             ExposureBound to resize.
-        relax_resize: float
+        relax_resize : float
             Resize relax parameter.
 
         Returns
@@ -592,14 +592,14 @@ class PrepCoaddBound:
 
         Parameters
         ----------
-        do_coadd: bool, optional
+        do_coadd : bool, optional
             Whether to create a galsim.Image for the coadd. Defaults to False.
 
         Returns
         -------
-        images: list of galsim.Image
+        images : list of galsim.Image
             List of galsim.Image for each bounds in ExpBList.
-        coadd_img: galsim.Image, optional
+        coadd_img : galsim.Image, optional
             The galsim.Image for the coadd. Only returned if do_coadd is True.
 
         """

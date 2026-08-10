@@ -110,7 +110,7 @@ def get_output_imcom_map_cat(n_obj, imcom_map_config, nband):
 
     Returns
     -------
-    out : numpy.ndarray
+    out : np.ndarray
         The output catalog for the IMCOM maps.
 
     """
@@ -134,9 +134,9 @@ def extract_imcom_maps(
     ----------
     mbobs : ngmix.MultiBandObsList
         The MultiBandObsList containing the observations for each band.
-    sep_cat : numpy.ndarray
+    sep_cat : np.ndarray
         The catalog of objects from SExtractor.
-    seg_map : numpy.ndarray
+    seg_map : np.ndarray
         The segmentation map from SExtractor.
     config : dict
         The configuration dictionary for the IMCOM maps. Must contain a
@@ -145,7 +145,7 @@ def extract_imcom_maps(
 
     Returns
     -------
-    output_cat : numpy.ndarray
+    output_cat : np.ndarray
         The output catalog containing the extracted IMCOM maps for each object.
 
     """

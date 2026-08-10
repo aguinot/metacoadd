@@ -660,7 +660,7 @@ def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
 
     Returns
     -------
-    x_new, y_new : ndarray
+    x_new, y_new : np.ndarray
         Shifted pixel positions (col, row) in the sheared image.
 
     """
