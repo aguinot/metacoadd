@@ -6,7 +6,7 @@ import numpy as np
 import ngmix
 
 from .metacal import MetacalHandler
-from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
+from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
 from .coadd import get_coadd_class
@@ -703,88 +703,6 @@ class MetaDetect:
                 except Exception:
                     continue
         return final_cat
-
-
-class MetaDetectForcedPositions(MetaDetect):
-    """MetaDetect variant that uses pre-supplied truth positions instead of
-    running source detection.
-
-    SEP photometry (kron flux, SNR, flux radius) is still measured at the
-    forced positions on the noshear image.  The same catalog is applied to
-    every metacal type (noshear, 1p, 1m, ...), eliminating selection effects.
-
-    Parameters
-    ----------
-    rng : np.random.RandomState
-    x_pix : array-like
-        0-indexed column positions (sep convention).
-    y_pix : array-like
-        0-indexed row positions (sep convention).
-    **kwargs
-        Forwarded verbatim to ``MetaDetect.__init__``.
-
-    """
-
-    def __init__(self, rng, x_pix, y_pix, **kwargs):
-        super().__init__(rng, **kwargs)
-        self._x_pix = np.asarray(x_pix, dtype=np.float64)
-        self._y_pix = np.asarray(y_pix, dtype=np.float64)
-
-    def get_cat(self, mb_obs):
-        """Run SEP photometry at the shear-corrected forced positions.
-
-        For each metacal type (1p, 1m, 2p, 2m) the truth positions are shifted
-        by the corresponding reduced shear before photometry, so that Kron
-        radii, fluxes, and SNR are measured at the actual galaxy location in
-        the sheared image rather than at the noshear truth position.
-
-        Parameters
-        ----------
-        mb_obs : ngmix.MultiBandObsList
-            The multi-band multi-epoch observations.
-
-        Returns
-        -------
-        cat : astropy.table.Table
-            The catalog of detected objects.
-        seg_map : ngmix.Image
-            The segmentation map.
-
-        """
-        if self._coadd_multiband:
-            img, weight = self.get_coadd_multiband(mb_obs)
-        else:
-            img = mb_obs[0][0].image
-            weight = mb_obs[0][0].weight
-
-        step = self.mcal_config["step"]
-        mcal_key = getattr(self, "_current_mcal_key", "noshear")
-        _type_shears = {
-            "noshear": (0.0, 0.0),
-            "1p": (step, 0.0),
-            "1m": (-step, 0.0),
-            "2p": (0.0, step),
-            "2m": (0.0, -step),
-        }
-        g1, g2 = _type_shears.get(mcal_key, (0.0, 0.0))
-        jacobian = mb_obs[0][0].jacobian if (g1 != 0.0 or g2 != 0.0) else None
-
-        cat, seg_map = get_cat_force(
-            img,
-            weight,
-            x_pix=self._x_pix,
-            y_pix=self._y_pix,
-            thresh=self._detect_thresh,
-            minarea=self._detect_minarea,
-            deblend_nthresh=self._detect_deblend_nthresh,
-            deblend_cont=self._detect_deblend_cont,
-            kernel=self._detect_kernel,
-            wcs=None,
-            g1=g1,
-            g2=g2,
-            jacobian=jacobian,
-        )
-        return cat, seg_map
 
 
 def do_metadetect(
