@@ -109,9 +109,7 @@ class Exposure:
             elif isinstance(wcs, WCS):
                 self._set_wcs(astropy_wcs=wcs)
             else:
-                raise TypeError(
-                    f"wcs must be a galsim.BaseWCS or {type(WCS)}."
-                )
+                raise TypeError(f"wcs must be a galsim.BaseWCS or {type(WCS)}.")
         else:
             raise ValueError("Either header or wcs has to be provided")
 
@@ -140,9 +138,9 @@ class Exposure:
             raise TypeError("bounds must be a galsim.BoundsI.")
         new_exp_dict = {}
         for image_kind in self._image_kinds:
-            new_exp_dict[image_kind] = copy.deepcopy(
-                getattr(self, image_kind)
-            )[bounds]
+            new_exp_dict[image_kind] = copy.deepcopy(getattr(self, image_kind))[
+                bounds
+            ]
 
         # We need to update the WCS to match new origin
         # WARNING: only if the origin changes
@@ -297,6 +295,9 @@ class ExpList(list):
 
     @property
     def nepoch(self):
+        """
+        Return the number of exposures in the list.
+        """
         return len(self)
 
     def append(self, exp):
@@ -304,8 +305,10 @@ class ExpList(list):
 
         Add a new Exposure to the list.
 
-        Args:
-            exp (metacoadd.Exposure): Exposure to add.
+        Parameters
+        ----------
+        exp: metacoadd.Exposure
+            Exposure to add.
         """
 
         if not isinstance(exp, Exposure):
@@ -315,9 +318,12 @@ class ExpList(list):
     def __setitem__(self, index, exp):
         """
 
-        Args:
-            index ([type]): [description]
-            exp ([type]): [description]
+        Parameters
+        ----------
+        index: int
+            Index of the list to set.
+        exp: metacoadd.Exposure
+            Exposure to set.
         """
         if not isinstance(exp, Exposure):
             raise TypeError("exp must be a metacoadd.Exposure.")
@@ -335,6 +341,9 @@ class MultiBandExpList(list):
 
     @property
     def nband(self):
+        """
+        Return the number of bands in the list.
+        """
         return len(self)
 
     def append(self, explist):
@@ -342,8 +351,10 @@ class MultiBandExpList(list):
 
         Add a new ExpList to the list.
 
-        Args:
-            exp (metacoadd.ExpList): ExpList to add.
+        Parameters
+        ----------
+        explist: metacoadd.ExpList
+            ExpList to add.
         """
 
         if not isinstance(explist, ExpList):
@@ -353,9 +364,12 @@ class MultiBandExpList(list):
     def __setitem__(self, index, explist):
         """
 
-        Args:
-            index ([type]): [description]
-            exp ([type]): [description]
+        Parameters
+        ----------
+        index: int
+            Index of the list to set.
+        explist: metacoadd.ExpList
+            ExpList to set.
         """
         if not isinstance(explist, ExpList):
             raise TypeError("explist must be a metacoadd.ExpList.")
@@ -369,43 +383,51 @@ class CoaddImage:
     This class do not build the coadd but will prepare the data (create
     interpolated images).
 
-    Args:
-        explist (metacoadd.ExpList): ExpList object that store all the exposure
-            to build the coadd. It can also include images that do not
-            contribute to the coadd area and they will be automatically
-            ignored.
-        world_coadd_center (galsim.celestial.CelestialCoord): Position of the
-            coadd center in world coordinates.
-        scale (float): Pixel scale of the coadd. In arcsec.
-        image_coadd_size (tuple, list or int): Size of the coadd in
-            image coordinates. If a `int` is provided, will assume the coadd to
-            be square.  Otherwise, has to be a `list` or `tuple` of `int`.
-            Either `image_coadd_size` or `world_coadd_size` as to be provided.
-        world_coadd_size (tuple, list or galsim.angle.Angle): Size of the coadd
-            in world coordinates, in arcmin. If a `galsim.angle.Angle` is
-            provided, will assume the coadd to be square. Otherwise, has to be
-            a `list` or `tuple` of `galsim.angle.Angle`. Either
-            `image_coadd_size` or `world_coadd_size` as to be provided.
-        interp_config (dict, optional): Set of parameters for the
-            interpolation. If `None` use the default configuration. Defaults to
-            None.
-        resamp_config (dict, optional): Set of parameters for the resampling.
-            If `None` use the default configuration. Defaults to None.
-        resize_exposure (bool, optional): Whether to resize the exposures
-            before doing the interpolation. It is recommended to leave this to
-            `True` since it will save computing time and memory. We use a
-            "relax" parameters to make the resizing slightly larger the the
-            coadd size given that this operation happen before the
-            interpolation. This avoid to cut a part of the exposure due to
-            projection effect later. See `relax_resize`. This is not
-            related to the padding for the interpolation. Defaults to True.
-        relax_resize (float, optional): Default relax parameters for
-            the resizing (see above). Correspond to a percentage of the coadd
-            size for both axes. Has to be in ]0, 1] (no good reason to go for
-            more than 1 given that distortion effect are small). This can be
-            internally change in case we reach one of the border of the
-            exposure. Default to 0.10.
-        gsparams ([type], optional): [description]. Defaults to None.
+    Parameters
+    ----------
+    explist: metacoadd.ExpList
+        ExpList object that store all the exposure
+        to build the coadd. It can also include images that do not
+        contribute to the coadd area and they will be automatically
+        ignored.
+    world_coadd_center: galsim.celestial.CelestialCoord
+        Position of the coadd center in world coordinates.
+    scale: float
+        Pixel scale of the coadd. In arcsec.
+    image_coadd_size: tuple, list or int
+        Size of the coadd in image coordinates. If a `int` is provided, will
+        assume the coadd to be square.  Otherwise, has to be a `list` or
+        `tuple` of `int`. Either `image_coadd_size` or `world_coadd_size` as to
+        be provided.
+    world_coadd_size: tuple, list or galsim.angle.Angle
+        Size of the coadd in world coordinates, in arcmin.
+        If a `galsim.angle.Angle` is provided, will assume the coadd to be
+        square. Otherwise, has to be a `list` or `tuple` of
+        `galsim.angle.Angle`. Either `image_coadd_size` or `world_coadd_size
+        as to be provided.
+    interp_config: dict, optional
+        Set of parameters for the interpolation. If `None` use the default
+        configuration. Defaults to None.
+    resamp_config: dict, optional
+        Set of parameters for the resampling. If `None` use the default
+        configuration. Defaults to None.
+    resize_exposure: bool, optional
+        Whether to resize the exposures before doing the interpolation. It is
+        recommended to leave this to `True` since it will save computing time
+        and memory. We use a "relax" parameters to make the resizing slightly
+        larger the the coadd size given that this operation happen before the
+        interpolation. This avoid to cut a part of the exposure due to
+        projection effect later. See `relax_resize`. This is not
+        related to the padding for the interpolation. Defaults to True.
+    relax_resize: float, optional
+        Default relax parameters for the resizing (see above). Correspond to a
+        percentage of the coadd size for both axes. Has to be in ]0, 1]
+        (no good reason to go for more than 1 given that distortion effect are
+        small). This can be internally change in case we reach one of the
+        border of the exposure. Default to 0.10.
+    gsparams: galsim.GSParams, optional
+        Set of parameters for the galsim objects. If `None` use the default
+        configuration. Defaults to None.
     """
 
     def __init__(
@@ -444,9 +466,7 @@ class CoaddImage:
                     "Either image_coadd_center or world_coadd_center has to "
                     "be provided, not both."
                 )
-            if isinstance(image_coadd_size, list) or isinstance(
-                image_coadd_size, tuple
-            ):
+            if isinstance(image_coadd_size, list | tuple):
                 if all(isinstance(n, int) for n in image_coadd_size):
                     self.image_coadd_size = list(image_coadd_size)
                 else:
@@ -460,9 +480,7 @@ class CoaddImage:
                     "image_coadd_size has to be a list, tuple or int."
                 )
         elif world_coadd_size is not None:
-            if isinstance(world_coadd_size, list) or isinstance(
-                world_coadd_size, tuple
-            ):
+            if isinstance(world_coadd_size, list | tuple):
                 if all(
                     isinstance(n, galsim.angle.Angle) for n in world_coadd_size
                 ):
@@ -543,9 +561,12 @@ class CoaddImage:
 
         Set the size of the coadd in pixels from angle.
 
-        Args:
-            world_coadd_size (list): List of `galsim.angle.Angle`.
-            scale (float): Coadd pixel scale
+        Parameters
+        ----------
+        world_coadd_size : list of galsim.angle.Angle
+            Size of the coadd in world coordinates, in arcmin.
+        scale : float
+            Pixel scale of the coadd. In arcsec.
         """
 
         from math import ceil
@@ -580,8 +601,10 @@ class CoaddImage:
 
         Set the coadd WCS as TAN projection with the given pixel scale.
 
-        Args:
-            scale (float): Coadd pixel scale.
+        Parameters
+        ----------
+        scale : float
+            Coadd pixel scale.
         """
 
         # Here we shift the center to match conventions
@@ -606,9 +629,6 @@ class CoaddImage:
 
         Convert galsim WCS to astropy. This can only be done once we have a
         galsim image.
-
-        Args:
-            galsim_image (galsim.Image): a galsim image.
         """
 
         h_tmp = fits.ImageHDU(np.zeros(self.image_coadd_size)).header
@@ -620,8 +640,10 @@ class CoaddImage:
     def resize_explist(self, relax_resize):
         """Resize exposure list
 
-        Args:
-            relax_resize (float): Resize relax parameter.
+        Parameters
+        ----------
+        relax_resize : float
+            Resize relax parameter.
         """
 
         resized_mb_explist = MultiBandExpList()
@@ -630,8 +652,9 @@ class CoaddImage:
             for exp in explist:
                 resized_exp = self._resize_exp(exp, relax_resize)
                 if resized_exp is not None:
-                    # Might be weird to set this here, but this function is called
-                    # automatically and we will need this parameter later.
+                    # Might be weird to set this here, but this function is
+                    # called automatically and we will need this parameter
+                    # later.
                     # NOTE: Maybe find a better way to do this..
                     resized_exp._interp = False
                     resized_exp._resamp = False
@@ -648,12 +671,18 @@ class CoaddImage:
     def _resize_exp(self, exp, relax_resize):
         """Resize exposure
 
-        Args:
-            exp (metacoadd.Exposure): Exposure to resize.
-            relax_resize (float): Resize relax parameter.
-        Returns:
-            metacoadd.Exposure or `None`: Return the resized exposure or None
-                if the exposure is not in the coadd footprint.
+        Parameters
+        ----------
+        exp: metacoadd.Exposure
+            Exposure to resize.
+        relax_resize : float
+            Resize relax parameter.
+
+        Returns
+        -------
+        metacoadd.Exposure or `None`
+            Return the resized exposure or None if the exposure is not in the
+            coadd footprint.
         """
 
         exp_bounds = exp.image.bounds
@@ -711,10 +740,36 @@ class CoaddImage:
         rms_keyword="BKG_RMS",
         **kwargs,
     ):
+        """
+        Get all the resampled images for all the exposures in the list.
+
+        Parameters
+        ----------
+        resamp_algo : str, optional
+            Resampling algorithm to use in
+            ["interp", "adapt", "exact", "swarp", "lanczos"].
+            Defaults to 'interp'.
+        flux_scaling : bool, optional
+            Whether to apply flux scaling based on the exposure metadata.
+            Defaults to True.
+        fscale_keyword : str, optional
+            Keyword in the exposure metadata to use for flux scaling.
+            Defaults to 'FSCALE'.
+        conserve_flux : bool, optional
+            Whether to conserve flux during resampling. Defaults to True.
+        rescale_weight : bool, optional
+            Whether to rescale the weight image based on the exposure RMS.
+            Defaults to True.
+        rms_keyword : str, optional
+            Keyword in the exposure metadata to use for RMS estimation.
+            Defaults to 'BKG_RMS'.
+        kwargs : dict
+            Additional keyword arguments to pass to the resampling function.
+        """
         resamp_method = "classic"
-        pix_area = 1.0
-        coadd_pix_area = 1.0
-        pix_ratio = 1.0
+        # pix_area = 1.0
+        # coadd_pix_area = 1.0
+        # pix_ratio = 1.0
         flux_ratio = 1.0
         wght_scale = 1.0
 
@@ -752,10 +807,10 @@ class CoaddImage:
                         exp_tmp = copy.deepcopy(getattr(exp, image_kind).array)
                         # if image_kind == "weight":
                         #     exp_tmp = 1 - exp_tmp
-                        if conserve_flux:
-                            pix_area = exp.wcs.pixelArea(
-                                world_pos=self.world_coadd_center
-                            )
+                        # if conserve_flux:
+                        #     pix_area = exp.wcs.pixelArea(
+                        #         world_pos=self.world_coadd_center
+                        #     )
                         input_resamp.append(exp_tmp)
                         if len(input_resamp) == 1:
                             input_wcs = exp.wcs.astropy
@@ -768,24 +823,24 @@ class CoaddImage:
                     resamp_algo=resamp_algo,
                     **kwargs,
                 )
-                if conserve_flux:
-                    coadd_pix_area = self.coadd_wcs.pixelArea(
-                        world_pos=self.world_coadd_center
-                    )
-                    pix_ratio = coadd_pix_area / pix_area
+                # if conserve_flux:
+                #     coadd_pix_area = self.coadd_wcs.pixelArea(
+                #         world_pos=self.world_coadd_center
+                #     )
+                #     pix_ratio = coadd_pix_area / pix_area
                 if flux_scaling:
                     try:
                         flux_ratio = exp._meta["header"][fscale_keyword]
-                    except Exception as e:
-                        raise Exception(e)
+                    except Exception as err:
+                        raise Exception(err) from err
 
                 for i, image_kind in enumerate(img_kind_resamp):
                     if image_kind == "weight":
-                        # This part handle the case where the weight is not only 1.
-                        # It needs to be improved a lot, but the ideal way to do
-                        # that is, I think, not possible with reproject at the
-                        # moment. Do to the this, the border might be a bit
-                        # "funcky".
+                        # This part handle the case where the weight is not
+                        # only 1. It needs to be improved a lot, but the ideal
+                        # way to do that is, I think, not possible with
+                        # reproject at the moment. Do to the this, the border
+                        # might be a bit "funcky".
                         # new_weight = copy.deepcopy(resampled[i])
                         # new_weight[np.abs(new_weight) > 1e-3] = 1
                         # new_weight[new_weight != 1] = 0
@@ -829,6 +884,33 @@ class CoaddImage:
         resamp_algo="interp",
         **kwargs,
     ):
+        """
+        Run resampling
+
+        Parameters
+        ----------
+        input : tuple
+            Tuple containing the image array and the corresponding WCS.
+        resamp_method : str
+            Resampling method to use. Must be in ['classic', 'nearest'].
+        image_kinds : list of str
+            List of image kinds to resample. Must be in
+            ['image', 'weight', 'flag', 'noise'].
+        resamp_algo : str, optional
+            Resampling algorithm to use. Must be in
+            ['interp', 'adapt', 'exact', 'swarp', 'lanczos'].
+            Defaults to 'interp'.
+        kwargs : dict
+            Additional keyword arguments to pass to the resampling function.
+
+        Returns
+        -------
+        resamp_img : numpy.ndarray
+            Resampled image array.
+        footprint : numpy.ndarray
+            Footprint of the resampled image, indicating which pixels are
+            valid.
+        """
         resamp_config = {}
         # if resamp_algo == "interp":
         resamp_config = self.resamp_config[resamp_method]
@@ -892,8 +974,10 @@ class CoaddImage:
 
         Parameters
         ----------
-        exp (metacoadd.Exposure): Exposure to resize.
-        rms_keyword (str): Keyword to use for the RMS.
+        exp: metacoadd.Exposure
+            Exposure to resize.
+        rms_keyword: str
+            Keyword to use for the RMS.
 
         Returns
         -------
@@ -911,22 +995,23 @@ class CoaddImage:
 
     def get_all_interp_images(
         self,
-        **kargs,
+        **kwargs,
     ):
         """
         Get all interpolated images.
 
-        Args:
-            kwargs: Any additional keywords arguments for
-                galsim.InterpolatedImage.
+        Parameters
+        ----------
+        kwargs: dict
+            Any additional keywords arguments for galsim.InterpolatedImage.
         """
 
         for explist in self.mb_explist:
             for exp in explist:
-                # galsim.InterpolatedImage works with local WCS so we force it to
-                # take the one at the center of the coadd for better accuracy.
-                # This probably do not make a difference but it is more
-                # "elegant" to do it :)
+                # galsim.InterpolatedImage works with local WCS so we force it
+                # to take the one at the center of the coadd for better
+                # accuracy. This probably do not make a difference but it is
+                # more "elegant" to do it :)
                 if exp.wcs.isLocal():
                     wcs = exp.wcs
                 else:
@@ -943,7 +1028,7 @@ class CoaddImage:
                         getattr(exp, image_kind),
                         wcs,
                         interp_method,
-                        **kargs,
+                        **kwargs,
                     )
                     setattr(exp, image_kind + "_interp", interpolated)
                 exp._interp = True
@@ -955,17 +1040,24 @@ class CoaddImage:
         `galsim.interpolatedimage.InterpolatedImage`. This method use the wcs
         set in the initialization by default.
 
-        Args:
-            image (numpy.ndarray): Image to interpolate.
-            wcs (galsim.BaseWCS): WCS of the Image.
-            interp_method (str): Select which interpolation to use. Hard coded.
-                Must be in ['classic', 'weight', 'flag']. Will set the
-                interpolation to 'nearest' for the weight and flag images.
-            kwargs: Any additional keywords arguments for
+        Parameters
+        ----------
+        image: numpy.ndarray
+            Image to interpolate.
+        wcs: galsim.BaseWCS
+            WCS of the Image.
+        interp_method: str
+            Select which interpolation to use. Hard coded.
+            Must be in ['classic', 'weight', 'flag']. Will set the
+            interpolation to 'nearest' for the weight and flag images.
+        kwargs: dict
+            Any additional keywords arguments for
                 galsim.InterpolatedImage.
 
-        Returns:
-            galsim.interpolatedimage.InterpolatedImage: Interpolated image.
+        Returns
+        -------
+        interp_image: galsim.interpolatedimage.InterpolatedImage
+            Interpolated image.
         """
 
         interp_config = self.interp_config[interp_method]
@@ -988,13 +1080,13 @@ class CoaddImage:
         self.image = []
         self.noise = []
         self.weight = []
-        for i in range(self.mb_explist.nband):
+        for _ in range(self.mb_explist.nband):
             image = galsim.Image(
                 bounds=self.coadd_bounds,
                 wcs=self.coadd_wcs,
             )
-            # Initially the image is fill with zeros to avoid issues in case the
-            # exposures does not fill the entire footprint.
+            # Initially the image is fill with zeros to avoid issues in case
+            # the exposures does not fill the entire footprint.
             image.fill(0)
             self.image.append(image)
 
@@ -1002,8 +1094,8 @@ class CoaddImage:
                 bounds=self.coadd_bounds,
                 wcs=self.coadd_wcs,
             )
-            # Initially the noise is fill with zeros to avoid issues in case the
-            # exposures does not fill the entire footprint.
+            # Initially the noise is fill with zeros to avoid issues in case
+            # the exposures does not fill the entire footprint.
             noise.fill(0)
             self.noise.append(noise)
 
@@ -1018,13 +1110,15 @@ class CoaddImage:
         """
         Setup the coadd image and weight.
 
-        Args:
-            types (list): Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
+        Parameters
+        ----------
+        types: list
+            Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
         """
         self.image = []
         self.noise = []
         self.weight = []
-        for i in range(self.mb_explist.nband):
+        for _ in range(self.mb_explist.nband):
             b_image = {}
             b_noise = {}
             b_weight = {}
@@ -1033,16 +1127,16 @@ class CoaddImage:
                     bounds=self.coadd_bounds,
                     wcs=self.coadd_wcs,
                 )
-                # Initially the image is fill with zeros to avoid issues in case
-                # the exposures does not fill the entire footprint.
+                # Initially the image is fill with zeros to avoid issues in
+                # case the exposures does not fill the entire footprint.
                 b_image[type].fill(0)
 
                 b_noise[type] = galsim.Image(
                     bounds=self.coadd_bounds,
                     wcs=self.coadd_wcs,
                 )
-                # Initially the noise is fill with zeros to avoid issues in case
-                # the exposures does not fill the entire footprint.
+                # Initially the noise is fill with zeros to avoid issues in
+                # case the exposures does not fill the entire footprint.
                 b_noise[type].fill(0)
 
                 b_weight[type] = galsim.Image(
@@ -1058,8 +1152,10 @@ class CoaddImage:
         """
         Setup the multi-band coadd image and weight.
 
-        Args:
-            types (list): Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
+        Parameters
+        ----------
+        types: list
+            Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
         """
         self.mb_image = {}
         self.mb_noise = {}
@@ -1090,6 +1186,25 @@ class CoaddImage:
 
 
 def exp2obs(mb_explist, psf_mb_explist, use_resamp=False):
+    """
+    Convert a MultiBandExpList, ExpList or Exposure to a MultiBandObsList.
+
+    Parameters
+    ----------
+    mb_explist : MultiBandExpList, ExpList or Exposure
+        Multi-band exposure list, exposure list or single exposure to convert.
+    psf_mb_explist : MultiBandExpList, ExpList or Exposure
+        Multi-band exposure list, exposure list or single exposure containing
+        the PSF images corresponding to the exposures in `mb_explist`.
+    use_resamp : bool, optional
+        Whether to use the resampled images for the conversion.
+        Defaults to False.
+
+    Returns
+    -------
+    mb_obslist : ngmix.MultiBandObsList
+        Multi-band observation list containing the converted observations.
+    """
     if isinstance(mb_explist, MultiBandExpList):
         mb_obslist = _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp)
     elif isinstance(mb_explist, ExpList):
@@ -1105,6 +1220,25 @@ def exp2obs(mb_explist, psf_mb_explist, use_resamp=False):
 
 
 def _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp=False):
+    """
+    Convert a MultiBandExpList to a MultiBandObsList.
+
+    Parameters
+    ----------
+    mb_explist : MultiBandExpList
+        Multi-band exposure list to convert.
+    psf_mb_explist : MultiBandExpList
+        Multi-band exposure list containing the PSF images corresponding to the
+        exposures in `mb_explist`.
+    use_resamp : bool, optional
+        Whether to use the resampled images for the conversion.
+        Defaults to False.
+
+    Returns
+    -------
+    mbobs : ngmix.MultiBandObsList
+        Multi-band observation list containing the converted observations.
+    """
     mbobs = ngmix.MultiBandObsList()
     for i in range(mb_explist.nband):
         obslist = _explist2obs(
@@ -1118,6 +1252,25 @@ def _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp=False):
 
 
 def _explist2obs(explist, psf_explist, use_resamp=False):
+    """
+    Convert an ExpList to an ObsList.
+
+    Parameters
+    ----------
+    explist : ExpList
+        Exposure list to convert.
+    psf_explist : ExpList
+        Exposure list containing the PSF images corresponding to the exposures
+        in `explist`.
+    use_resamp : bool, optional
+        Whether to use the resampled images for the conversion.
+        Defaults to False.
+
+    Returns
+    -------
+    obslist : ngmix.ObsList
+        Observation list containing the converted observations.
+    """
     obslist = ngmix.ObsList()
     for i in range(explist.nepoch):
         obs = _exp2obs(

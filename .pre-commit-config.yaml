@@ -1,4 +1,7 @@
 
+
+# For now we exclude metacoadd stuffs as it is still WIP and need some refactoring.
+exclude: ^(notebooks/|examples/|src/metacoadd/metacoadd.py|src/metacoadd/metacoadd_ngmix_det.py|src/metacoadd/swarp_wrapper.py)
 repos:
     # Compare the local template version to the latest remote template version
     # This hook should always pass. It will print a message if the local version 
@@ -60,6 +63,7 @@ repos:
       - id: ruff-format
         name: Format code using ruff
         types_or: [ python, pyi, jupyter ]
+        args: [--line-length=80]
     # Run unit tests, verify that they pass. Note that coverage is run against
     # the ./src directory here because that is what will be committed. In the
     # github workflow script, the coverage is run against the installed package

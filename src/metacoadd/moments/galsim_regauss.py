@@ -8,7 +8,6 @@ This implementation is modified to allowed post-metacalibration PSF correction.
 
 import ngmix
 from ngmix.observation import Observation, ObsList, MultiBandObsList
-from ngmix.gexceptions import GMixRangeError
 
 from .galsim_admom import (
     DEFAULT_BOUND_CORRECT_WT,
@@ -30,7 +29,19 @@ from numpy import ndarray
 DEFAULT_SAFE_CHECK = 0.99
 
 
-def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
+def get_psf_fit(obs, fitter, guess_fwhm=1.2):
+    """
+    Fit the PSF with a gaussian model using the input fitter.
+
+    Parameters
+    ----------
+    obs: ngmix.Observation
+        The PSF observation to fit.
+    fitter: ngmix.fitter.Fitter
+        The fitter to use for the PSF fit.
+    guess_fwhm: float, optional
+        The initial guess for the PSF FWHM. Default is 1.2 arcsec.
+    """
     # PSF
     res_psf = fitter.go(obs.psf, guess_fwhm)
     xx_psf, xy_psf, yy_psf = res_psf["pars"][2:5] / res_psf["wsum"]
@@ -40,6 +51,24 @@ def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
 
 
 def check_exp(obs, psf_res, safe_factor=2):
+    """
+    Check the exponential weight function for the input observation.
+
+    Parameters
+    ----------
+    obs: ngmix.Observation
+        The observation to check.
+    psf_res: dict
+        The PSF fit results from get_psf_fit.
+    safe_factor: float, optional
+        The factor to multiply the PSF size by to get the weight function size.
+        Default is 2.
+
+    Returns
+    -------
+    w_sum: float
+        The sum of the weight function applied to the observation.
+    """
     xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5] / psf_res["wsum"]
     T_psf = xx_psf + yy_psf
 
@@ -136,7 +165,8 @@ class ReGaussFitter(GAdmomFitter):
                     mb_obs[0].append(obs)
                 else:
                     raise ValueError(
-                        "input obs must be a MultiBandObsList or ObsList or Observation"
+                        "input obs must be a MultiBandObsList or ObsList or "
+                        "Observation"
                     )
         ares = self._get_am_result(nband)
         scale = mb_obs[0][0].jacobian.scale
@@ -159,7 +189,7 @@ class ReGaussFitter(GAdmomFitter):
                 self._get_am_tmp,
                 self.conf,
             )
-        except Exception as e:
+        except Exception:
             ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])

@@ -7,6 +7,19 @@ from .fitting import get_gauss_psf_runner
 
 
 def get_original_cat_dtype(nband):
+    """
+    Get the dtype for the original image catalog.
+
+    Parameters
+    ----------
+    nband: int
+        The number of bands.
+
+    Returns
+    -------
+    dtype: list
+        The dtype for the original image catalog.
+    """
     dtype = []
     for i in range(nband):
         dtype += [
@@ -26,6 +39,21 @@ def get_original_cat_dtype(nband):
 
 
 def get_output_original_cat(n_obj, nband):
+    """
+    Get the output catalog for the original image measurements.
+
+    Parameters
+    ----------
+    n_obj: int
+        The number of objects.
+    nband: int
+        The number of bands.
+
+    Returns
+    -------
+    out: np.ndarray
+        The output catalog for the original image measurements.
+    """
     CAT_DTYPE = get_original_cat_dtype(nband)
     out = np.array(
         list(map(tuple, np.zeros((len(CAT_DTYPE), n_obj)).T)),
@@ -44,7 +72,33 @@ def get_original_image_cat(
     wmom_fwhm=0.5,
     psf_fitter="gauss",
 ):
+    """
+    Get the original image catalog.
 
+    Parameters
+    ----------
+    rng: np.random.Generator
+        The random number generator.
+    mbobs: MultiBandObsList
+        The multi-band observations.
+    sep_cat: np.ndarray
+        The separation catalog.
+    seg_map: np.ndarray, optional
+        The segmentation map.
+    cutout_size: int, optional
+        The size of the cutout.
+    do_uberseg: bool, optional
+        Whether to do uber segmentation.
+    wmom_fwhm: float, optional
+        The FWHM for the weighted moment fitter.
+    psf_fitter: str, optional
+        The PSF fitter to use.
+
+    Returns
+    -------
+    output_cat: np.ndarray
+        The output catalog for the original image measurements.
+    """
     output_cat = get_output_original_cat(len(sep_cat), len(mbobs))
     wmom_runner = ngmix.gaussmom.GaussMom(fwhm=wmom_fwhm)
 
@@ -91,9 +145,7 @@ def get_original_image_cat(
             output_cat[obj_ind][f"original_myy_{band_i}"] = myy
             output_cat[obj_ind][f"original_weight_{band_i}"] = wght
             output_cat[obj_ind][f"original_flux_{band_i}"] = res["flux"]
-            output_cat[obj_ind][f"original_flux_err_{band_i}"] = res[
-                "flux_err"
-            ]
+            output_cat[obj_ind][f"original_flux_err_{band_i}"] = res["flux_err"]
             output_cat[obj_ind][f"original_flags_{band_i}"] = res["flags"]
             output_cat[obj_ind][f"original_psf_mxx_{band_i}"] = all_psf_res[
                 band_i

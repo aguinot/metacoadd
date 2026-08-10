@@ -7,7 +7,22 @@ from metadetect.masking import (
 
 
 def get_radius_arcsec(mag, coeffs):
+    """
+    Get the radius in arcsec for a given magnitude using a polynomial fit.
 
+    Parameters
+    ----------
+    mag : float or array-like
+        The magnitude(s) for which to calculate the radius.
+    coeffs : list or array-like
+        The coefficients of the polynomial fit, ordered from highest degree to
+        lowest degree.
+
+    Returns
+    -------
+    radius : float or array-like
+        The radius in arcsec corresponding to the input magnitude(s).
+    """
     ply = np.poly1d(coeffs)
     log10_radius = ply(mag)
     return 10**log10_radius
