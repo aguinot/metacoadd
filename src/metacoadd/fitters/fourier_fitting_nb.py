@@ -1,5 +1,4 @@
-"""
-The code in this file is mainly AI generated using Claude Opus 4.6
+"""The code in this file is mainly AI generated using Claude Opus 4.6
 It has been tested and validated.
 """
 
@@ -11,7 +10,25 @@ from numpy import fft
 
 @nb.njit
 def pad_arr(arr, target_dim):
+    """Pad a 2D array with zeros to a target dimension.
+    This function is a numba-accelerated (and simplified) version of np.pad for
+    2D arrays.
 
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array to be padded.
+    target_dim : int
+        Target dimension for the padded array. Must be greater than or equal to
+        the size of `arr`.
+
+    Returns
+    -------
+    padded_arr : np.ndarray
+        2D array of shape (target_dim, target_dim) with `arr` centered and
+        padded with zeros.
+
+    """
     pad_rows = (target_dim - arr.shape[0]) // 2
     pad_cols = (target_dim - arr.shape[1]) // 2
     padded_arr = np.zeros((target_dim, target_dim))
@@ -23,6 +40,25 @@ def pad_arr(arr, target_dim):
 
 @nb.njit
 def meshgrid_2d(x, y):
+    """Create a 2D meshgrid from 1D arrays x and y.
+    This function is a numba-accelerated (and simplified) version of
+    np.meshgrid for 2D arrays.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1D array of x-coordinates.
+    y : np.ndarray
+        1D array of y-coordinates.
+
+    Returns
+    -------
+    xx : np.ndarray
+        2D array of x-coordinates.
+    yy : np.ndarray
+        2D array of y-coordinates.
+
+    """
     xx = np.empty(shape=(y.size, x.size), dtype=x.dtype)
     yy = np.empty(shape=(y.size, x.size), dtype=y.dtype)
     for i, y_ in enumerate(y):
@@ -34,6 +70,21 @@ def meshgrid_2d(x, y):
 
 @nb.njit
 def zero_pad_fft(im, target_dim):
+    """Zero-pad an image to a target dimension and compute its FFT.
+
+    Parameters
+    ----------
+    im : np.ndarray
+        Input 2D array to be zero-padded and FFT'd.
+    target_dim : int
+        Target dimension for the zero-padded array.
+
+    Returns
+    -------
+    k : np.ndarray
+        2D array of the FFT of the zero-padded image.
+
+    """
     if im.shape[0] == target_dim and im.shape[1] == target_dim:
         return fft.rfft2(im)
     padded_im = pad_arr(im, target_dim)
@@ -48,12 +99,13 @@ def compute_noise_power_spectrum(
 
     Parameters
     ----------
-    noise_image : ndarray (N, N)
+    noise_image : np.ndarray (N, N)
         Square 2-D array containing pure noise (should be mean-subtracted).
 
     Returns
     -------
-    power_spectrum : ndarray (N, N // 2 + 1)
+    power_spectrum : np.ndarray (N, N // 2 + 1)
+
     """
     N = noise_image.shape[0]
     k_noise = fft.rfft2(noise_image)
@@ -95,7 +147,7 @@ def estimate_noise_ps_analytic(
 
     Parameters
     ----------
-    noise_images : ndarray (L, L)
+    noise_image : np.ndarray (L, L)
         One or more square noise template images
     stamp_size : int
         Side length of the fitting stamps.
@@ -108,10 +160,10 @@ def estimate_noise_ps_analytic(
 
     Returns
     -------
-    ps : ndarray (stamp_size, stamp_size // 2 + 1)
+    ps : np.ndarray (stamp_size, stamp_size // 2 + 1)
         One-sided rfft2 power spectrum at stamp resolution.
-    """
 
+    """
     L = noise_image.shape[0]
     N = stamp_size
     if L < N:
@@ -201,8 +253,8 @@ def chisq_from_rfft2_residual(
     -------
     tuple(float, float, float)
         chi2, s2n_numer, s2n_denom
-    """
 
+    """
     # Parseval factor for numpy FFT conventions (forward unnormalized).
     nrow = data_k.shape[0]
     norm = 1.0 / (nrow * nrow)

@@ -112,6 +112,21 @@ DET_CAT_DTYPE = [
 
 @nb.njit(fastmath=True, cache=True)
 def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
+    """Compute the size of the cutout based on the second moments of the object.
+
+    Parameters
+    ----------
+    Qxx, Qxy, Qyy : float
+        Second moments of the object.
+    n_sigma : float
+        Number of sigma to include in the cutout size.
+
+    Returns
+    -------
+    cutout_size : float
+        Size of the cutout in pixels.
+
+    """
     # Compute trace and determinant
     trace = Qxx + Qyy
 
@@ -126,6 +141,28 @@ def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
 
 
 def get_cutout(img, x, y, stamp_size):
+    """Get a cutout from the image centered at (x, y) with size stamp_size.
+    Also returns the coordinates of the center in the cutout frame.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        Input image.
+    x, y : float
+        Center of the cutout in pixel coordinates (0-indexed).
+    stamp_size : int
+        Size of the cutout (must be odd).
+
+    Returns
+    -------
+    cutout : np.ndarray
+        The cutout image.
+    cutout_row : float
+        The row coordinate of the center in the cutout frame.
+    cutout_col : float
+        The column coordinate of the center in the cutout frame.
+
+    """
     orow = int(y)
     ocol = int(x)
     half_box_size = stamp_size // 2
@@ -171,7 +208,31 @@ def get_stamp_mbobs(
     do_uberseg=False,
     seg_map=None,
 ):
+    """Get a MultiBandObsList of cutouts centered on the detected object.
 
+    Parameters
+    ----------
+    img_mbobs : ngmix.MultiBandObsList
+        Multi-band observations of the image.
+    det_row : np.ndarray
+        Row of the detection catalog corresponding to the object.
+    min_stamp_size : int
+        Minimum size of the stamp (must be odd).
+    max_stamp_size : int
+        Maximum size of the stamp (must be odd).
+    do_uberseg : bool, optional
+        Whether to apply uberseg to the weight map using the segmentation map.
+        Default is False.
+    seg_map : np.ndarray, optional
+        Segmentation map of the image. Required if do_uberseg is True.
+        Default is None.
+
+    Returns
+    -------
+    mb_obs : ngmix.MultiBandObsList
+        Multi-band observations of the cutouts.
+
+    """
     if do_uberseg and seg_map is None:
         raise ValueError("seg_map must be provided if do_uberseg is True.")
 
@@ -258,6 +319,19 @@ def get_stamp_mbobs(
 
 
 def get_output_cat(n_obj):
+    """Get an empty output catalog with the correct dtype.
+
+    Parameters
+    ----------
+    n_obj : int
+        Number of objects in the catalog.
+
+    Returns
+    -------
+    out : np.ndarray
+        Empty output catalog with the correct dtype.
+
+    """
     out = np.array(
         list(map(tuple, np.zeros((len(DET_CAT_DTYPE), n_obj)).T)),
         dtype=DET_CAT_DTYPE,
@@ -266,7 +340,19 @@ def get_output_cat(n_obj):
 
 
 def get_pixel_scale(wcs):
+    """Get the pixel scale from a WCS object.
 
+    Parameters
+    ----------
+    wcs : astropy.wcs.WCS or galsim.wcs.BaseWCS
+        The WCS object from which to extract the pixel scale.
+
+    Returns
+    -------
+    pixel_scale : float
+        The pixel scale in arcsec/pixel.
+
+    """
     if isinstance(wcs, WCS):
         mat = wcs.pixel_scale_matrix
         pixel_scale = mat[0, 0] * 3600.0  # arcsec/pixel
@@ -282,7 +368,23 @@ def get_pixel_scale(wcs):
 
 
 def get_filter_kernel(kernel, wcs=None):
+    """Get the filter kernel for SEP.
 
+    Parameters
+    ----------
+    kernel : list or dict
+        The kernel to use for filtering. If a list, it is assumed to be a 2D
+        array. If a dict, it is assumed to be a galsim config dict.
+    wcs : astropy.wcs.WCS or galsim.wcs.BaseWCS, optional
+        The WCS object to use for the kernel. Required if kernel is a dict.
+        Default is None.
+
+    Returns
+    -------
+    filter_kernel : np.ndarray
+        The filter kernel as a 2D array.
+
+    """
     if isinstance(kernel, list):
         kernel = np.asarray(kernel)
     elif isinstance(kernel, dict):
@@ -292,13 +394,25 @@ def get_filter_kernel(kernel, wcs=None):
             raise ValueError("Failed to build kernel from config.")
         kernel = obj.drawImage(scale=pixel_scale).array
     else:
-        raise ValueError(
-            "kernel must be a list or a dict, got {}".format(type(kernel))
-        )
+        raise ValueError(f"kernel must be a list or a dict, got {type(kernel)}")
     return kernel
 
 
 def get_xyToradec_func(wcs):
+    """Get a function that converts pixel coordinates to world coordinates based
+    on the type of WCS object.
+
+    Parameters
+    ----------
+    wcs : astropy.wcs.WCS or galsim.wcs.BaseWCS
+        The WCS object from which to extract the conversion function.
+
+    Returns
+    -------
+    xyToradec : function
+        A function that takes x, y pixel coordinates and returns ra, dec.
+
+    """
     if isinstance(wcs, WCS):
 
         def xyToradec(x, y):
@@ -332,6 +446,43 @@ def get_cat(
     wcs=None,
     mask=None,
 ):
+    """Get a catalog of detected objects from an image using SEP.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        The input image.
+    weight : np.ndarray
+        The weight image.
+    thresh_type : str, optional
+        The type of threshold to use in ["relative", "absolute"].
+        Default is "relative".
+    thresh : float, optional
+        The threshold value. Default is 1.5.
+    minarea : int, optional
+        The minimum number of pixels of a detected object. Default is 5.
+    deblend_nthresh : int, optional
+        The number of thresholds to use for deblending. Default is 32.
+    deblend_cont : float, optional
+        The contrast threshold for deblending. Default is 0.005.
+    kernel : array-like or dict, optional
+        The kernel to use for filtering. Can be a 2D array or a galsim config
+        dict. Default is None, which uses the DES kernel.
+    filter_type : str, optional
+        The type of filter to use in ["conv", "match"]. Default is "conv".
+    header : astropy.io.fits.Header, optional
+        The header of the input image. Default is None.
+    wcs : astropy.wcs.WCS or galsim.wcs.BaseWCS, optional
+        The WCS object of the input image. Default is None.
+    mask : np.ndarray, optional
+        A mask to apply to the input image. Default is None.
+
+    Returns
+    -------
+    catalog : np.ndarray
+        A table containing the detected objects.
+
+    """
     # NOTE: Might need to look again into this. For now we keep it simple.
     rms = np.zeros_like(weight)
     mask_rms = np.ones_like(weight)
@@ -352,7 +503,7 @@ def get_cat(
     filter_kernel = get_filter_kernel(kernel, wcs=wcs)
 
     # NOTE: Sometimes we end up with a non-zero background, I don't know why..
-    bkg = sep.Background(img, mask=mask_rms)
+    # bkg = sep.Background(img, mask=mask_rms)
 
     if thresh_type == "relative":
         detect_err = rms
@@ -360,7 +511,8 @@ def get_cat(
         detect_err = None
     else:
         raise ValueError(
-            f"Unknown thresh_type: {thresh_type}. Must be one of ['relative', 'absolute']."
+            f"Unknown thresh_type: {thresh_type}. "
+            "Must be one of ['relative', 'absolute']."
         )
     obj, seg = sep.extract(
         img,  # - bkg.globalback,
@@ -508,8 +660,9 @@ def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
 
     Returns
     -------
-    x_new, y_new : ndarray
+    x_new, y_new : np.ndarray
         Shifted pixel positions (col, row) in the sheared image.
+
     """
     dudcol = jacobian.get_dudcol()
     dudrow = jacobian.get_dudrow()
@@ -536,135 +689,3 @@ def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
     drow_new = (-dvdcol * u_new + dudcol * v_new) / det_J
 
     return col0 + dcol_new, row0 + drow_new
-
-
-def get_cat_force(
-    img,
-    weight,
-    x_pix=None,
-    y_pix=None,
-    thresh=1.5,
-    minarea=5,
-    deblend_nthresh=32,
-    deblend_cont=0.005,
-    kernel=None,
-    filter_type="conv",
-    header=None,
-    wcs=None,
-    mask=None,
-    g1=0.0,
-    g2=0.0,
-    jacobian=None,
-):
-    # NOTE: Might need to look again into this. For now we keep it simple.
-    rms = np.zeros_like(weight)
-    mask_rms = np.ones_like(weight)
-    m = np.where(weight > 0)
-    rms[m] = np.sqrt(1 / weight[m])
-    mask_rms[m] = 0
-
-    rms = np.median(np.sqrt(1 / weight[m]))
-    # rms = mad(img, scale="normal", axis=(0, 1))
-
-    if (header is not None) and (wcs is not None):
-        raise ValueError("Only one of header or wcs can be provided.")
-    elif header is not None:
-        wcs = WCS(header)
-
-    if kernel is None:
-        kernel = DES_KERNEL
-
-    if x_pix is not None:
-        x = np.asarray(x_pix, dtype=np.float64)
-        y = np.asarray(y_pix, dtype=np.float64)
-    else:
-        x = np.array([img.shape[1] / 2.0])
-        y = np.array([img.shape[0] / 2.0])
-
-    # Shift positions to match galaxy locations in the sheared image
-    if (g1 != 0.0 or g2 != 0.0) and jacobian is not None:
-        x, y = _shear_positions(x, y, g1, g2, jacobian)
-
-    n_obj = len(x)
-    seg_id = np.arange(1, n_obj + 1, dtype=np.int32)
-    a = np.full(n_obj, 3.0)
-    b = np.full(n_obj, 3.0)
-
-    kronrads, krflags = sep.kron_radius(
-        img,
-        x,
-        y,
-        a,
-        b,
-        0,
-        6.0,
-    )
-    fluxes = np.ones(n_obj) * -10.0
-    fluxerrs = np.ones(n_obj) * -10.0
-    flux_rad = np.ones(n_obj) * -10.0
-    snr = np.ones(n_obj) * -10.0
-    flags = np.ones(n_obj, dtype=np.int64) * 64
-    flags_rad = np.ones(n_obj, dtype=np.int64) * 64
-
-    good_flux = (
-        (kronrads > 0)
-        & (b > 0)
-        & (a >= b)
-        & (0 >= -np.pi / 2)
-        & (0 <= np.pi / 2)
-    )
-    fluxes[good_flux], fluxerrs[good_flux], flags[good_flux] = sep.sum_ellipse(
-        img,
-        x[good_flux],
-        y[good_flux],
-        a[good_flux],
-        b[good_flux],
-        0,
-        2.5 * kronrads[good_flux],
-        err=rms,
-        subpix=1,
-    )
-
-    flux_rad[good_flux], flags_rad[good_flux] = sep.flux_radius(
-        img,
-        x[good_flux],
-        y[good_flux],
-        6.0 * a[good_flux],
-        0.5,
-        normflux=fluxes[good_flux],
-        subpix=1,
-    )
-
-    good_snr = (fluxes > 0) & (fluxerrs > 0)
-    snr[good_snr] = fluxes[good_snr] / fluxerrs[good_snr]
-
-    if wcs is not None:
-        ra, dec = wcs.all_pix2world(x, y, 0)
-
-    out = get_output_cat(n_obj)
-
-    out["number"] = seg_id
-    out["x"] = x
-    out["y"] = y
-    out["sx_row"] = y
-    out["sx_col"] = x
-    out["a"] = a
-    out["b"] = b
-    out["xx"] = -1.0
-    out["yy"] = -1.0
-    out["xy"] = -1.0
-    out["elongation"] = a / b
-    out["ellipticity"] = 1.0 - b / a
-    out["kronrad"] = kronrads
-    out["flux"] = fluxes
-    out["flux_err"] = fluxerrs
-    out["flux_radius"] = flux_rad
-    out["snr"] = snr
-    out["flags"] = 0
-    out["flux_flags"] = krflags | flags | flags_rad
-    out["ext_flags"] = 0
-    if wcs is not None:
-        out["ra"] = ra
-        out["dec"] = dec
-
-    return out, None

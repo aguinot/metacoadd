@@ -1,7 +1,7 @@
-"""
-This an implementation of the Galsim adaptive moments algorithm in ngmix format.
+"""This an implementation of the Galsim adaptive moments algorithm in ngmix
+format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
 import ngmix.flags
@@ -26,20 +26,23 @@ DEFAULT_SHIFTMAX = 5.0  # pixels
 DEFAULT_TOL = 1.0e-6
 DEFAULT_MAX_MOMENT_NSIG2 = 25
 DEFAULT_BOUND_CORRECT_WT = 0.25
-DEFAULT_LAMBDA_ELL = 1e-6  # This parameter is used for the damping to regularize moments of small objects
-DEFAULT_MIN_T_ABS = 2e-3  # # This parameter is used to avoid negative T values in moments measurement
+# This parameter is used for the damping to regularize moments of small objects
+DEFAULT_LAMBDA_ELL = 1e-6
+# This parameter is used to avoid negative T values in moments measurement
+DEFAULT_MIN_T_ABS = 2e-3
 
 
 class GAdmomResult(dict):
-    """
-    Represent a fit using adaptive moments, and generate images and mixtures
-    for the best fit
+    """Represent a fit using adaptive moments, and generate images and mixtures
+    for the best fit.
+
     Parameters
     ----------
-    obs: observation(s)
+    obs : observation(s)
         Observation, ObsList, or MultiBandObsList
-    result: dict
-        the basic fit result, to bad added to this object's keys
+    result : dict
+        The basic fit result, to bad added to this object's keys
+
     """
 
     def __init__(self, obs, result):
@@ -47,9 +50,7 @@ class GAdmomResult(dict):
         self.update(result)
 
     def get_gmix(self):
-        """
-        get a gmix representing the best fit, normalized
-        """
+        """Get a gmix representing the best fit, normalized."""
         if self["flags"] != 0:
             raise RuntimeError("cannot create gmix, fit failed")
 
@@ -70,12 +71,13 @@ class GAdmomResult(dict):
         return GMixModel(pars[:6], "gauss")
 
     def make_image(self):
-        """
-        Get an image of the best fit mixture
-        Returns
+        """Get an image of the best fit mixture.
+
+        Returns.
         -------
-        image: array
+        image : np.ndarray
             Image of the model, including the PSF if a psf was sent
+
         """
         if self["flags"] != 0:
             raise RuntimeError("cannot create image, fit failed")
@@ -94,27 +96,28 @@ class GAdmomResult(dict):
 
 
 class GAdmomFitter:
-    """
-    Measure adaptive moments for the input observation
-    parameters
+    """Measure adaptive moments for the input observation.
+
+    Parameters
     ----------
-    maxiter: integer, optional
+    maxiter : int, optional
         Maximum number of iterations, default 200
-    etol: float, optional
+    etol : float, optional
         absolute tolerance in e1 or e2 to determine convergence,
         default 1.0e-5
-    Ttol: float, optional
+    Ttol : float, optional
         relative tolerance in T <x^2> + <y^2> to determine
         convergence, default 1.0e-3
-    shiftmax: float, optional
+    shiftmax : float, optional
         Largest allowed shift in the centroid, relative to
         the initial guess.  Default 5.0 (5 pixels if the jacobian
         scale is 1)
-    cenonly: bool, optional
+    cenonly : bool, optional
         If set to True, only vary the center
-    rng: np.random.RandomState
+    rng : np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
+
     """
 
     kind = "admom"
@@ -146,16 +149,17 @@ class GAdmomFitter:
         self.rng = rng
 
     def go(self, obs):
-        """
-        run the adpative moments
-        parameters
+        """Run the adpative moments.
+
+        Parameters
         ----------
-        obs: Observation
+        obs : Observation
             ngmix.Observation
-        guess: ngmix.GMix or a float
+        guess : ngmix.GMix or a float
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.
+
         """
         from .galsim_admom_nb import find_ellipmom2
 
@@ -175,14 +179,15 @@ class GAdmomFitter:
                     mb_obs[0].append(obs)
                 else:
                     raise ValueError(
-                        "input obs must be a MultiBandObsList or ObsList or Observation"
+                        "input obs must be a MultiBandObsList or ObsList or "
+                        "Observation"
                     )
 
         pixels_list = []
         band_tracker = []
-        for i, obslits in enumerate(mb_obs):
+        for obslits in mb_obs:
             k = 0
-            for j, obs_ in enumerate(obslits):
+            for obs_ in obslits:
                 pixels_list.append(obs_.pixels)
                 k += 1
             band_tracker.append(k)
@@ -198,18 +203,18 @@ class GAdmomFitter:
             scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
         )
 
-        # try:
-        find_ellipmom2(
-            pixels_list,
-            values_list,
-            band_tracker,
-            guess,
-            ares,
-            atmp,
-            self.conf,
-        )
-        # except:
-        #     ares["flags"] = 2**16
+        try:
+            find_ellipmom2(
+                pixels_list,
+                values_list,
+                band_tracker,
+                guess,
+                ares,
+                atmp,
+                self.conf,
+            )
+        except Exception:
+            ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])
 
@@ -230,7 +235,7 @@ class GAdmomFitter:
         bound_correct_wt,
         lambda_ell,
         min_T_abs,
-    ):  # noqa
+    ):
         dt = np.dtype(_Gadmom_conf_dtype, align=True)
         conf = np.zeros(1, dtype=dt)
 
@@ -277,12 +282,10 @@ class GAdmomFitter:
 
 
 def get_result(ares, jac_area, wgt_norm):
-    """
-    Copy the result structure to a dict and calculate a few more things,
+    """Copy the result structure to a dict and calculate a few more things,
     including using Jacobian-based error propagation.
     Now supports multi-band fluxes and covariance.
     """
-
     if isinstance(ares, np.ndarray):
         ares = ares[0]
         names = ares.dtype.names
@@ -337,11 +340,14 @@ def get_result(ares, jac_area, wgt_norm):
                 flux_weights = np.ones(1, dtype=np.float64)
                 flux_vars = res["sums_cov"][6:7, 6:7].diagonal()
             else:
-                flux_eff, flux_eff_var, flux_weights, flux_vars = (
-                    compute_effective_flux(
-                        res["sums"][6:],
-                        res["sums_cov"][6:, 6:],
-                    )
+                (
+                    flux_eff,
+                    flux_eff_var,
+                    flux_weights,
+                    flux_vars,
+                ) = compute_effective_flux(
+                    res["sums"][6:],
+                    res["sums_cov"][6:, 6:],
                 )
             if (
                 not np.isfinite(flux_eff_var)
@@ -488,9 +494,7 @@ def get_result(ares, jac_area, wgt_norm):
         else ngmix.flags.get_flags_str(res["flux_flags"])
     )
     res["T_flagstr"] = (
-        ""
-        if res["T_flags"] == 0
-        else ngmix.flags.get_flags_str(res["T_flags"])
+        "" if res["T_flags"] == 0 else ngmix.flags.get_flags_str(res["T_flags"])
     )
     res["g1"], res["g2"] = e1e2_to_g1g2(res["e1"], res["e2"])
     res["g"] = np.empty(2, dtype=np.float64)

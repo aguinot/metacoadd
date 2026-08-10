@@ -4,7 +4,6 @@ import re
 import numpy as np
 
 import galsim
-import galsim.roman as roman
 
 import ngmix
 from ngmix.metacal.convenience import (
@@ -19,9 +18,6 @@ from .detect import get_cutout_size, get_cutout, get_cat, DET_CAT_DTYPE
 from .moments.galsim_regauss import ReGaussFitter
 from .moments.galsim_admom import GAdmomFitter
 from .uberseg import fast_uberseg
-
-import matplotlib.pyplot as plt
-import os
 
 
 TEST_METADETECT_CONFIG = {
@@ -735,10 +731,12 @@ class MetaCoadd(SimpleCoadd):
 
             mb_obs = ngmix.MultiBandObsList()
             for i, (explist, explist_psf) in enumerate(
-                zip(mcal_mb_explist, mcal_mb_explist_psf)
+                zip(mcal_mb_explist, mcal_mb_explist_psf, strict=False)
             ):
                 obs_list = ngmix.ObsList()
-                for j, (exp, exp_psf) in enumerate(zip(explist, explist_psf)):
+                for j, (exp, exp_psf) in enumerate(
+                    zip(explist, explist_psf, strict=False)
+                ):
                     x, y = exp.wcs.astropy.all_world2pix(
                         det_obj["ra"],
                         det_obj["dec"],

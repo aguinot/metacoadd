@@ -6,6 +6,21 @@ import numpy as np
 
 
 def shift_wcs(wcs, offset):
+    """Shift the WCS by a given offset.
+
+    Parameters
+    ----------
+    wcs : galsim.wcs
+        The WCS to shift.
+    offset : galsim.PositionD
+        The offset to apply to the WCS.
+
+    Returns
+    -------
+    new_wcs : galsim.wcs
+        The shifted WCS.
+
+    """
     # TODO: check inputs
 
     wcs_orig = copy.deepcopy(wcs)
@@ -36,10 +51,7 @@ def shift_wcs(wcs, offset):
 
 
 def _exp2obs(exp, exp_psf=None, use_resamp=False):
-    if use_resamp:
-        kind = "_resamp"
-    else:
-        kind = ""
+    kind = "_resamp" if use_resamp else ""
 
     # Set images
     if hasattr(exp, "image" + kind):
@@ -119,6 +131,20 @@ def _exp2obs(exp, exp_psf=None, use_resamp=False):
 
 
 def atleast_mbobs(obs):
+    """Convert an ngmix.Observation, ngmix.ObsList or ngmix.MultiBandObsList to
+    a ngmix.MultiBandObsList.
+
+    Parameters
+    ----------
+    obs : ngmix.Observation, ngmix.ObsList or ngmix.MultiBandObsList
+        The observation(s) to convert.
+
+    Returns
+    -------
+    mbobs : ngmix.MultiBandObsList
+        The converted MultiBandObsList.
+
+    """
     if isinstance(obs, ngmix.Observation):
         mbobs = ngmix.MultiBandObsList()
         obslist = ngmix.ObsList()

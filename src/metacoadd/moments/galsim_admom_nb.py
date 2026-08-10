@@ -1,7 +1,7 @@
-"""
-This an implementation of the Galsim adaptive moments algorithm in ngmix format.
+"""This an implementation of the Galsim adaptive moments algorithm in ngmix
+format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
 from math import atan2, cos, exp, sin, sqrt
@@ -26,6 +26,39 @@ def find_ellipmom1(
     conf,
     do_cov=False,
 ):
+    """Compute the weighted sums of moments for a given guess of the centroid
+    and second moments. This is the first step of the adaptive moment
+    algorithm.
+
+    Parameters
+    ----------
+    pixels_list : list[np.ndarray]
+        Each structured array contains the pixel data for one observation. The
+        fields should include 'u', 'v', 'area', and 'ierr'.
+    values_list : list[np.ndarray]
+        Each array contains the pixel values for one observation.
+    band_tracker : list[int]
+        A list of integers that tracks the number of observations in each band.
+    x0 : float
+        The x-coordinate of the initial guess for the centroid.
+    y0 : float
+        The y-coordinate of the initial guess for the centroid.
+    Mxx : float
+        The xx moment of the initial guess for the second moments.
+    Mxy : float
+        The xy moment of the initial guess for the second moments.
+    Myy : float
+        The yy moment of the initial guess for the second moments.
+    res : dict
+        A dictionary to store the results of the computation.
+    tmp : dict
+        A dictionary to store temporary values during the computation.
+    conf : dict
+        A dictionary containing configuration parameters.
+    do_cov : bool, optional
+        If True, compute the covariance matrix. Default is False.
+
+    """
     F = res["F"]
 
     if not do_cov:
@@ -151,7 +184,19 @@ def find_ellipmom1(
 
 @njit(cache=True)
 def normalize_moment_covariance(sums, sums_cov):
-    """Transform raw weighted sums and covariance to flux-normalized moments."""
+    """Transform raw weighted sums and covariance to flux-normalized moments.
+
+    Parameters
+    ----------
+    sums : np.ndarray, shape (7,)
+        Weighted sums of moments and flux. The first 6 elements are the
+        moments, and the 7th element is the flux.
+    sums_cov : np.ndarray, shape (7, 7)
+        Covariance matrix of the weighted sums. The first 6 rows and columns
+        correspond to the moments, and the 7th row and column correspond to the
+        flux.
+
+    """
     raw_cov = sums_cov.copy()
     flux = sums[6]
     jac = np.zeros((7, 7), dtype=np.float64)
@@ -176,8 +221,31 @@ def find_ellipmom2(
     confarray,
     do_covariance=True,
 ):
-    """ """
+    """Compute the adaptive moments for a set of observations.
 
+    Parameters
+    ----------
+    pixels_list : list[np.ndarray]
+        Each structured array contains the pixel data for one observation. The
+        fields should include 'u', 'v', 'area', and 'ierr'.
+    values_list : list[np.ndarray]
+        Each array contains the pixel values for one observation.
+    band_tracker : list[int]
+        A list of integers indicating which band each observation belongs to.
+    guess : tuple of floats
+        Initial guess for the centroid and second moments
+        (x0, y0, Mxx, Mxy, Myy).
+    resarray : np.ndarray, shape (1,)
+        Array to store the results of the computation.
+    tmparray : np.ndarray, shape (1,)
+        Array to store temporary values during the computation.
+    confarray : np.ndarray, shape (1,)
+        Array containing configuration parameters for the computation.
+    do_covariance : bool, optional
+        If True, compute the covariance matrix of the adaptive moments.
+        Default is True.
+
+    """
     conf = confarray[0]
     res = resarray[0]
     tmp = tmparray[0]
@@ -310,8 +378,15 @@ def find_ellipmom2(
 
 @njit(cache=True)
 def clear_result(res, clear_covariance=True):
-    """
-    clear some fields in the result structure
+    """Clear some fields in the result structure.
+
+    Parameters
+    ----------
+    res : dict
+        The result structure to clear.
+    clear_covariance : bool, optional
+        If True, clear the covariance matrix. Default is True.
+
     """
     res["npix"] = 0
     res["wsum"] = 0.0
@@ -323,8 +398,15 @@ def clear_result(res, clear_covariance=True):
 
 @njit(cache=True)
 def clear_tmp(tmp, clear_covariance=True):
-    """
-    clear some fields in the result structure
+    """Clear some fields in the temporary structure.
+
+    Parameters
+    ----------
+    tmp : dict
+        The temporary structure to clear.
+    clear_covariance : bool, optional
+        If True, clear the covariance matrix. Default is True.
+
     """
     if clear_covariance:
         tmp["sums"][:] = 0.0
@@ -333,16 +415,15 @@ def clear_tmp(tmp, clear_covariance=True):
 
 @njit(cache=True)
 def compute_effective_flux(fluxes, flux_cov):
-    """
-    Compute effective flux, its variance, and optional cross-covariances
+    """Compute effective flux, its variance, and optional cross-covariances
     with other parameters using the BLUE estimator.
 
     Parameters
     ----------
-    fluxes : (B,) array
+    fluxes : (B,) np.ndarray
         The flux vector (e.g. from multiple bands).
 
-    flux_cov : (B, B) array
+    flux_cov : (B, B) np.ndarray
         Covariance matrix of the flux vector.
 
     Returns
@@ -353,11 +434,12 @@ def compute_effective_flux(fluxes, flux_cov):
     F_eff_var : float
         Variance of the effective flux.
 
-    weights : (B,) array
+    weights : (B,) np.ndarray
         BLUE weights applied to the input fluxes.
 
-    flux_vars : (B,) array
+    flux_vars : (B,) np.ndarray
         Marginal variances of the input fluxes.
+
     """
     ones = np.ones(len(fluxes), dtype=np.float64)
 
@@ -374,21 +456,22 @@ def compute_effective_flux(fluxes, flux_cov):
 
 @njit(cache=True)
 def compute_flux_cross_covs(flux_weights, target_covs):
-    """
-    Compute effective flux, its variance, and optional cross-covariances
+    """Compute effective flux, its variance, and optional cross-covariances
     with other parameters using the BLUE estimator.
 
     Parameters
     ----------
-
-    target_covs : (N, B) array, optional
+    flux_weights : np.ndarray
+        BLUE weights applied to the input fluxes.
+    target_covs : np.ndarray
         Covariances between each of N target parameters and the fluxes.
         If provided, returns cross-covariances with F_eff.
 
     Returns
     -------
-    cross_covs : (N,) array, optional
+    cross_covs : np.ndarray
         Cross-covariances with F_eff, if target_covs was provided.
+
     """
     target_covs = np.atleast_2d(target_covs)
     cross_covs = target_covs @ flux_weights
@@ -398,35 +481,18 @@ def compute_flux_cross_covs(flux_weights, target_covs):
 
 @njit(cache=True)
 def combine_multiband_observations_array(res, tmp, band_tracker):
-    """
-    Combine multi-band measurements from array inputs.
+    """Combine multi-band measurements from array inputs.
 
-    Parameters:
-    -----------
-    m_array : ndarray, shape (N_obs, 7)
-        [x0, y0, Q11, Q12, Q22, rho2, F] for each observation
-
-    Sigma_array : ndarray, shape (N_obs, 7, 7)
-        Covariance matrices for each observation
-
+    Parameters
+    ----------
+    res : dict
+        The result structure to store the combined observations.
+    tmp : dict
+        The temporary structure to store intermediate results.
     band_tracker : list of int
         List of number of observations per band. Length = N_bands
 
-    Returns:
-    --------
-    Q_joint : np.ndarray, shape (3,)
-        Joint shape [Q11, Q22, Q12]
-
-    F_b : np.ndarray, shape (N_bands,)
-        Combined flux per band
-
-    Sigma_M : np.ndarray, shape (6 + N_bands, 6 + N_bands)
-        Full covariance matrix for [x0, y0, Q11, Q12, Q22, rho2, F_1, ..., F_B]
-
-    x0_joint, y0_joint : float
-        Joint centroid
     """
-
     # Unpack the input
     m_array = tmp["sums"]
     Sigma_array = tmp["sums_cov"]
@@ -457,7 +523,7 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
         sum_inv_var = 0.0
         sum_inv_var_flux = 0.0
 
-        for e in range(n_obs_b):
+        for _ in range(n_obs_b):
             F = m_array[idx, -1]
             var_F = Sigma_array[idx, -1, -1]
             inv_var = 1.0 / var_F
@@ -510,6 +576,39 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
 def get_mom_var(
     X, Y, Z, var_X, var_Y, var_Z, var_XY, var_XZ, var_YZ, kind="e1"
 ):
+    """Propagate fixed-weight moment covariance to adaptive size and
+    ellipticity.
+
+    Parameters
+    ----------
+    X : float
+        Row-row second moment.
+    Y : float
+        Column-column second moment.
+    Z : float
+        Row-column second moment.
+    var_X : float
+        Variance of ``X``.
+    var_Y : float
+        Variance of ``Y``.
+    var_Z : float
+        Variance of ``Z``.
+    var_XY : float
+        Covariance between ``X`` and ``Y``.
+    var_XZ : float
+        Covariance between ``X`` and ``Z``.
+    var_YZ : float
+        Covariance between ``Y`` and ``Z``.
+    kind : str, optional
+        The type of moment to compute the variance for.
+        Options are "e1", "e2", or "T". Default is "e1".
+
+    Returns
+    -------
+    var_t : float
+        Variance of the specified moment type after adaptive-response scaling.
+
+    """
     dfdx = dfdy = dfdz = 0
     T = X + Y
     if kind == "e1":
@@ -547,8 +646,8 @@ def get_T_and_e_cov(
     cov_Q22_Q12,
     cov_Q11_Q12,
 ):
-    """
-    Propagate fixed-weight moment covariance to adaptive size and ellipticity.
+    """Propagate fixed-weight moment covariance to adaptive size and
+    ellipticity.
 
     Parameters are the flux-normalized second moments and their covariance in
     ngmix/image-coordinate ordering: ``Q22`` is the row-row moment, ``Q11`` is
@@ -594,6 +693,7 @@ def get_T_and_e_cov(
         Variance of ``e2`` after adaptive-response scaling.
     e12_cov : float
         Covariance between ``e1`` and ``e2`` after adaptive-response scaling.
+
     """
     T = Q22 + Q11
     inv_T = 1.0 / T
@@ -642,7 +742,27 @@ def get_T_and_e_cov(
 
 @njit(cache=True)
 def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
-    """Propagate the variance of the product ``flux * rho4``."""
+    """Propagate the variance of the product ``flux * rho4``.
+
+    Parameters
+    ----------
+    flux : float
+        The flux value.
+    rho4 : float
+        The fourth moment of the radial profile.
+    var_flux : float
+        Variance of the flux.
+    var_rho4 : float
+        Variance of the fourth moment.
+    cov_flux_rho4 : float
+        Covariance between the flux and the fourth moment.
+
+    Returns
+    -------
+    var_flux_rho4 : float
+        Variance of the product ``flux * rho4``.
+
+    """
     return (
         flux * flux * var_rho4
         + rho4 * rho4 * var_flux

@@ -1,7 +1,6 @@
-"""
-This an implementation of the Galsim re-gauss algorithm in ngmix format.
+"""This an implementation of the Galsim re-gauss algorithm in ngmix format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 
 This implementation is modified to allowed post-metacalibration PSF correction.
 """
@@ -28,7 +27,7 @@ def _check_exp(pixels, w_data):
 
 
 @njit(cache=True)
-def shearmult(e1_a, e2_a, e1_b, e2_b):
+def _shearmult(e1_a, e2_a, e1_b, e2_b):
     dotp = e1_a * e1_b + e2_a * e2_b
     factor = (1.0 - sqrt(1 - e1_b * e1_b - e2_b * e2_b)) / (
         e1_b * e1_b + e2_b * e2_b
@@ -45,11 +44,38 @@ def shearmult(e1_a, e2_a, e1_b, e2_b):
 
 @njit(cache=True)
 def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
+    """Implementation of the Bernstein & Jarvis correction with null PSF.
+
+    Parameters
+    ----------
+    T_ratio : float
+        The ratio of the PSF size to the galaxy size.
+    e1_gal : float
+        The first component of the galaxy's ellipticity.
+    e2_gal : float
+        The second component of the galaxy's ellipticity.
+    rho4_gal : float
+        The fourth-order moment of the galaxy.
+    e1_psf : float
+        The first component of the PSF's ellipticity.
+    e2_psf : float
+        The second component of the PSF's ellipticity.
+    rho4_psf : float
+        The fourth-order moment of the PSF.
+
+    Returns
+    -------
+    e1_new : float
+        The first component of the corrected galaxy's ellipticity.
+    e2_new : float
+        The second component of the corrected galaxy's ellipticity.
+
+    """
     cosheta_p = 1 / sqrt(1 - e1_psf * e1_psf - e2_psf * e2_psf)
     cosheta_g = 1 / sqrt(1 - e1_gal * e1_gal - e2_gal * e2_gal)
     sig2ratio = T_ratio * cosheta_g / cosheta_p
 
-    e1_red, e2_red = shearmult(e1_gal, e2_gal, -e1_psf, -e2_psf)
+    e1_red, e2_red = _shearmult(e1_gal, e2_gal, -e1_psf, -e2_psf)
 
     cosheta_g = 1 / sqrt(1 - e1_red * e1_red - e2_red * e2_red)
     R = 1.0 - sig2ratio * (1 + rho4_gal) / (1 - rho4_gal) / cosheta_g * (
@@ -59,15 +85,13 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
     e1_red /= R
     e2_red /= R
 
-    e1_new, e2_new = shearmult(e1_red, e2_red, e1_psf, e2_psf)
+    e1_new, e2_new = _shearmult(e1_red, e2_red, e1_psf, e2_psf)
 
     return e1_new, e2_new
 
 
 @njit(cache=True)
-def get_corrected_mom3(e1, e2, SB):
-    """ """
-
+def _get_corrected_mom3(e1, e2, SB):
     xx = 0.5 * sqrt(-((e1 + 1) ** 2) * SB**2 / (e1**2 + e2**2 - 1))
     yy = -xx * (e1 - 1) / (e1 + 1)
     xy = xx * e2 / (e1 + 1)
@@ -77,6 +101,35 @@ def get_corrected_mom3(e1, e2, SB):
 
 @njit(cache=True)
 def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
+    """Implementation of the Bernstein & Jarvis correction.
+
+    Parameters
+    ----------
+    yy_gal : float
+        The yy moment of the galaxy.
+    xy_gal : float
+        The xy moment of the galaxy.
+    xx_gal : float
+        The xx moment of the galaxy.
+    rho4gal : float
+        The fourth-order moment of the galaxy.
+    e1_psf : float
+        The first component of the PSF's ellipticity.
+    e2_psf : float
+        The second component of the PSF's ellipticity.
+    T_psf : float
+        The size of the PSF.
+
+    Returns
+    -------
+    xx_final : float
+        The corrected xx moment of the galaxy.
+    xy_final : float
+        The corrected xy moment of the galaxy.
+    yy_final : float
+        The corrected yy moment of the galaxy.
+
+    """
     T_gal = xx_gal + yy_gal
     e1_gal = (xx_gal - yy_gal) / T_gal
     e2_gal = (2 * xy_gal) / T_gal
@@ -86,7 +139,7 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
     )
 
     size_scaling = sqrt(1 - (e1_gal**2 + e2_gal**2))
-    xx_final, yy_final, xy_final = get_corrected_mom3(
+    xx_final, yy_final, xy_final = _get_corrected_mom3(
         e1_bj, e2_bj, T_gal * size_scaling
     )
 
@@ -95,6 +148,20 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
 
 @njit(cache=True)
 def goodFFTSize(N):
+    """Return a good size for FFTs, which is the next power of 2 or 3*2^n
+    greater than or equal to N.
+
+    Parameters
+    ----------
+    N : int
+        The input size.
+
+    Returns
+    -------
+    Nk : int
+        The next good size for FFTs.
+
+    """
     if N <= 2:
         return 2
     # Reduce slightly to eliminate potential rounding errors:
@@ -111,6 +178,22 @@ def goodFFTSize(N):
 def fast_convolve_image1(
     image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)
 ):
+    """Convolve two images using FFTs. The output image is modified in place.
+
+    Parameters
+    ----------
+    image1 : np.ndarray
+        The first input image.
+    image2 : np.ndarray
+        The second input image.
+    image_out : np.ndarray
+        The output image, which will be modified in place.
+    orig_img1 : tuple of int, optional
+        The (row, col) coordinates of the origin of image1 in the output image.
+    orig_img2 : tuple of int, optional
+        The (row, col) coordinates of the origin of image2 in the output image.
+
+    """
     # Input
     N1 = int(max(image1.shape) * 4 / 3)
     N2 = int(max(image2.shape) * 4 / 3)
@@ -186,6 +269,35 @@ def get_resi_img(
     yy_psf,
     flux_psf,
 ):
+    """Get the residual image of the PSF correction.
+
+    Parameters
+    ----------
+    obs : ngmix.Observation
+        The observation object containing the galaxy image and PSF.
+    xx_f : float
+        The xx moment of the galaxy best fitted gaussian.
+    xy_f : float
+        The xy moment of the galaxy best fitted gaussian.
+    yy_f : float
+        The yy moment of the galaxy best fitted gaussian.
+    flux_gal : float
+        The flux of the galaxy.
+    xx_psf : float
+        The xx moment of the PSF.
+    xy_psf : float
+        The xy moment of the PSF.
+    yy_psf : float
+        The yy moment of the PSF.
+    flux_psf : float
+        The flux of the PSF.
+
+    Returns
+    -------
+    out_image_img : np.ndarray
+        The residual image after PSF correction.
+
+    """
     nsig_rg = 3.0
     nsig_rg2 = 3.6
 
@@ -272,9 +384,7 @@ def get_resi_img(
     p_col0 = p_dim_y / 2
     p_dim_x += 1
     p_dim_y += 1
-    p_jac = ngmix.Jacobian(
-        row=p_row0, col=p_col0, wcs=psf_jac.get_galsim_wcs()
-    )
+    p_jac = ngmix.Jacobian(row=p_row0, col=p_col0, wcs=psf_jac.get_galsim_wcs())
 
     g1, g2, T = ngmix.moments.mom2g(yy_f, xy_f, xx_f)
     pars_fgauss = np.zeros(6)
@@ -325,6 +435,34 @@ def get_true_resi_img(
     flux_gal,
     psf_resi=None,
 ):
+    """Get the residual image of the PSF correction using a pre-computed PSF
+    residual image.
+
+    Parameters
+    ----------
+    obs : ngmix.Observation
+        The observation object containing the galaxy image and PSF.
+    x0_gal : float
+        The x-coordinate of the galaxy's center.
+    y0_gal : float
+        The y-coordinate of the galaxy's center.
+    xx_f : float
+        The xx moment of the galaxy best fitted gaussian.
+    yy_f : float
+        The yy moment of the galaxy best fitted gaussian.
+    xy_f : float
+        The xy moment of the galaxy best fitted gaussian.
+    flux_gal : float
+        The flux of the galaxy.
+    psf_resi : np.ndarray, optional
+        The pre-computed PSF residual image.
+
+    Returns
+    -------
+    out_image_img2 : np.ndarray
+        The residual image after PSF correction.
+
+    """
     # Approx deconv
     if xx_f <= obs.jacobian.area:
         xx_f = obs.jacobian.area
@@ -371,6 +509,25 @@ def regauss(
     confarray,
     do_covariance=True,
 ):
+    """Perform the re-Gaussianization PSF correction on a multi-band
+    observation.
+
+    Parameters
+    ----------
+    mbobs : ngmix.MultiBandObsList
+        The multi-band observation list containing the galaxy images and PSFs.
+    guess : array-like
+        Initial guess for the galaxy parameters.
+    resarray : array-like
+        Array to store the results of the fitting.
+    tmp_func : callable
+        Temporary function for intermediate calculations.
+    confarray : array-like
+        Array to store configuration information.
+    do_covariance : bool, optional
+        Whether to compute the covariance matrix. Default is True.
+
+    """
     pixels_list = []
     band_tracker = []
     psf_moments = []
@@ -447,7 +604,7 @@ def regauss(
     for nb, obslits in enumerate(mbobs):
         for obs in obslits:
             psf_pars = obs.psf.gmix.get_full_pars()
-            if "psf_resi" not in obs.meta.keys():
+            if "psf_resi" not in obs.meta:
                 resi_img = get_resi_img(
                     obs,
                     xx_f,

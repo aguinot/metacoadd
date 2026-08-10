@@ -6,7 +6,7 @@ import numpy as np
 import ngmix
 
 from .metacal import MetacalHandler
-from .detect import get_stamp_mbobs, get_cat, get_cat_force, DET_CAT_DTYPE
+from .detect import get_stamp_mbobs, get_cat, DET_CAT_DTYPE
 from .fitting import get_fitters, get_gauss_psf_runner
 from .fitters.fourier_fitting_nb import estimate_noise_ps_analytic
 from .coadd import get_coadd_class
@@ -24,6 +24,19 @@ from .imcom_maps import (
 
 
 def get_shape_cat_dtype(runner_name):
+    """Get the dtype for the shape catalog for a given runner.
+
+    Parameters
+    ----------
+    runner_name : str
+        The name of the runner.
+
+    Returns
+    -------
+    dtype : list of tuples
+        The dtype for the shape catalog.
+
+    """
     dtype = [
         (f"{runner_name}_flags", np.int32),
         (f"{runner_name}_nimage", np.int32),
@@ -47,27 +60,77 @@ def get_shape_cat_dtype(runner_name):
 
 
 class MetaDetect:
-    """MetaCoadd
+    """MetaCoadd.
 
     The class run the metacoaddition process.
     The inputs are multi-band multi-epoch images and PSFs.
     The processing goes as follow:
     0. Resize the exposures to fit within the planned coadded region.
-    1. run metacalibration (deconvolutioon | shear | re-convolution) on each input single exposures.
+    1. run metacalibration (deconvolutioon | shear | re-convolution) on each
+       input single exposures.
     2. Re-sample each sheared single exposures to the coadd WCS.
-    3. Coadd the exposures together (can do a multi-band coadd if the PSF is homogenized through all bands).
+    3. Coadd the exposures together (can do a multi-band coadd if the PSF is
+       homogenized through all bands).
     4. Run dectection on each sheared coadded image.
-    5. Run multi-band multi-epoch shape measurement at each detected object position.
+    5. Run multi-band multi-epoch shape measurement at each detected object
+       position.
 
     Parameters
     ----------
+    rng : np.random.Generator
+        The random number generator.
+    step : float, optional
+        The step size for the metacalibration.
+    types : list of str, optional
+        The types of metacalibration to run.
+    detect_type : str, optional
+        The type of detection to use.
+    detect_thresh : int, optional
+        The threshold for the detection.
+    detect_minarea : int, optional
+        The minimum area for the detection.
+    detect_deblend_nthresh : int, optional
+        The number of thresholds for the deblending.
+    detect_deblend_cont : float, optional
+        The contrast for the deblending.
+    detect_kernel : array-like, optional
+        The kernel for the detection.
+    detect_filter_type : str, optional
+        The filter type for the detection.
+    coadd_type : str, optional
+        The type of coaddition to use.
+    coadd_multiband : bool, optional
+        Whether to use multi-band coaddition.
+    coadd_fscale : list of float, optional
+        The flux scale for the coaddition.
+    coadd_zeropoints : list of float, optional
+        The zeropoints for the coaddition.
+    coadd_target_zp : float, optional
+        The target zeropoint for the coaddition.
+    models : list of str, optional
+        The models to use for the shape measurement.
+    fwhms : list of float, optional
+        The FWHMs to use for the shape measurement.
+    symmetrizes : list of bool, optional
+        Whether to symmetrize the shape measurement.
+    stamp_size : int, optional
+        The size of the stamp to use for the shape measurement.
+    do_uberseg : bool, optional
+        Whether to use uberseg for the shape measurement.
+    mcal_config : dict, optional
+        The configuration for the metacalibration.
+    original_image_config : dict, optional
+        The configuration for the original image measurement.
+    imcom_map_config : dict, optional
+        The configuration for the image comparison map.
+
     """
 
     def __init__(
         self,
         rng,
         step=0.01,
-        types=["1m", "1p", "2m", "2p", "noshear"],
+        types=None,
         detect_type="relative",
         detect_thresh=1500,
         detect_minarea=5,
@@ -85,11 +148,13 @@ class MetaDetect:
         symmetrizes=None,
         stamp_size=101,
         do_uberseg=False,
-        mcal_config={},
+        mcal_config=None,
         original_image_config=None,
         imcom_map_config=None,
     ):
         self.rng = rng
+        if types is None:
+            types = ["noshear", "1p", "1m", "2p", "2m"]
         self.mcal_config = {
             "step": step,
             "types": types,
@@ -98,9 +163,11 @@ class MetaDetect:
             "fixnoise": True,
             "has_pixel": False,
         }
-        if not isinstance(mcal_config, dict):
-            raise ValueError("mcal_config must be a dictionary")
-        self.mcal_config.update(mcal_config)
+        self.mcal_config = {}
+        if mcal_config is not None:
+            if not isinstance(mcal_config, dict):
+                raise ValueError("mcal_config must be a dictionary")
+            self.mcal_config.update(mcal_config)
 
         self._detect_type = detect_type
         self._detect_thresh = detect_thresh
@@ -164,10 +231,14 @@ class MetaDetect:
         self,
         mb_obs,
     ):
-        """
-        Run metadetect.
-        """
+        """Run metadetect.
 
+        Parameters
+        ----------
+        mb_obs : ngmix.MultiBandObsList
+            The multi-band multi-epoch observations.
+
+        """
         if isinstance(mb_obs, ngmix.MultiBandObsList):
             self._nband = len(mb_obs)
             scale = mb_obs[0][0].jacobian.get_scale()
@@ -217,12 +288,15 @@ class MetaDetect:
                     "coadd_zeropoints must have the same length as the number "
                     "of bands."
                 )
-        elif self._coadd_zeropoints is None and self._coadd_fscale is not None:
-            if len(self._coadd_fscale) != len(mb_obs):
-                raise ValueError(
-                    "coadd_fscale must have the same length as the number "
-                    "of bands."
-                )
+        elif (
+            self._coadd_zeropoints is None
+            and self._coadd_fscale is not None
+            and len(self._coadd_fscale) != len(mb_obs)
+        ):
+            raise ValueError(
+                "coadd_fscale must have the same length as the number "
+                "of bands."
+            )
 
         final_cat = {}
         for mcal_key in self.mcal_config["types"]:
@@ -236,13 +310,15 @@ class MetaDetect:
 
             # print("Getting detection image...")
             if self._coadd_multiband:
-                detect_image, detect_noise, detect_weight = (
-                    self.get_coadd_multiband(
-                        mcal_mbobs,
-                        fscale=self._coadd_fscale,
-                        zeropoints=self._coadd_zeropoints,
-                        target_zp=self._coadd_target_zp,
-                    )
+                (
+                    detect_image,
+                    detect_noise,
+                    detect_weight,
+                ) = self.get_coadd_multiband(
+                    mcal_mbobs,
+                    fscale=self._coadd_fscale,
+                    zeropoints=self._coadd_zeropoints,
+                    target_zp=self._coadd_target_zp,
                 )
             else:
                 # Debug only
@@ -257,7 +333,9 @@ class MetaDetect:
                 wcs=mcal_mbobs[0][0].jacobian.get_galsim_wcs(),
             )
             # print(
-            #     "Done getting catalog.", len(all_sep_cat), "objects detected."
+            #     "Done getting catalog.",
+            #     len(all_sep_cat),
+            #     "objects detected."
             # )
 
             if has_fourier:
@@ -330,6 +408,20 @@ class MetaDetect:
         return final_cat
 
     def get_metacal(self, mb_obs):
+        """Run metacalibration on the input multi-band multi-epoch observations.
+
+        Parameters
+        ----------
+        mb_obs : ngmix.MultiBandObsList
+            The multi-band multi-epoch observations.
+
+        Returns
+        -------
+        mcal_mbobs : dict
+            A dictionary of metacalibrated MultiBandObsList, keyed by metacal
+            type.
+
+        """
         mcal_handler = MetacalHandler(
             rng=self.rng,
             fixnoise=self.mcal_config["fixnoise"],
@@ -362,7 +454,21 @@ class MetaDetect:
                 obs.ps = ps
 
     def get_T_psf(self, mb_obs):
+        """Get the average PSF size (T) for the input multi-band multi-epoch
+        observations.
 
+        Parameters
+        ----------
+        mb_obs : ngmix.MultiBandObsList
+            The multi-band multi-epoch observations.
+
+        Returns
+        -------
+        T_psf_avg : float
+            The average PSF size (T) for the input multi-band multi-epoch
+            observations.
+
+        """
         psf_runner = get_gauss_psf_runner(self.rng)
 
         T_psf_avg = 0.0
@@ -373,12 +479,44 @@ class MetaDetect:
                 w_psf = np.median(obs.weight[obs.weight != 0])
                 T_psf_avg += psf_res["T"] * w_psf
                 W_psf += w_psf
-        return T_psf_avg / W_psf
+        T_psf_avg /= W_psf
+        return T_psf_avg
 
     def get_coadd_multiband(
         self, mb_obs, fscale=None, zeropoints=None, target_zp=30.0
     ):
+        """Coadd the input multi-band multi-epoch observations into a single
+        multi-band coadd.
 
+        Parameters
+        ----------
+        mb_obs : ngmix.MultiBandObsList
+            The multi-band multi-epoch observations.
+        fscale : list of float, optional
+            The flux scale for each band. If provided, it will be used to scale
+            the fluxes of each band before coadding. If not provided,
+            zeropoints will be used to scale the fluxes of each band before
+            coadding.
+        zeropoints : list of float, optional
+            The zeropoints for each band. If provided, it will be used to scale
+            the fluxes of each band before coadding. If not provided, fscale
+            will be used to scale the fluxes of each band before coadding.
+        target_zp : float, optional
+            The target zeropoint for the coadd. If provided, it will be used to
+            scale the fluxes of each band before coadding. If not provided, the
+            zeropoints or fscale will be used to scale the fluxes of each band
+            before coadding.
+
+        Returns
+        -------
+        coadd_image : ngmix.Image
+            The coadded image.
+        coadd_noise : ngmix.Image
+            The coadded noise image.
+        coadd_weight : ngmix.Image
+            The coadded weight image.
+
+        """
         coadd_maker = get_coadd_class(self._coadd_type)
         coadd_maker = coadd_maker(
             mb_obs, fscale=fscale, zeropoints=zeropoints, target_zp=target_zp
@@ -388,7 +526,25 @@ class MetaDetect:
         return coadd_image, coadd_noise, coadd_weight
 
     def get_cat(self, img, weight, wcs=None):
+        """Get the catalog of detected objects in the image.
 
+        Parameters
+        ----------
+        img : ngmix.Image
+            The image to detect objects in.
+        weight : ngmix.Image
+            The weight image.
+        wcs : astropy.wcs.WCS, optional
+            The world coordinate system of the image.
+
+        Returns
+        -------
+        cat : astropy.table.Table
+            The catalog of detected objects.
+        seg_map : ngmix.Image
+            The segmentation map.
+
+        """
         cat, seg_map = get_cat(
             img,
             weight,
@@ -411,9 +567,29 @@ class MetaDetect:
         T_psf,
         do_uberseg=False,
     ):
+        """Get the shape catalog of the detected objects.
 
+        Parameters
+        ----------
+        in_mbobs : ngmix.MultiBandObs
+            The input multi-band observations.
+        sep_cat : astropy.table.Table
+            The catalog of separated objects.
+        seg_map : ngmix.Image
+            The segmentation map.
+        T_psf : float
+            The PSF size.
+        do_uberseg : bool, optional
+            Whether to do uber segmentation.
+
+        Returns
+        -------
+        all_shape_cat : dict
+            A dictionary containing the shape catalogs for each galaxy runner.
+
+        """
         all_shape_cat = {name: [] for name in self.gal_runners}
-        for obj_ind, det_obj in enumerate(sep_cat):
+        for det_obj in sep_cat:
             # print(f"Measuring object {obj_ind + 1}")
             cutout_size = self._stamp_size
 
@@ -443,6 +619,26 @@ class MetaDetect:
     def build_output_cat(
         self, all_sep_cat, all_shape_cat, original_cat=None, imcom_map_cat=None
     ):
+        """Build the final output catalog by combining the detection and shape
+        catalogs.
+
+        Parameters
+        ----------
+        all_sep_cat : list
+            The list of detected object catalogs.
+        all_shape_cat : dict
+            The dictionary of shape catalogs for each galaxy runner.
+        original_cat : astropy.table.Table, optional
+            The original catalog.
+        imcom_map_cat : astropy.table.Table, optional
+            The image completion map catalog.
+
+        Returns
+        -------
+        final_cat : astropy.table.Table
+            The final output catalog.
+
+        """
         SHAPE_CAT_DTYPE = []
         for name in self.gal_runners:
             SHAPE_CAT_DTYPE += get_shape_cat_dtype(name)
@@ -504,77 +700,9 @@ class MetaDetect:
                         final_cat[i][key] = all_shape_cat[runner_name][i][
                             shape_key
                         ]
-                except:
+                except Exception:
                     continue
         return final_cat
-
-
-class MetaDetectForcedPositions(MetaDetect):
-    """MetaDetect variant that uses pre-supplied truth positions instead of
-    running source detection.
-
-    SEP photometry (kron flux, SNR, flux radius) is still measured at the
-    forced positions on the noshear image.  The same catalog is applied to
-    every metacal type (noshear, 1p, 1m, ...), eliminating selection effects.
-
-    Parameters
-    ----------
-    rng : numpy.random.RandomState
-    x_pix : array-like
-        0-indexed column positions (sep convention).
-    y_pix : array-like
-        0-indexed row positions (sep convention).
-    **kwargs
-        Forwarded verbatim to ``MetaDetect.__init__``.
-    """
-
-    def __init__(self, rng, x_pix, y_pix, **kwargs):
-        super().__init__(rng, **kwargs)
-        self._x_pix = np.asarray(x_pix, dtype=np.float64)
-        self._y_pix = np.asarray(y_pix, dtype=np.float64)
-
-    def get_cat(self, mb_obs):
-        """Run SEP photometry at the shear-corrected forced positions.
-
-        For each metacal type (1p, 1m, 2p, 2m) the truth positions are shifted
-        by the corresponding reduced shear before photometry, so that Kron
-        radii, fluxes, and SNR are measured at the actual galaxy location in
-        the sheared image rather than at the noshear truth position.
-        """
-        if self._coadd_multiband:
-            img, weight = self.get_coadd_multiband(mb_obs)
-        else:
-            img = mb_obs[0][0].image
-            weight = mb_obs[0][0].weight
-
-        step = self.mcal_config["step"]
-        mcal_key = getattr(self, "_current_mcal_key", "noshear")
-        _type_shears = {
-            "noshear": (0.0, 0.0),
-            "1p": (step, 0.0),
-            "1m": (-step, 0.0),
-            "2p": (0.0, step),
-            "2m": (0.0, -step),
-        }
-        g1, g2 = _type_shears.get(mcal_key, (0.0, 0.0))
-        jacobian = mb_obs[0][0].jacobian if (g1 != 0.0 or g2 != 0.0) else None
-
-        cat, seg_map = get_cat_force(
-            img,
-            weight,
-            x_pix=self._x_pix,
-            y_pix=self._y_pix,
-            thresh=self._detect_thresh,
-            minarea=self._detect_minarea,
-            deblend_nthresh=self._detect_deblend_nthresh,
-            deblend_cont=self._detect_deblend_cont,
-            kernel=self._detect_kernel,
-            wcs=None,
-            g1=g1,
-            g2=g2,
-            jacobian=jacobian,
-        )
-        return cat, seg_map
 
 
 def do_metadetect(
@@ -590,37 +718,38 @@ def do_metadetect(
 
     Parameters
     ----------
-    config: dict
-        Configuration dictionary. Possible entries are
-
+    config : dict
+        Configuration dictionary. Possible entries are:
             metacal
             weight
             model
 
-    mbobs: ngmix.MultiBandObsList
+    mbobs : ngmix.MultiBandObsList
         We will do detection and measurements on these images
-    rng: numpy.random.RandomState
+    rng : np.random.RandomState
         Random number generator
-    shear_band_combs: list of list of int, optional
-        If given, each element of the outer list is a list of indices into mbobs to use
-        for shear measurement. Shear measurements will be made for each element of the
-        outer list. If None, then shear measurements will be made for all entries in
+    shear_band_combs : list of list of int, optional
+        If given, each element of the outer list is a list of indices into
+        mbobs to use for shear measurement. Shear measurements will be made for
+        each element of the outer list. If None, then shear measurements will
+        be made for all entries in mbobs.
+    det_band_combs : list of list of int or str, optional
+        If given, the set of bands to use for detection. The default of None
+        uses all of the bands. If the string "shear_bands" is passed, the code
+        uses the bands used for shear.
+    color_key_func : function, optional
+        If given, a function that computes a color or tuple of colors to key
+        the `color_dep_mbobs` dictionary given an input set of fluxes from the
         mbobs.
-    det_band_combs: list of list of int or str, optional
-        If given, the set of bands to use for detection. The default of None uses all
-        of the bands. If the string "shear_bands" is passed, the code uses the bands
-        used for shear.
-    color_key_func: function, optional
-        If given, a function that computes a color or tuple of colors to key the
-        `color_dep_mbobs` dictionary given an input set of fluxes from the mbobs.
-    color_dep_mbobs: dict of mbobs, optional
-        A dictionary of color-dependently rendered observations of the mbobs for use
-        in color-dependent metadetect.
+    color_dep_mbobs : dict of mbobs, optional
+        A dictionary of color-dependently rendered observations of the mbobs
+        for use in color-dependent metadetect.
 
     Returns
     -------
-    res: dict
+    res : dict
         The fitting data keyed on the shear component.
+
     """
     md = MetaDetect(
         rng,

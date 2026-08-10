@@ -9,13 +9,13 @@ class Coadd:
     We assume that the images are already aligned.
     Each images are also rescaled to share the same zeropoint.
 
-    NOTE:
+    Note:
     At the moment, all images multi-band and multi-epoch are combined into a
     single image.
+
     """
 
     def __init__(self, mb_obs, fscale=None, zeropoints=None, target_zp=30.0):
-
         self._set_data(
             mb_obs, fscale=fscale, zeropoints=zeropoints, target_zp=target_zp
         )
@@ -73,13 +73,30 @@ class Coadd:
         self.fscale = np.asarray(self.fscale, dtype=np.float64)
 
     def make(self):
+        """Make the coadd image, noise and weight.
+        Implemented in subclasses.
+        """
         raise NotImplementedError(
             "This method should be implemented in subclasses."
         )
 
 
 class CoaddAverage(Coadd):
+    """Coadd multi-band observations using a simple average."""
+
     def make(self):
+        """Make the coadd image, noise and weight using a simple average.
+
+        Returns
+        -------
+        image : np.ndarray
+            The coadded image.
+        noise : np.ndarray
+            The coadded noise.
+        weight : np.ndarray
+            The coadded weight.
+
+        """
         image = np.zeros_like(self.mb_obs[0][0].image)
         noise = np.zeros_like(image)
         weight = np.zeros_like(image)
@@ -95,15 +112,28 @@ class CoaddAverage(Coadd):
                 n_image[msk] += 1
         image[n_image != 0] /= n_image[n_image != 0]
         noise[n_image != 0] /= n_image[n_image != 0]
-        weight[n_image != 0] = (
-            n_image[n_image != 0] ** 2 / weight[n_image != 0]
-        )
+        weight[n_image != 0] = n_image[n_image != 0] ** 2 / weight[n_image != 0]
 
         return image, noise, weight
 
 
 class CoaddWeightedAverage(Coadd):
+    """Coadd multi-band observations using a weighted average."""
+
     def make(self):
+        """Make the coadd image, noise and weight using a weighted average.
+        It follows the method from SWARP.
+
+        Returns
+        -------
+        image : np.ndarray
+            The coadded image.
+        noise : np.ndarray
+            The coadded noise.
+        weight : np.ndarray
+            The coadded weight.
+
+        """
         image = np.zeros_like(self.mb_obs[0][0].image)
         noise = np.zeros_like(image)
         weight = np.zeros_like(image)
@@ -131,7 +161,22 @@ class CoaddWeightedAverage(Coadd):
 
 
 class CoaddMedian(Coadd):
+    """Coadd multi-band observations using a median."""
+
     def make(self):
+        """Make the coadd image, noise and weight using a median.
+        It follows the method from SWARP.
+
+        Returns
+        -------
+        image : np.ndarray
+            The coadded image.
+        noise : np.ndarray
+            The coadded noise.
+        weight : np.ndarray
+            The coadded weight.
+
+        """
         image = []
         noise = []
         weight = np.zeros_like(self.mb_obs[0][0].image)
@@ -160,6 +205,7 @@ class CoaddMedian(Coadd):
 
 
 def get_coadd_class(coadd_type):
+    """Get the coadd class based on the coadd type."""
     if coadd_type == "average":
         return CoaddAverage
     elif coadd_type == "weighted_average" or coadd_type == "weighted":

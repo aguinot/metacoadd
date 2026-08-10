@@ -1,14 +1,12 @@
-"""
-This an implementation of the Galsim re-gauss algorithm in ngmix format.
+"""This an implementation of the Galsim re-gauss algorithm in ngmix format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 
 This implementation is modified to allowed post-metacalibration PSF correction.
 """
 
 import ngmix
 from ngmix.observation import Observation, ObsList, MultiBandObsList
-from ngmix.gexceptions import GMixRangeError
 
 from .galsim_admom import (
     DEFAULT_BOUND_CORRECT_WT,
@@ -30,7 +28,19 @@ from numpy import ndarray
 DEFAULT_SAFE_CHECK = 0.99
 
 
-def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
+def get_psf_fit(obs, fitter, guess_fwhm=1.2):
+    """Fit the PSF with a gaussian model using the input fitter.
+
+    Parameters
+    ----------
+    obs : ngmix.Observation
+        The PSF observation to fit.
+    fitter : ngmix.fitter.Fitter
+        The fitter to use for the PSF fit.
+    guess_fwhm : float, optional
+        The initial guess for the PSF FWHM. Default is 1.2 arcsec.
+
+    """
     # PSF
     res_psf = fitter.go(obs.psf, guess_fwhm)
     xx_psf, xy_psf, yy_psf = res_psf["pars"][2:5] / res_psf["wsum"]
@@ -40,6 +50,24 @@ def get_psf_fit(obs, fitter, guess_fwhm=1.2, seed=None):
 
 
 def check_exp(obs, psf_res, safe_factor=2):
+    """Check the exponential weight function for the input observation.
+
+    Parameters
+    ----------
+    obs : ngmix.Observation
+        The observation to check.
+    psf_res : dict
+        The PSF fit results from get_psf_fit.
+    safe_factor : float, optional
+        The factor to multiply the PSF size by to get the weight function size.
+        Default is 2.
+
+    Returns
+    -------
+    w_sum : float
+        The sum of the weight function applied to the observation.
+
+    """
     xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5] / psf_res["wsum"]
     T_psf = xx_psf + yy_psf
 
@@ -57,27 +85,28 @@ def check_exp(obs, psf_res, safe_factor=2):
 
 
 class ReGaussFitter(GAdmomFitter):
-    """
-    Measure re-gauss moments for the input observation
-    parameters
+    """Measure re-gauss moments for the input observation.
+
+    Parameters
     ----------
-    maxiter: integer, optional
+    maxiter : int, optional
         Maximum number of iterations, default 200
-    etol: float, optional
+    etol : float, optional
         absolute tolerance in e1 or e2 to determine convergence,
         default 1.0e-5
-    Ttol: float, optional
+    Ttol : float, optional
         relative tolerance in T <x^2> + <y^2> to determine
         convergence, default 1.0e-3
-    shiftmax: float, optional
+    shiftmax : float, optional
         Largest allowed shift in the centroid, relative to
         the initial guess.  Default 5.0 (5 pixels if the jacobian
         scale is 1)
-    cenonly: bool, optional
+    cenonly : bool, optional
         If set to True, only vary the center
-    rng: np.random.RandomState
+    rng : np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
+
     """
 
     kind = "regauss"
@@ -108,18 +137,18 @@ class ReGaussFitter(GAdmomFitter):
         self.rng = rng
 
     def go(self, obs, guess=None):
-        """
-        run re-gauss
-        parameters
+        """Run re-gauss.
+
+        Parameters
         ----------
-        obs: Observation or ObsList
+        obs : Observation or ObsList
             ngmix.Observation
-        guess: ngmix.GMix or a float
+        guess : ngmix.GMix or a float
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.
-        """
 
+        """
         if isinstance(obs, MultiBandObsList):
             nband = len(obs)
             mb_obs = obs
@@ -136,7 +165,8 @@ class ReGaussFitter(GAdmomFitter):
                     mb_obs[0].append(obs)
                 else:
                     raise ValueError(
-                        "input obs must be a MultiBandObsList or ObsList or Observation"
+                        "input obs must be a MultiBandObsList or ObsList or "
+                        "Observation"
                     )
         ares = self._get_am_result(nband)
         scale = mb_obs[0][0].jacobian.scale
@@ -159,7 +189,7 @@ class ReGaussFitter(GAdmomFitter):
                 self._get_am_tmp,
                 self.conf,
             )
-        except Exception as e:
+        except Exception:
             ares["flags"] = 2**16
 
         result = get_result(ares, scale**2, ares["wnorm"][0])

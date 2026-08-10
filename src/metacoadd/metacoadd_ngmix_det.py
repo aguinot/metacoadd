@@ -500,7 +500,7 @@ class MetaCoadd(SimpleCoadd):
         if hasattr(exp, "weight"):
             stamp_dict["weight"] = {}
 
-        for key in stamp_dict.keys():
+        for key in stamp_dict:
             if key == "border":
                 stamp_dict[key] = border_stamp
                 continue
