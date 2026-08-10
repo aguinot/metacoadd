@@ -16,7 +16,7 @@ from ngmix.gexceptions import GMixRangeError
 
 DEFAULT_CONFIG = {
     "step": 0.01,
-    "has_pixel": False,
+    "has_pixel": True,
 }
 
 
@@ -60,7 +60,6 @@ class MetacalHandler:
         self.fixnoise = fixnoise
         self.use_noise_image = use_noise_image
         self.mcal_config = DEFAULT_CONFIG.copy()
-        self.mcal_config = {}
         if mcal_config is not None:
             self.mcal_config.update(mcal_config)
 
@@ -223,7 +222,7 @@ class MetacalFixGaussPSF:
         self._set_interp()
 
         if self.has_pixel:
-            self._set_pixel(obs)
+            self._set_pixel()
 
         self._set_psf_data(obs)
         self._psf_cache = {}
