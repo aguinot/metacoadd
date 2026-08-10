@@ -7,7 +7,7 @@ from metadetect.fitting import fit_mbobs_list_wavg
 from metadetect.mfrac import measure_mfrac
 
 from metacoadd.exposure import CoaddImage, Exposure
-from metacoadd.utils import exp2obs
+from metacoadd.utils import _exp2obs
 
 TEST_METADETECT_CONFIG = {
     "model": "wmom",
@@ -207,13 +207,13 @@ class SimpleCoadd:
             stamps.append(all_stamp)
         self.stamps = stamps
         non_zero_weights = np.where(self.coaddimage.weight.array != 0)
-        self.coaddimage.image.array[
-            non_zero_weights
-        ] /= self.coaddimage.weight.array[non_zero_weights]
+        self.coaddimage.image.array[non_zero_weights] /= (
+            self.coaddimage.weight.array[non_zero_weights]
+        )
         if "noise" in list(all_stamp.keys()):
-            self.coaddimage.noise.array[
-                non_zero_weights
-            ] /= self.coaddimage.weight.array[non_zero_weights]
+            self.coaddimage.noise.array[non_zero_weights] /= (
+                self.coaddimage.weight.array[non_zero_weights]
+            )
 
     def _process_one_exp(self, exp):
         """Process one exposure
@@ -386,21 +386,25 @@ class MetaCoadd(SimpleCoadd):
                     & self.psf_coaddimage.image[type].bounds
                 )
                 if b.isDefined():
-                    self.psf_coaddimage.image[type][b] += all_stamp["psf"][type]
+                    self.psf_coaddimage.image[type][b] += all_stamp["psf"][
+                        type
+                    ]
 
             stamps.append(all_stamp)
         self.stamps = stamps
 
         # Finish the stacking
         for type in self.types:
-            non_zero_weights = np.where(self.coaddimage.weight[type].array != 0)
-            self.coaddimage.image[type].array[
-                non_zero_weights
-            ] /= self.coaddimage.weight[type].array[non_zero_weights]
+            non_zero_weights = np.where(
+                self.coaddimage.weight[type].array != 0
+            )
+            self.coaddimage.image[type].array[non_zero_weights] /= (
+                self.coaddimage.weight[type].array[non_zero_weights]
+            )
             if "noise" in list(all_stamp.keys()):
-                self.coaddimage.noise[type].array[
-                    non_zero_weights
-                ] /= self.coaddimage.weight[type].array[non_zero_weights]
+                self.coaddimage.noise[type].array[non_zero_weights] /= (
+                    self.coaddimage.weight[type].array[non_zero_weights]
+                )
             self.psf_coaddimage.image[type].array[:, :] /= len(
                 self.psf_coaddimage.explist
             )
@@ -458,7 +462,7 @@ class MetaCoadd(SimpleCoadd):
             self.obs = obs
 
     def _run_metacal(self, exp, psf_exp, use_resamp=True):
-        obs = exp2obs(exp, psf_exp, use_resamp=use_resamp)
+        obs = _exp2obs(exp, psf_exp, use_resamp=use_resamp)
 
         rng = np.random.RandomState(1234)
 
@@ -491,7 +495,9 @@ class MetaCoadd(SimpleCoadd):
 
         print("before")
         print(
-            galsim.hsm.FindAdaptiveMom(galsim.Image(psf_exp.image_resamp.array))
+            galsim.hsm.FindAdaptiveMom(
+                galsim.Image(psf_exp.image_resamp.array)
+            )
         )
 
         stamp_dict = {"image": {}, "psf": {}, "border": {}}
@@ -509,7 +515,9 @@ class MetaCoadd(SimpleCoadd):
                     img = getattr(mcal_obs[type], key).image
                     print("after")
                     print(galsim.hsm.FindAdaptiveMom(galsim.Image(img)))
-                    wcs = getattr(mcal_obs[type], key).jacobian.get_galsim_wcs()
+                    wcs = getattr(
+                        mcal_obs[type], key
+                    ).jacobian.get_galsim_wcs()
                 else:
                     img = getattr(mcal_obs[type], key)
                     wcs = mcal_obs[type].jacobian.get_galsim_wcs()
