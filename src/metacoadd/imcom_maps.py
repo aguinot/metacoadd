@@ -2,8 +2,7 @@ import numpy as np
 
 
 def get_combine_func(combine_func_name):
-    """
-    Get the combine function based on the name.
+    """Get the combine function based on the name.
     This is used to combine the pixel values of the IMCOM maps for each object.
 
     Parameters
@@ -16,6 +15,7 @@ def get_combine_func(combine_func_name):
     -------
     combine_func : function
         The combine function corresponding to the name.
+
     """
     if combine_func_name == "mean":
         return np.mean
@@ -35,8 +35,7 @@ def get_combine_func(combine_func_name):
 
 
 def get_stat_func(stat_func_name):
-    """
-    Get the statistical function based on the name.
+    """Get the statistical function based on the name.
     This is used to compute statistics for the IMCOM maps for each object.
 
     Parameters
@@ -49,6 +48,7 @@ def get_stat_func(stat_func_name):
     -------
     stat_func : function
         The statistical function corresponding to the name.
+
     """
     if stat_func_name == "std":
         return np.std
@@ -64,8 +64,7 @@ def get_stat_func(stat_func_name):
 
 
 def get_imcom_map_cat_dtype(imcom_map_config, nband):
-    """
-    Get the dtype for the output catalog of IMCOM maps.
+    """Get the dtype for the output catalog of IMCOM maps.
 
     Parameters
     ----------
@@ -81,6 +80,7 @@ def get_imcom_map_cat_dtype(imcom_map_config, nband):
     dtype : list of tuples
         The dtype for the output catalog of IMCOM maps. Each tuple contains the
         name of the field and its corresponding numpy dtype.
+
     """
     dtype = []
     for i in range(nband):
@@ -97,8 +97,7 @@ def get_imcom_map_cat_dtype(imcom_map_config, nband):
 
 
 def get_output_imcom_map_cat(n_obj, imcom_map_config, nband):
-    """
-    Get the output catalog for the IMCOM maps.
+    """Get the output catalog for the IMCOM maps.
 
     Parameters
     ----------
@@ -113,6 +112,7 @@ def get_output_imcom_map_cat(n_obj, imcom_map_config, nband):
     -------
     out : numpy.ndarray
         The output catalog for the IMCOM maps.
+
     """
     CAT_DTYPE = get_imcom_map_cat_dtype(imcom_map_config, nband)
     out = np.array(
@@ -128,8 +128,7 @@ def extract_imcom_maps(
     seg_map,
     config,
 ):
-    """
-    Extract the IMCOM maps for each object in the catalog.
+    """Extract the IMCOM maps for each object in the catalog.
 
     Parameters
     ----------
@@ -148,6 +147,7 @@ def extract_imcom_maps(
     -------
     output_cat : numpy.ndarray
         The output catalog containing the extracted IMCOM maps for each object.
+
     """
     n_band = len(mbobs)
 

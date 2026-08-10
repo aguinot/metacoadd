@@ -21,9 +21,8 @@ DEFAULT_CONFIG = {
 
 
 class MetacalHandler:
-    """
-    Class to handle metacalibration of observations. This class is used to make
-    sheared images for use in metacalibration.
+    """Class to handle metacalibration of observations. This class is used to
+    make sheared images for use in metacalibration.
 
     Parameters
     ----------
@@ -46,6 +45,7 @@ class MetacalHandler:
         Additional configuration for the metacal class.See the metacal class
         for details.  This can be used to set the step size, whether to use
         pixel convolution, etc.
+
     """
 
     def __init__(
@@ -73,8 +73,7 @@ class MetacalHandler:
         self._maxk = None
 
     def get_all(self, obs, mcal_types):
-        """
-        Get all metacalibrated observations for the input observation.
+        """Get all metacalibrated observations for the input observation.
 
         Parameters
         ----------
@@ -91,6 +90,7 @@ class MetacalHandler:
         mcal_obs: dict of ngmix.Observation
             A dictionary of metacalibrated observations, with keys
             corresponding to the input mcal_types.
+
         """
         if isinstance(obs, Observation):
             mcal_obs = {}
@@ -180,8 +180,7 @@ class MetacalHandler:
 
 
 class MetacalFixGaussPSF:
-    """
-    Make sheared images for use in metacalibration
+    """Make sheared images for use in metacalibration.
 
     Parameters
     ----------
@@ -200,6 +199,7 @@ class MetacalFixGaussPSF:
     rng: numpy.random.RandomState
         Random state for generating noise fields. Not needed if metacal if
         using the noise field in the observations.
+
     """
 
     def __init__(
@@ -234,21 +234,20 @@ class MetacalFixGaussPSF:
         self._maxk = None
 
     def get_obs_galshear(self, mcal_type):
-        """
-        This is the case where we shear the image, for calculating R
+        """This is the case where we shear the image, for calculating R.
 
-        parameters
+        Parameters
         ----------
         mcal_type: str
             The type of shear to apply.  One of ["noshear", "1p", "1m", "2p",
             "2m"]
 
-        returns
+        Returns
         -------
         newobs: ngmix.Observation
             The metacalibrated observation with the specified shear applied.
-        """
 
+        """
         if mcal_type == "noshear":
             shear = Shape(0.0, 0.0)
         elif mcal_type == "1p":
@@ -281,8 +280,7 @@ class MetacalFixGaussPSF:
         return newobs
 
     def get_obs_psfshear(self, shear):
-        """
-        This is the case where we shear the psf image, for calculating Rpsf
+        """This is the case where we shear the psf image, for calculating Rpsf.
 
         Parameters
         ----------
@@ -294,6 +292,7 @@ class MetacalFixGaussPSF:
         newobs: ngmix.Observation
             The metacalibrated observation with the specified shear applied to
             the PSF.
+
         """
         newpsf_image, newpsf_obj = self.get_target_psf(shear, "psf_shear")
         conv_image = self.get_target_image(newpsf_obj, shear=None)
@@ -302,9 +301,8 @@ class MetacalFixGaussPSF:
         return newobs
 
     def _get_dilated_psf(self, shear, doshear=False):
-        """
-        dilate the psf by the input shear and reconvolve by the pixel.  See
-        _do_dilate for the algorithm
+        """Dilate the psf by the input shear and reconvolve by the pixel.  See
+        _do_dilate for the algorithm.
 
         Parameters
         ----------
@@ -318,8 +316,8 @@ class MetacalFixGaussPSF:
         -------
         psf_grown: galsim object
             The dilated, possibly sheared, PSF object
-        """
 
+        """
         psf_grown_nopix = self._do_dilate(
             self.psf_int_nopix, shear, doshear=doshear
         )
@@ -341,15 +339,12 @@ class MetacalFixGaussPSF:
         return self._psf_cache[key]
 
     def _get_psf_key(self, shear, doshear):
-        """
-        need full g1 and g2 in key to support psf shearing
-        """
+        """Need full g1 and g2 in key to support psf shearing."""
         return f"{doshear}-{shear.g1}-{shear.g2}"
 
     def get_target_image(self, psf_obj, shear=None):
-        """
-        get the target image, convolved with the specified psf
-        and possibly sheared
+        """Get the target image, convolved with the specified psf
+        and possibly sheared.
 
         Parameters
         ----------
@@ -362,8 +357,8 @@ class MetacalFixGaussPSF:
         Returns
         -------
         galsim image object
-        """
 
+        """
         imconv = self._get_target_gal_obj(psf_obj, shear=shear)
 
         try:
@@ -390,8 +385,7 @@ class MetacalFixGaussPSF:
         return imconv
 
     def get_sheared_image_nopsf(self, shear):
-        """
-        get the image sheared by the reqested amount, pre-psf and pre-pixel
+        """Get the image sheared by the reqested amount, pre-psf and pre-pixel.
 
         Parameters
         ----------
@@ -401,6 +395,7 @@ class MetacalFixGaussPSF:
         Returns
         -------
         galsim image object
+
         """
         _check_shape(shear)
         # this is the interpolated, devonvolved image
@@ -408,8 +403,7 @@ class MetacalFixGaussPSF:
         return sheared_image
 
     def get_target_psf(self, shear, type):
-        """
-        get image and galsim object for the dilated, possibly sheared, psf
+        """Get image and galsim object for the dilated, possibly sheared, psf.
 
         Parameters
         ----------
@@ -423,8 +417,8 @@ class MetacalFixGaussPSF:
         Returns
         -------
         image, galsim object
-        """
 
+        """
         _check_shape(shear)
 
         doshear = type == "psf_shear"
@@ -457,10 +451,7 @@ class MetacalFixGaussPSF:
         return psf_grown_image.copy(), psf_grown
 
     def _set_psf_data(self, obs):
-        """
-        create galsim objects based on the input observation
-        """
-
+        """Create galsim objects based on the input observation."""
         psf_image, psf_int = self._get_interp(
             obs.psf.image.copy(),
             self.get_psf_wcs(),
@@ -479,10 +470,7 @@ class MetacalFixGaussPSF:
         self.psf_int_nopix_inv = galsim.Deconvolve(self.psf_int_nopix)
 
     def _set_data(self, obs, stepk=0.0, maxk=0.0):
-        """
-        create galsim objects based on the input observation
-        """
-
+        """Create galsim objects based on the input observation."""
         # these would share data with the original numpy arrays, make copies
         # to be sure they don't get modified
         image, image_int = self._get_interp(
@@ -506,38 +494,29 @@ class MetacalFixGaussPSF:
         return image_int.stepk, image_int.maxk
 
     def get_wcs(self):
-        """
-        get a galsim wcs from the input jacobian
-        """
+        """Get a galsim wcs from the input jacobian."""
         return self.obs.jacobian.get_galsim_wcs()
 
     def get_psf_wcs(self):
-        """
-        get a galsim wcs from the input jacobian
-        """
+        """Get a galsim wcs from the input jacobian."""
         return self.obs.psf.jacobian.get_galsim_wcs()
 
     def _set_pixel(self):
-        """
-        set the pixel based on the pixel scale, for convolutions
+        """Set the pixel based on the pixel scale, for convolutions.
 
         Thanks to M. Jarvis for the suggestion to use toWorld
         to get the proper pixel
         """
-
         wcs = self.get_wcs()
         self.pixel = wcs.toWorld(galsim.Pixel(scale=1))
         self.pixel_inv = galsim.Deconvolve(self.pixel)
 
     def _set_interp(self):
-        """
-        set the laczos interpolation configuration
-        """
+        """Set the laczos interpolation configuration."""
         self.interp = "lanczos15"
 
     def _get_interp(self, img, wcs, stepk=0.0, maxk=0.0):
-        """
-        get a galsim interpolated image object for the input image and wcs
+        """Get a galsim interpolated image object for the input image and wcs.
 
         Parameters
         ----------
@@ -555,8 +534,8 @@ class MetacalFixGaussPSF:
         Returns
         -------
         galsim image, galsim interpolated image object
-        """
 
+        """
         image = galsim.Image(img, wcs=wcs)
         image_int = galsim.InterpolatedImage(
             image,
@@ -576,8 +555,7 @@ class MetacalFixGaussPSF:
             return self._new_psf_obs
 
     def _make_obs(self, im, psf_im):
-        """
-        Make new Observation objects with the new image and psf.
+        """Make new Observation objects with the new image and psf.
 
         Parameters
         ----------
@@ -590,17 +568,15 @@ class MetacalFixGaussPSF:
         -------
         newobs: ngmix.Observation
             The new observation with the new image and psf
-        """
 
+        """
         newobs = self.obs.copy()
         newobs.image = im.array
         newobs.psf = self._make_psf_obs(psf_im)
         return newobs
 
     def get_interp_param(self):
-        """
-        Get the stepk and maxk values for the interpolant.
-        """
+        """Get the stepk and maxk values for the interpolant."""
         return self._stepk, self._maxk
 
     def _clear_data(self):
@@ -608,9 +584,8 @@ class MetacalFixGaussPSF:
 
 
 class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
-    """
-    Make sheared images for use in metacalibration, with a best-fitted Gaussian
-    PSF model.
+    """Make sheared images for use in metacalibration, with a best-fitted
+    Gaussian PSF model.
 
     Parameters
     ----------
@@ -625,6 +600,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
     rng: numpy.random.RandomState
         Random state for generating noise fields. Not needed if metacal if
         using the noise field in the observations.
+
     """
 
     def __init__(
@@ -645,8 +621,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
         self._do_psf_fit()
 
     def get_target_psf(self, shear, type):
-        """
-        get image and galsim object for the dilated, possibly sheared, psf
+        """Get image and galsim object for the dilated, possibly sheared, psf.
 
         Parameters
         ----------
@@ -660,8 +635,8 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
         Returns
         -------
         image, galsim object
-        """
 
+        """
         _check_shape(shear)
 
         doshear = type == "psf_shear"
@@ -691,11 +666,9 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
         return psf_grown_image.copy(), psf_grown
 
     def _get_dilated_psf(self, shear, doshear=False):
+        """Dilate the psf by the input shear and reconvolve by the pixel.  See
+        _do_dilate for the algorithm.
         """
-        dilate the psf by the input shear and reconvolve by the pixel.  See
-        _do_dilate for the algorithm
-        """
-
         assert doshear is False, "no shearing fitgauss psf"
 
         psf_grown = _do_dilate(self.gauss_psf, shear)

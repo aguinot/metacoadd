@@ -1,7 +1,7 @@
-"""
-This an implementation of the Galsim adaptive moments algorithm in ngmix format.
+"""This an implementation of the Galsim adaptive moments algorithm in ngmix
+format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
 from math import atan2, cos, exp, sin, sqrt
@@ -26,9 +26,9 @@ def find_ellipmom1(
     conf,
     do_cov=False,
 ):
-    """
-    Compute the weighted sums of moments for a given guess of the centroid and
-    second moments. This is the first step of the adaptive moment algorithm.
+    """Compute the weighted sums of moments for a given guess of the centroid
+    and second moments. This is the first step of the adaptive moment
+    algorithm.
 
     Parameters
     ----------
@@ -57,6 +57,7 @@ def find_ellipmom1(
         A dictionary containing configuration parameters.
     do_cov : bool, optional
         If True, compute the covariance matrix. Default is False.
+
     """
     F = res["F"]
 
@@ -183,8 +184,7 @@ def find_ellipmom1(
 
 @njit(cache=True)
 def normalize_moment_covariance(sums, sums_cov):
-    """
-    Transform raw weighted sums and covariance to flux-normalized moments.
+    """Transform raw weighted sums and covariance to flux-normalized moments.
 
     Parameters
     ----------
@@ -195,6 +195,7 @@ def normalize_moment_covariance(sums, sums_cov):
         Covariance matrix of the weighted sums. The first 6 rows and columns
         correspond to the moments, and the 7th row and column correspond to the
         flux.
+
     """
     raw_cov = sums_cov.copy()
     flux = sums[6]
@@ -220,8 +221,7 @@ def find_ellipmom2(
     confarray,
     do_covariance=True,
 ):
-    """
-    Compute the adaptive moments for a set of observations.
+    """Compute the adaptive moments for a set of observations.
 
     Parameters
     ----------
@@ -244,8 +244,8 @@ def find_ellipmom2(
     do_covariance : bool, optional
         If True, compute the covariance matrix of the adaptive moments.
         Default is True.
-    """
 
+    """
     conf = confarray[0]
     res = resarray[0]
     tmp = tmparray[0]
@@ -378,8 +378,7 @@ def find_ellipmom2(
 
 @njit(cache=True)
 def clear_result(res, clear_covariance=True):
-    """
-    clear some fields in the result structure
+    """Clear some fields in the result structure.
 
     Parameters
     ----------
@@ -387,6 +386,7 @@ def clear_result(res, clear_covariance=True):
         The result structure to clear.
     clear_covariance : bool, optional
         If True, clear the covariance matrix. Default is True.
+
     """
     res["npix"] = 0
     res["wsum"] = 0.0
@@ -398,8 +398,7 @@ def clear_result(res, clear_covariance=True):
 
 @njit(cache=True)
 def clear_tmp(tmp, clear_covariance=True):
-    """
-    Clear some fields in the temporary structure.
+    """Clear some fields in the temporary structure.
 
     Parameters
     ----------
@@ -407,6 +406,7 @@ def clear_tmp(tmp, clear_covariance=True):
         The temporary structure to clear.
     clear_covariance : bool, optional
         If True, clear the covariance matrix. Default is True.
+
     """
     if clear_covariance:
         tmp["sums"][:] = 0.0
@@ -415,8 +415,7 @@ def clear_tmp(tmp, clear_covariance=True):
 
 @njit(cache=True)
 def compute_effective_flux(fluxes, flux_cov):
-    """
-    Compute effective flux, its variance, and optional cross-covariances
+    """Compute effective flux, its variance, and optional cross-covariances
     with other parameters using the BLUE estimator.
 
     Parameters
@@ -440,6 +439,7 @@ def compute_effective_flux(fluxes, flux_cov):
 
     flux_vars : (B,) array
         Marginal variances of the input fluxes.
+
     """
     ones = np.ones(len(fluxes), dtype=np.float64)
 
@@ -456,8 +456,7 @@ def compute_effective_flux(fluxes, flux_cov):
 
 @njit(cache=True)
 def compute_flux_cross_covs(flux_weights, target_covs):
-    """
-    Compute effective flux, its variance, and optional cross-covariances
+    """Compute effective flux, its variance, and optional cross-covariances
     with other parameters using the BLUE estimator.
 
     Parameters
@@ -472,6 +471,7 @@ def compute_flux_cross_covs(flux_weights, target_covs):
     -------
     cross_covs : numpy.ndarray
         Cross-covariances with F_eff, if target_covs was provided.
+
     """
     target_covs = np.atleast_2d(target_covs)
     cross_covs = target_covs @ flux_weights
@@ -481,19 +481,18 @@ def compute_flux_cross_covs(flux_weights, target_covs):
 
 @njit(cache=True)
 def combine_multiband_observations_array(res, tmp, band_tracker):
-    """
-    Combine multi-band measurements from array inputs.
+    """Combine multi-band measurements from array inputs.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     res : dict
         The result structure to store the combined observations.
     tmp : dict
         The temporary structure to store intermediate results.
     band_tracker : list of int
         List of number of observations per band. Length = N_bands
-    """
 
+    """
     # Unpack the input
     m_array = tmp["sums"]
     Sigma_array = tmp["sums_cov"]
@@ -577,8 +576,8 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
 def get_mom_var(
     X, Y, Z, var_X, var_Y, var_Z, var_XY, var_XZ, var_YZ, kind="e1"
 ):
-    """
-    Propagate fixed-weight moment covariance to adaptive size and ellipticity.
+    """Propagate fixed-weight moment covariance to adaptive size and
+    ellipticity.
 
     Parameters
     ----------
@@ -608,6 +607,7 @@ def get_mom_var(
     -------
     var_t : float
         Variance of the specified moment type after adaptive-response scaling.
+
     """
     dfdx = dfdy = dfdz = 0
     T = X + Y
@@ -646,8 +646,8 @@ def get_T_and_e_cov(
     cov_Q22_Q12,
     cov_Q11_Q12,
 ):
-    """
-    Propagate fixed-weight moment covariance to adaptive size and ellipticity.
+    """Propagate fixed-weight moment covariance to adaptive size and
+    ellipticity.
 
     Parameters are the flux-normalized second moments and their covariance in
     ngmix/image-coordinate ordering: ``Q22`` is the row-row moment, ``Q11`` is
@@ -693,6 +693,7 @@ def get_T_and_e_cov(
         Variance of ``e2`` after adaptive-response scaling.
     e12_cov : float
         Covariance between ``e1`` and ``e2`` after adaptive-response scaling.
+
     """
     T = Q22 + Q11
     inv_T = 1.0 / T
@@ -741,8 +742,7 @@ def get_T_and_e_cov(
 
 @njit(cache=True)
 def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
-    """
-    Propagate the variance of the product ``flux * rho4``.
+    """Propagate the variance of the product ``flux * rho4``.
 
     Parameters
     ----------
@@ -761,6 +761,7 @@ def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
     -------
     var_flux_rho4 : float
         Variance of the product ``flux * rho4``.
+
     """
     return (
         flux * flux * var_rho4

@@ -1,5 +1,4 @@
-"""
-Analytic Fourier-space evaluation of a Gaussian mixture model.
+"""Analytic Fourier-space evaluation of a Gaussian mixture model.
 
 For a convolved gmix (galaxy * PSF) where every component has moments
 (irr, irc, icc) large enough for the Fourier-space Gaussian to decay
@@ -188,6 +187,7 @@ def gmix_eval_fourier_analytic_inplace(
     out : ndarray, complex128, shape (N, N//2+1)
         Pre-allocated output array.  Caller is responsible for zeroing before
         calling.
+
     """
     # Frequency axes (cycles / pixel)
     fr = np.empty(N)
@@ -243,6 +243,7 @@ def gmix_eval_fourier_analytic(
     Returns
     -------
     out : ndarray, complex128, shape (N, N//2+1)
+
     """
     Nc = N // 2 + 1
     out = np.zeros((N, Nc), dtype=nb.complex128)

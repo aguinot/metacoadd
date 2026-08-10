@@ -7,8 +7,7 @@ from .fitting import get_gauss_psf_runner
 
 
 def get_original_cat_dtype(nband):
-    """
-    Get the dtype for the original image catalog.
+    """Get the dtype for the original image catalog.
 
     Parameters
     ----------
@@ -19,6 +18,7 @@ def get_original_cat_dtype(nband):
     -------
     dtype: list
         The dtype for the original image catalog.
+
     """
     dtype = []
     for i in range(nband):
@@ -39,8 +39,7 @@ def get_original_cat_dtype(nband):
 
 
 def get_output_original_cat(n_obj, nband):
-    """
-    Get the output catalog for the original image measurements.
+    """Get the output catalog for the original image measurements.
 
     Parameters
     ----------
@@ -53,6 +52,7 @@ def get_output_original_cat(n_obj, nband):
     -------
     out: np.ndarray
         The output catalog for the original image measurements.
+
     """
     CAT_DTYPE = get_original_cat_dtype(nband)
     out = np.array(
@@ -72,8 +72,7 @@ def get_original_image_cat(
     wmom_fwhm=0.5,
     psf_fitter="gauss",
 ):
-    """
-    Get the original image catalog.
+    """Get the original image catalog.
 
     Parameters
     ----------
@@ -98,6 +97,7 @@ def get_original_image_cat(
     -------
     output_cat: np.ndarray
         The output catalog for the original image measurements.
+
     """
     output_cat = get_output_original_cat(len(sep_cat), len(mbobs))
     wmom_runner = ngmix.gaussmom.GaussMom(fwhm=wmom_fwhm)

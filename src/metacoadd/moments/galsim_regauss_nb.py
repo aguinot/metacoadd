@@ -1,7 +1,6 @@
-"""
-This an implementation of the Galsim re-gauss algorithm in ngmix format.
+"""This an implementation of the Galsim re-gauss algorithm in ngmix format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 
 This implementation is modified to allowed post-metacalibration PSF correction.
 """
@@ -45,8 +44,7 @@ def _shearmult(e1_a, e2_a, e1_b, e2_b):
 
 @njit(cache=True)
 def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
-    """
-    Implementation of the Bernstein & Jarvis correction with null PSF.
+    """Implementation of the Bernstein & Jarvis correction with null PSF.
 
     Parameters
     ----------
@@ -71,6 +69,7 @@ def bj_nullPSF(T_ratio, e1_gal, e2_gal, rho4_gal, e1_psf, e2_psf, rho4_psf):
         The first component of the corrected galaxy's ellipticity.
     e2_new: float
         The second component of the corrected galaxy's ellipticity.
+
     """
     cosheta_p = 1 / sqrt(1 - e1_psf * e1_psf - e2_psf * e2_psf)
     cosheta_g = 1 / sqrt(1 - e1_gal * e1_gal - e2_gal * e2_gal)
@@ -102,8 +101,7 @@ def _get_corrected_mom3(e1, e2, SB):
 
 @njit(cache=True)
 def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
-    """
-    Implementation of the Bernstein & Jarvis correction.
+    """Implementation of the Bernstein & Jarvis correction.
 
     Parameters
     ----------
@@ -130,6 +128,7 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
         The corrected xy moment of the galaxy.
     yy_final: float
         The corrected yy moment of the galaxy.
+
     """
     T_gal = xx_gal + yy_gal
     e1_gal = (xx_gal - yy_gal) / T_gal
@@ -149,8 +148,7 @@ def BJ_correction(yy_gal, xy_gal, xx_gal, rho4gal, e1_psf, e2_psf, T_psf):
 
 @njit(cache=True)
 def goodFFTSize(N):
-    """
-    Return a good size for FFTs, which is the next power of 2 or 3*2^n
+    """Return a good size for FFTs, which is the next power of 2 or 3*2^n
     greater than or equal to N.
 
     Parameters
@@ -162,6 +160,7 @@ def goodFFTSize(N):
     -------
     Nk: int
         The next good size for FFTs.
+
     """
     if N <= 2:
         return 2
@@ -179,8 +178,7 @@ def goodFFTSize(N):
 def fast_convolve_image1(
     image1, image2, image_out, orig_img1=(0, 0), orig_img2=(0, 0)
 ):
-    """
-    Convolve two images using FFTs. The output image is modified in place.
+    """Convolve two images using FFTs. The output image is modified in place.
 
     Parameters
     ----------
@@ -194,6 +192,7 @@ def fast_convolve_image1(
         The (row, col) coordinates of the origin of image1 in the output image.
     orig_img2: tuple of int, optional
         The (row, col) coordinates of the origin of image2 in the output image.
+
     """
     # Input
     N1 = int(max(image1.shape) * 4 / 3)
@@ -270,8 +269,7 @@ def get_resi_img(
     yy_psf,
     flux_psf,
 ):
-    """
-    Get the residual image of the PSF correction.
+    """Get the residual image of the PSF correction.
 
     Parameters
     ----------
@@ -298,6 +296,7 @@ def get_resi_img(
     -------
     out_image_img: 2D array
         The residual image after PSF correction.
+
     """
     nsig_rg = 3.0
     nsig_rg2 = 3.6
@@ -436,8 +435,7 @@ def get_true_resi_img(
     flux_gal,
     psf_resi=None,
 ):
-    """
-    Get the residual image of the PSF correction using a pre-computed PSF
+    """Get the residual image of the PSF correction using a pre-computed PSF
     residual image.
 
     Parameters
@@ -463,6 +461,7 @@ def get_true_resi_img(
     -------
     out_image_img2: 2D array
         The residual image after PSF correction.
+
     """
     # Approx deconv
     if xx_f <= obs.jacobian.area:
@@ -510,8 +509,8 @@ def regauss(
     confarray,
     do_covariance=True,
 ):
-    """
-    Perform the re-Gaussianization PSF correction on a multi-band observation.
+    """Perform the re-Gaussianization PSF correction on a multi-band
+    observation.
 
     Parameters
     ----------
@@ -527,6 +526,7 @@ def regauss(
         Array to store configuration information.
     do_covariance: bool, optional
         Whether to compute the covariance matrix. Default is True.
+
     """
     pixels_list = []
     band_tracker = []

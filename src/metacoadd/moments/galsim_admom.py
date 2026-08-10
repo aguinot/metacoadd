@@ -1,7 +1,7 @@
-"""
-This an implementation of the Galsim adaptive moments algorithm in ngmix format
+"""This an implementation of the Galsim adaptive moments algorithm in ngmix
+format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
 import ngmix.flags
@@ -33,9 +33,8 @@ DEFAULT_MIN_T_ABS = 2e-3
 
 
 class GAdmomResult(dict):
-    """
-    Represent a fit using adaptive moments, and generate images and mixtures
-    for the best fit
+    """Represent a fit using adaptive moments, and generate images and mixtures
+    for the best fit.
 
     Parameters
     ----------
@@ -43,6 +42,7 @@ class GAdmomResult(dict):
         Observation, ObsList, or MultiBandObsList
     result: dict
         The basic fit result, to bad added to this object's keys
+
     """
 
     def __init__(self, obs, result):
@@ -50,9 +50,7 @@ class GAdmomResult(dict):
         self.update(result)
 
     def get_gmix(self):
-        """
-        get a gmix representing the best fit, normalized
-        """
+        """Get a gmix representing the best fit, normalized."""
         if self["flags"] != 0:
             raise RuntimeError("cannot create gmix, fit failed")
 
@@ -73,12 +71,13 @@ class GAdmomResult(dict):
         return GMixModel(pars[:6], "gauss")
 
     def make_image(self):
-        """
-        Get an image of the best fit mixture
-        Returns
+        """Get an image of the best fit mixture.
+
+        Returns.
         -------
         image: array
             Image of the model, including the PSF if a psf was sent
+
         """
         if self["flags"] != 0:
             raise RuntimeError("cannot create image, fit failed")
@@ -97,9 +96,9 @@ class GAdmomResult(dict):
 
 
 class GAdmomFitter:
-    """
-    Measure adaptive moments for the input observation
-    parameters
+    """Measure adaptive moments for the input observation.
+
+    Parameters
     ----------
     maxiter: integer, optional
         Maximum number of iterations, default 200
@@ -118,6 +117,7 @@ class GAdmomFitter:
     rng: np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
+
     """
 
     kind = "admom"
@@ -149,9 +149,9 @@ class GAdmomFitter:
         self.rng = rng
 
     def go(self, obs):
-        """
-        run the adpative moments
-        parameters
+        """Run the adpative moments.
+
+        Parameters
         ----------
         obs: Observation
             ngmix.Observation
@@ -159,6 +159,7 @@ class GAdmomFitter:
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.
+
         """
         from .galsim_admom_nb import find_ellipmom2
 
@@ -281,12 +282,10 @@ class GAdmomFitter:
 
 
 def get_result(ares, jac_area, wgt_norm):
-    """
-    Copy the result structure to a dict and calculate a few more things,
+    """Copy the result structure to a dict and calculate a few more things,
     including using Jacobian-based error propagation.
     Now supports multi-band fluxes and covariance.
     """
-
     if isinstance(ares, np.ndarray):
         ares = ares[0]
         names = ares.dtype.names

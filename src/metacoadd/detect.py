@@ -112,8 +112,7 @@ DET_CAT_DTYPE = [
 
 @nb.njit(fastmath=True, cache=True)
 def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
-    """
-    Compute the size of the cutout based on the second moments of the object.
+    """Compute the size of the cutout based on the second moments of the object.
 
     Parameters
     ----------
@@ -126,8 +125,8 @@ def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
     -------
     cutout_size : float
         Size of the cutout in pixels.
-    """
 
+    """
     # Compute trace and determinant
     trace = Qxx + Qyy
 
@@ -142,8 +141,7 @@ def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
 
 
 def get_cutout(img, x, y, stamp_size):
-    """
-    Get a cutout from the image centered at (x, y) with size stamp_size.
+    """Get a cutout from the image centered at (x, y) with size stamp_size.
     Also returns the coordinates of the center in the cutout frame.
 
     Parameters
@@ -163,6 +161,7 @@ def get_cutout(img, x, y, stamp_size):
         The row coordinate of the center in the cutout frame.
     cutout_col : float
         The column coordinate of the center in the cutout frame.
+
     """
     orow = int(y)
     ocol = int(x)
@@ -209,8 +208,7 @@ def get_stamp_mbobs(
     do_uberseg=False,
     seg_map=None,
 ):
-    """
-    Get a MultiBandObsList of cutouts centered on the detected object.
+    """Get a MultiBandObsList of cutouts centered on the detected object.
 
     Parameters
     ----------
@@ -233,6 +231,7 @@ def get_stamp_mbobs(
     -------
     mb_obs : ngmix.MultiBandObsList
         Multi-band observations of the cutouts.
+
     """
     if do_uberseg and seg_map is None:
         raise ValueError("seg_map must be provided if do_uberseg is True.")
@@ -320,8 +319,7 @@ def get_stamp_mbobs(
 
 
 def get_output_cat(n_obj):
-    """
-    Get an empty output catalog with the correct dtype.
+    """Get an empty output catalog with the correct dtype.
 
     Parameters
     ----------
@@ -332,6 +330,7 @@ def get_output_cat(n_obj):
     -------
     out : np.ndarray
         Empty output catalog with the correct dtype.
+
     """
     out = np.array(
         list(map(tuple, np.zeros((len(DET_CAT_DTYPE), n_obj)).T)),
@@ -341,8 +340,7 @@ def get_output_cat(n_obj):
 
 
 def get_pixel_scale(wcs):
-    """
-    Get the pixel scale from a WCS object.
+    """Get the pixel scale from a WCS object.
 
     Parameters
     ----------
@@ -353,6 +351,7 @@ def get_pixel_scale(wcs):
     -------
     pixel_scale : float
         The pixel scale in arcsec/pixel.
+
     """
     if isinstance(wcs, WCS):
         mat = wcs.pixel_scale_matrix
@@ -369,8 +368,7 @@ def get_pixel_scale(wcs):
 
 
 def get_filter_kernel(kernel, wcs=None):
-    """
-    Get the filter kernel for SEP.
+    """Get the filter kernel for SEP.
 
     Parameters
     ----------
@@ -385,6 +383,7 @@ def get_filter_kernel(kernel, wcs=None):
     -------
     filter_kernel : np.ndarray
         The filter kernel as a 2D array.
+
     """
     if isinstance(kernel, list):
         kernel = np.asarray(kernel)
@@ -400,8 +399,7 @@ def get_filter_kernel(kernel, wcs=None):
 
 
 def get_xyToradec_func(wcs):
-    """
-    Get a function that converts pixel coordinates to world coordinates based
+    """Get a function that converts pixel coordinates to world coordinates based
     on the type of WCS object.
 
     Parameters
@@ -413,6 +411,7 @@ def get_xyToradec_func(wcs):
     -------
     xyToradec : function
         A function that takes x, y pixel coordinates and returns ra, dec.
+
     """
     if isinstance(wcs, WCS):
 
@@ -447,8 +446,7 @@ def get_cat(
     wcs=None,
     mask=None,
 ):
-    """
-    Get a catalog of detected objects from an image using SEP.
+    """Get a catalog of detected objects from an image using SEP.
 
     Parameters
     ----------
@@ -483,6 +481,7 @@ def get_cat(
     -------
     catalog : np.ndarray
         A table containing the detected objects.
+
     """
     # NOTE: Might need to look again into this. For now we keep it simple.
     rms = np.zeros_like(weight)
@@ -663,6 +662,7 @@ def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
     -------
     x_new, y_new : ndarray
         Shifted pixel positions (col, row) in the sheared image.
+
     """
     dudcol = jacobian.get_dudcol()
     dudrow = jacobian.get_dudrow()

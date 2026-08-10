@@ -7,8 +7,7 @@ from metadetect.masking import (
 
 
 def get_radius_arcsec(mag, coeffs):
-    """
-    Get the radius in arcsec for a given magnitude using a polynomial fit.
+    """Get the radius in arcsec for a given magnitude using a polynomial fit.
 
     Parameters
     ----------
@@ -22,6 +21,7 @@ def get_radius_arcsec(mag, coeffs):
     -------
     radius : float or array-like
         The radius in arcsec corresponding to the input magnitude(s).
+
     """
     ply = np.poly1d(coeffs)
     log10_radius = ply(mag)
@@ -38,8 +38,7 @@ def get_mask_and_bmask(
     bmask_expand=20,
     bmask_bit_val=8,
 ):
-    """
-    Create a mask and a bmask for the foreground stars.
+    """Create a mask and a bmask for the foreground stars.
 
     Parameters
     ----------
@@ -69,8 +68,8 @@ def get_mask_and_bmask(
         The apodization mask for the foreground stars.
     bmask : np.ndarray
         The bmask for the foreground stars.
-    """
 
+    """
     pixel_scale = abs(wcs.pixel_scale_matrix[0][0] * 3600)
 
     x_stars, y_stars = wcs.all_world2pix(

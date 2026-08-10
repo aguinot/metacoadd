@@ -1,7 +1,6 @@
-"""
-This an implementation of the Galsim re-gauss algorithm in ngmix format.
+"""This an implementation of the Galsim re-gauss algorithm in ngmix format.
 To see the original implementation, please visit:
-https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp
+https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 
 This implementation is modified to allowed post-metacalibration PSF correction.
 """
@@ -30,8 +29,7 @@ DEFAULT_SAFE_CHECK = 0.99
 
 
 def get_psf_fit(obs, fitter, guess_fwhm=1.2):
-    """
-    Fit the PSF with a gaussian model using the input fitter.
+    """Fit the PSF with a gaussian model using the input fitter.
 
     Parameters
     ----------
@@ -41,6 +39,7 @@ def get_psf_fit(obs, fitter, guess_fwhm=1.2):
         The fitter to use for the PSF fit.
     guess_fwhm: float, optional
         The initial guess for the PSF FWHM. Default is 1.2 arcsec.
+
     """
     # PSF
     res_psf = fitter.go(obs.psf, guess_fwhm)
@@ -51,8 +50,7 @@ def get_psf_fit(obs, fitter, guess_fwhm=1.2):
 
 
 def check_exp(obs, psf_res, safe_factor=2):
-    """
-    Check the exponential weight function for the input observation.
+    """Check the exponential weight function for the input observation.
 
     Parameters
     ----------
@@ -68,6 +66,7 @@ def check_exp(obs, psf_res, safe_factor=2):
     -------
     w_sum: float
         The sum of the weight function applied to the observation.
+
     """
     xx_psf, xy_psf, yy_psf = psf_res["pars"][2:5] / psf_res["wsum"]
     T_psf = xx_psf + yy_psf
@@ -86,9 +85,9 @@ def check_exp(obs, psf_res, safe_factor=2):
 
 
 class ReGaussFitter(GAdmomFitter):
-    """
-    Measure re-gauss moments for the input observation
-    parameters
+    """Measure re-gauss moments for the input observation.
+
+    Parameters
     ----------
     maxiter: integer, optional
         Maximum number of iterations, default 200
@@ -107,6 +106,7 @@ class ReGaussFitter(GAdmomFitter):
     rng: np.random.RandomState
         Random state for creating full gaussian guesses based
         on a T guess
+
     """
 
     kind = "regauss"
@@ -137,9 +137,9 @@ class ReGaussFitter(GAdmomFitter):
         self.rng = rng
 
     def go(self, obs, guess=None):
-        """
-        run re-gauss
-        parameters
+        """Run re-gauss.
+
+        Parameters
         ----------
         obs: Observation or ObsList
             ngmix.Observation
@@ -147,8 +147,8 @@ class ReGaussFitter(GAdmomFitter):
             A guess for the fitter.  Can be a full gaussian mixture or a single
             value for T, in which case the rest of the parameters for the
             gaussian are generated.
-        """
 
+        """
         if isinstance(obs, MultiBandObsList):
             nband = len(obs)
             mb_obs = obs

@@ -24,8 +24,7 @@ from .imcom_maps import (
 
 
 def get_shape_cat_dtype(runner_name):
-    """
-    Get the dtype for the shape catalog for a given runner.
+    """Get the dtype for the shape catalog for a given runner.
 
     Parameters
     ----------
@@ -36,6 +35,7 @@ def get_shape_cat_dtype(runner_name):
     -------
     dtype : list of tuples
         The dtype for the shape catalog.
+
     """
     dtype = [
         (f"{runner_name}_flags", np.int32),
@@ -60,7 +60,7 @@ def get_shape_cat_dtype(runner_name):
 
 
 class MetaDetect:
-    """MetaCoadd
+    """MetaCoadd.
 
     The class run the metacoaddition process.
     The inputs are multi-band multi-epoch images and PSFs.
@@ -123,6 +123,7 @@ class MetaDetect:
         The configuration for the original image measurement.
     imcom_map_config : dict, optional
         The configuration for the image comparison map.
+
     """
 
     def __init__(
@@ -230,15 +231,14 @@ class MetaDetect:
         self,
         mb_obs,
     ):
-        """
-        Run metadetect.
+        """Run metadetect.
 
         Parameters
         ----------
         mb_obs : ngmix.MultiBandObsList
             The multi-band multi-epoch observations.
-        """
 
+        """
         if isinstance(mb_obs, ngmix.MultiBandObsList):
             self._nband = len(mb_obs)
             scale = mb_obs[0][0].jacobian.get_scale()
@@ -408,8 +408,7 @@ class MetaDetect:
         return final_cat
 
     def get_metacal(self, mb_obs):
-        """
-        Run metacalibration on the input multi-band multi-epoch observations.
+        """Run metacalibration on the input multi-band multi-epoch observations.
 
         Parameters
         ----------
@@ -421,6 +420,7 @@ class MetaDetect:
         mcal_mbobs : dict
             A dictionary of metacalibrated MultiBandObsList, keyed by metacal
             type.
+
         """
         mcal_handler = MetacalHandler(
             rng=self.rng,
@@ -454,8 +454,7 @@ class MetaDetect:
                 obs.ps = ps
 
     def get_T_psf(self, mb_obs):
-        """
-        Get the average PSF size (T) for the input multi-band multi-epoch
+        """Get the average PSF size (T) for the input multi-band multi-epoch
         observations.
 
         Parameters
@@ -468,6 +467,7 @@ class MetaDetect:
         T_psf_avg : float
             The average PSF size (T) for the input multi-band multi-epoch
             observations.
+
         """
         psf_runner = get_gauss_psf_runner(self.rng)
 
@@ -485,8 +485,7 @@ class MetaDetect:
     def get_coadd_multiband(
         self, mb_obs, fscale=None, zeropoints=None, target_zp=30.0
     ):
-        """
-        Coadd the input multi-band multi-epoch observations into a single
+        """Coadd the input multi-band multi-epoch observations into a single
         multi-band coadd.
 
         Parameters
@@ -516,6 +515,7 @@ class MetaDetect:
             The coadded noise image.
         coadd_weight : ngmix.Image
             The coadded weight image.
+
         """
         coadd_maker = get_coadd_class(self._coadd_type)
         coadd_maker = coadd_maker(
@@ -526,8 +526,7 @@ class MetaDetect:
         return coadd_image, coadd_noise, coadd_weight
 
     def get_cat(self, img, weight, wcs=None):
-        """
-        Get the catalog of detected objects in the image.
+        """Get the catalog of detected objects in the image.
 
         Parameters
         ----------
@@ -544,6 +543,7 @@ class MetaDetect:
             The catalog of detected objects.
         seg_map : ngmix.Image
             The segmentation map.
+
         """
         cat, seg_map = get_cat(
             img,
@@ -567,8 +567,7 @@ class MetaDetect:
         T_psf,
         do_uberseg=False,
     ):
-        """
-        Get the shape catalog of the detected objects.
+        """Get the shape catalog of the detected objects.
 
         Parameters
         ----------
@@ -587,6 +586,7 @@ class MetaDetect:
         -------
         all_shape_cat : dict
             A dictionary containing the shape catalogs for each galaxy runner.
+
         """
         all_shape_cat = {name: [] for name in self.gal_runners}
         for det_obj in sep_cat:
@@ -619,8 +619,7 @@ class MetaDetect:
     def build_output_cat(
         self, all_sep_cat, all_shape_cat, original_cat=None, imcom_map_cat=None
     ):
-        """
-        Build the final output catalog by combining the detection and shape
+        """Build the final output catalog by combining the detection and shape
         catalogs.
 
         Parameters
@@ -638,6 +637,7 @@ class MetaDetect:
         -------
         final_cat : astropy.table.Table
             The final output catalog.
+
         """
         SHAPE_CAT_DTYPE = []
         for name in self.gal_runners:
@@ -722,6 +722,7 @@ class MetaDetectForcedPositions(MetaDetect):
         0-indexed row positions (sep convention).
     **kwargs
         Forwarded verbatim to ``MetaDetect.__init__``.
+
     """
 
     def __init__(self, rng, x_pix, y_pix, **kwargs):
@@ -748,6 +749,7 @@ class MetaDetectForcedPositions(MetaDetect):
             The catalog of detected objects.
         seg_map : ngmix.Image
             The segmentation map.
+
         """
         if self._coadd_multiband:
             img, weight = self.get_coadd_multiband(mb_obs)
@@ -829,6 +831,7 @@ def do_metadetect(
     -------
     res: dict
         The fitting data keyed on the shear component.
+
     """
     md = MetaDetect(
         rng,

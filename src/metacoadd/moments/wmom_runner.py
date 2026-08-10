@@ -4,8 +4,8 @@ from ..utils import atleast_mbobs
 
 
 class MBMomRunner:
-    """
-    This is essentially a wrapper around the `fit_mbobs_wavg` from metadetect.
+    """This is essentially a wrapper around the `fit_mbobs_wavg` from
+    metadetect.
     """
 
     def __init__(
@@ -26,8 +26,7 @@ class MBMomRunner:
         self.symmetrize = symmetrize
 
     def go(self, obs):
-        """
-        Run the fitter on a MultiBandObsList or ObsList or Observation.
+        """Run the fitter on a MultiBandObsList or ObsList or Observation.
 
         Parameters
         ----------
@@ -38,6 +37,7 @@ class MBMomRunner:
         -------
         res: dict
             The results of the fit.
+
         """
         mbobs = atleast_mbobs(obs)
         res_ = fit_mbobs_wavg(

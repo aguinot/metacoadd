@@ -1,5 +1,4 @@
-"""
-The code in this file is mainly AI generated using Claude Opus 4.6
+"""The code in this file is mainly AI generated using Claude Opus 4.6
 It has been tested and validated.
 """
 
@@ -27,8 +26,7 @@ from ..utils import atleast_mbobs
 
 
 class FourierFitter(Fitter):
-    """
-    Fitter class for Fourier-space fitting of Gaussian mixture models to
+    """Fitter class for Fourier-space fitting of Gaussian mixture models to
     multi-band, multi-epoch data.  Uses the analytic Fourier-space evaluation
     of the model when the observation has no mask applied, and falls back to
     the FFT path when masking is present.
@@ -46,6 +44,7 @@ class FourierFitter(Fitter):
         The size of the stamp to use for the Fourier fitting. This is used to
         set the size of the Fourier data and the PSD. If None, the size is
         inferred from the first observation's image shape.
+
     """
 
     def __init__(self, model, prior=None, fit_pars=None, stamp_size=None):
@@ -53,8 +52,7 @@ class FourierFitter(Fitter):
         self._stamp_size = stamp_size
 
     def go(self, obs, guess):
-        """
-        Run leastsq and set the result
+        """Run leastsq and set the result.
 
         Parameters
         ----------
@@ -64,12 +62,11 @@ class FourierFitter(Fitter):
             Array of initial parameters for the fit
 
         Returns
-        --------
+        -------
         a dict-like which contains the result as well as functions used for the
         fitting.
 
         """
-
         n_ps = self._set_ps_iter(obs)
         all_results = []
         for ps_ind in range(n_ps):
@@ -149,9 +146,8 @@ class FourierFitter(Fitter):
 
 
 class FourierFitModel(FitModel):
-    """
-    A class to represent a fitting model from the FourrierFitter, the result of
-    the fit, as well as generate images and mixtures for the best fit model.
+    """A class to represent a fitting model from the FourrierFitter, the result
+    of the fit, as well as generate images and mixtures for the best fit model.
     This is based on the ngmix.FitModel class.
 
     Parameters
@@ -172,6 +168,7 @@ class FourierFitModel(FitModel):
         The index of the PSD to use for the fit. If the observation has
         multiple PSDs, this index selects which one to use. If the observation
         has only one PSD, this should be 0.
+
     """
 
     def __init__(
@@ -202,6 +199,7 @@ class FourierFitModel(FitModel):
         kim : ndarray, complex128
             Pre-computed Fourier data for this observation; its shape gives
             the target rfft2 dimension.
+
         """
         N = kim.shape[0]
         j = obs.jacobian
@@ -217,8 +215,7 @@ class FourierFitModel(FitModel):
         )
 
     def calc_lnprob(self, pars, more=False):
-        """
-        Calculate the log-probability of the model given the parameters.
+        """Calculate the log-probability of the model given the parameters.
 
         Parameters
         ----------
@@ -241,6 +238,7 @@ class FourierFitModel(FitModel):
                 The denominator of the signal-to-noise ratio.
             npix : int
                 The number of pixels in the observation.
+
         """
         try:
             # these are the log pars (if working in log space)
@@ -287,8 +285,7 @@ class FourierFitModel(FitModel):
             return lnprob
 
     def calc_fdiff(self, pars):
-        """
-        Calculate the difference between the model and the data in Fourier
+        """Calculate the difference between the model and the data in Fourier
         space.
 
         Parameters
@@ -300,6 +297,7 @@ class FourierFitModel(FitModel):
         -------
         fdiff : numpy.ndarray
             The difference between the model and the data in Fourier space.
+
         """
         fdiff = np.zeros(self.fdiff_size)
 
@@ -333,8 +331,7 @@ class FourierFitModel(FitModel):
         return fdiff
 
     def _set_kim(self, obs_in, stamp_size=None, ps_ind=0):
-        """
-        Store native-resolution Fourier data and PSD.
+        """Store native-resolution Fourier data and PSD.
 
         The chi² is evaluated at *stamp_size* resolution (the intended full
         stamp size passed from the caller).  When a stamp is clipped at the
@@ -353,7 +350,6 @@ class FourierFitModel(FitModel):
         or padded (M, M//2+1) resolution; if padded, it is sub-sampled to
         native resolution.
         """
-
         if stamp_size is not None:
             native_dim = int(stamp_size)
         else:
@@ -388,8 +384,7 @@ class FourierFitModel(FitModel):
 
 
 def get_seed_from_par(val):
-    """
-    Get a seed from a parameter value. The seed is derived from the order of
+    """Get a seed from a parameter value. The seed is derived from the order of
     magnitude of the parameter value. This is useful for generating a seed
     that is consistent with the scale of the parameter being fitted.
 
@@ -402,6 +397,7 @@ def get_seed_from_par(val):
     -------
     seed : int
         The seed derived from the parameter value.
+
     """
     power_ = int(np.log10(abs(val)))
     if power_ < 0:
@@ -416,8 +412,7 @@ def compute_noise_bias_empirical(
     fit_model,
     mbobs_stamp,
 ):
-    """
-    Computes the O(1/SNR^2) noise bias by empirically simulating the
+    """Computes the O(1/SNR^2) noise bias by empirically simulating the
     misspecified likelihood.
 
     Parameters
@@ -435,6 +430,7 @@ def compute_noise_bias_empirical(
     delta_g2 : float
         Bias shifts to *subtract* from the best-fit g1/g2.
         (theta_corrected = theta_fit - delta_theta)
+
     """
     pars_base = fit_model["pars"]
     n_bands = len(fit_model._kim)

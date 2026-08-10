@@ -8,9 +8,9 @@ def fast_uberseg(
     weight,
     object_number,
 ):
-    """
-    Wrapper of the uber-segmentation from meds.
-    Parameters
+    """Wrapper of the uber-segmentation from meds.
+
+    Parameters.
     ----------
     seg: np.ndarray
         Segmentation map.
@@ -23,6 +23,7 @@ def fast_uberseg(
     -------
     weight: np.ndarray
         Weight map with only the object_number kept.
+
     """
     obj_inds = np.where(seg != 0)
 

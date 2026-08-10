@@ -16,8 +16,7 @@ def get_fitters(
     scale=None,
     stamp_size=None,
 ):
-    """
-    Get a dictionary of fitters for the specified models.
+    """Get a dictionary of fitters for the specified models.
 
     Parameters
     ----------
@@ -40,6 +39,7 @@ def get_fitters(
     -------
     fitters : dict
         A dictionary of fitters for the specified models.
+
     """
     if isinstance(models, str):
         models = [models]
@@ -63,8 +63,7 @@ def get_fitters(
 
 
 def parse_model(model):
-    """
-    Parse the model string and check if it is valid.
+    """Parse the model string and check if it is valid.
 
     Parameters
     ----------
@@ -75,6 +74,7 @@ def parse_model(model):
     -------
     model : str
         The parsed model string.
+
     """
     if model in ["wmom", "pgauss", "am"]:
         pass
@@ -104,8 +104,7 @@ def get_runner(
     scale=None,
     stamp_size=None,
 ):
-    """
-    Get a runner for the specified model.
+    """Get a runner for the specified model.
 
     Parameters
     ----------
@@ -128,6 +127,7 @@ def get_runner(
     -------
     runner : ngmix Runner
         A runner for the specified model.
+
     """
     model = parse_model(model)
 
@@ -147,8 +147,7 @@ def get_runner(
 
 
 def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
-    """
-    Build a multi-band runner for the specified model.
+    """Build a multi-band runner for the specified model.
 
     Parameters
     ----------
@@ -165,6 +164,7 @@ def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
     -------
     runner : ngmix Runner
         A multi-band runner for the specified model.
+
     """
     if model == "wmom":
         runner = ngmix.gaussmom.GaussMom(fwhm=fwhm)
@@ -190,8 +190,7 @@ def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
 
 
 def build_model_fitting_runner(model, rng, nband, scale):
-    """
-    Build a model fitting runner for the specified model.
+    """Build a model fitting runner for the specified model.
 
     Parameters
     ----------
@@ -208,6 +207,7 @@ def build_model_fitting_runner(model, rng, nband, scale):
     -------
     runner : ngmix Runner
         A model fitting runner for the specified model.
+
     """
     if model in ["gauss", "exp", "dev"]:
         gal_runner = get_single_model_runner(model, rng, nband, scale)
@@ -224,8 +224,7 @@ def build_model_fitting_runner(model, rng, nband, scale):
 def build_model_fitting_fourier_runner(
     fourier_model, rng, nband, scale, stamp_size=None
 ):
-    """
-    Build a model fitting runner for the specified Fourier model.
+    """Build a model fitting runner for the specified Fourier model.
 
     Parameters
     ----------
@@ -245,6 +244,7 @@ def build_model_fitting_fourier_runner(
     -------
     runner : ngmix Runner
         A model fitting runner for the specified Fourier model.
+
     """
     model = fourier_model.split("fourier_")[-1]
     if model in ["gauss", "exp", "dev"]:
@@ -262,8 +262,7 @@ def build_model_fitting_fourier_runner(
 
 
 def get_gauss_psf_runner(rng):
-    """
-    Build a Gaussian PSF runner.
+    """Build a Gaussian PSF runner.
 
     Parameters
     ----------
@@ -274,6 +273,7 @@ def get_gauss_psf_runner(rng):
     -------
     runner : ngmix Runner
         A Gaussian PSF runner.
+
     """
     psf_guesser = ngmix.guessers.SimplePSFGuesser(
         rng=rng,
@@ -296,8 +296,7 @@ def get_gauss_psf_runner(rng):
 
 
 def get_single_model_runner(model, rng, nband, scale):
-    """
-    Build a model fitting runner for the specified model.
+    """Build a model fitting runner for the specified model.
 
     Parameters
     ----------
@@ -314,6 +313,7 @@ def get_single_model_runner(model, rng, nband, scale):
     -------
     runner : ngmix Runner
         A model fitting runner for the specified model.
+
     """
     prior = _make_prior(rng, scale, nband)
 
@@ -341,8 +341,7 @@ def get_single_model_runner(model, rng, nband, scale):
 
 
 def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
-    """
-    Build a model fitting runner for the specified Fourier model.
+    """Build a model fitting runner for the specified Fourier model.
 
     Parameters
     ----------
@@ -362,6 +361,7 @@ def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
     -------
     runner : ngmix Runner
         A model fitting runner for the specified Fourier model.
+
     """
     prior = _make_prior(rng, scale, nband)
 
@@ -390,7 +390,7 @@ def get_single_fourier_model_runner(model, rng, nband, scale, stamp_size=None):
 
 
 def _make_prior(rng, scale, nband):
-    """make the prior for the fitter.
+    """Make the prior for the fitter.
 
     Parameters
     ----------
@@ -400,6 +400,7 @@ def _make_prior(rng, scale, nband):
         Pixel scale
     nband: int
         number of bands
+
     """
     g_prior = ngmix.priors.GPriorBA(sigma=0.3, rng=rng)
     cen_prior = ngmix.priors.CenPrior(
@@ -436,14 +437,12 @@ def _make_prior(rng, scale, nband):
 
 
 class RunnerGuess(Runner):
-    """
-    A class that extends the ngmix Runner class to allow for a guess to be
+    """A class that extends the ngmix Runner class to allow for a guess to be
     provided to the fitter.
     """
 
     def go(self, obs, guess=None):
-        """
-        Run the fitter on the input observation(s) with a provided guess.
+        """Run the fitter on the input observation(s) with a provided guess.
 
         Parameters
         ----------
@@ -457,6 +456,7 @@ class RunnerGuess(Runner):
         Returns
         -------
         result dictionary
+
         """
         if guess is None:
             return super().go(obs)
@@ -467,8 +467,7 @@ class RunnerGuess(Runner):
 
 
 def run_fitter_guess(obs, fitter, guess, ntry=1):
-    """
-    run a fitter multiple times if needed, with guesses provided as input
+    """Run a fitter multiple times if needed, with guesses provided as input.
 
     Parameters
     ----------
@@ -487,8 +486,8 @@ def run_fitter_guess(obs, fitter, guess, ntry=1):
     Returns
     -------
     result dictionary
-    """
 
+    """
     for _ in range(ntry):
         res = fitter.go(obs=obs, guess=guess)
 
@@ -499,14 +498,12 @@ def run_fitter_guess(obs, fitter, guess, ntry=1):
 
 
 class BootstrapperGuess(Bootstrapper):
-    """
-    A class that extends the ngmix Bootstrapper class to allow for a guess to
+    """A class that extends the ngmix Bootstrapper class to allow for a guess to
     be provided to the fitter.
     """
 
     def go(self, obs, guess=None):
-        """
-        Run the runners on the input observation(s) with a provided guess
+        """Run the runners on the input observation(s) with a provided guess.
 
         Parameters
         ----------
@@ -516,6 +513,7 @@ class BootstrapperGuess(Bootstrapper):
             An array of parameters to use as the guess for the fitter.
             Must be a list or numpy array of the same length as the number of
             parameters in the model.
+
         """
         return bootstrap_guess(
             obs=obs,
@@ -533,8 +531,7 @@ def bootstrap_guess(
     psf_runner=None,
     ignore_failed_psf=True,
 ):
-    """
-    Run a fitter on the input observations, possibly bootstrapping the fit
+    """Run a fitter on the input observations, possibly bootstrapping the fit
     based on information inferred from the data or the psf model. This version
     can take a guess as input and passes it to the fitter.
 
@@ -559,8 +556,8 @@ def bootstrap_guess(
     the obs.psf.meta['result'] and the obs.psf.gmix may be set if a psf runner
     is sent and the internal fitter has a get_gmix method.  gmix are only set
     for successful fits
-    """
 
+    """
     if psf_runner is not None:
         psf_runner.go(obs=obs)
 

@@ -52,29 +52,34 @@ DEFAULT_GSPARAMS = galsim.GSParams(maximum_fft_size=8192)
 
 
 class Exposure:
-    """Exposure
+    """Exposure.
 
     Structure to store all the information for an exposure.
 
     TODO: Add consistency check if several images are provided:
         Same size. Other?
 
-    Args:
-        image (numpy.ndarray or galsim.Image): Science image.
-        header (astropy.io.fits.header.Header): Image header containing all
-            the WCS information. Either header or wcs has to be provided, not
-            both.
-        wcs (galsim.BaseWCS or astropy.wcs.wcs.WCS): wcs corresponding to the
-            images. Either header or wcs has to be provided, not both.
-        weight (numpy.ndarray or galsim.Image, optional): Weight image.
-            Defaults to None.
-        flag (numpy.ndarray or galsim.Image, optional): Flag image. Defaults to
-            None.
-        noise (numpy.ndarray or galsim.Image, optional): Noise image. Defaults
-            to None.
-        meta (dict): Add metadata information in the form of a dictionary. For
-            example, it can be used to store the exposure ID as follow:
-            meta = {'ID': 12345}. Defaults to None.
+    Parameters
+    ----------
+    image: numpy.ndarray or galsim.Image
+        Science image.
+    header: astropy.io.fits.header.Header
+        Image header containing all the WCS information. Either header or wcs
+        has to be provided, not both.
+    wcs: galsim.BaseWCS or astropy.wcs.wcs.WCS
+        wcs corresponding to the images. Either header or wcs has to be
+        provided, not both.
+    weight: numpy.ndarray or galsim.Image, optional
+        Weight image. Defaults to None.
+    flag: numpy.ndarray or galsim.Image, optional
+        Flag image. Defaults to None.
+    noise: numpy.ndarray or galsim.Image, optional
+        Noise image. Defaults to None.
+    meta: dict
+        Add metadata information in the form of a dictionary. For
+        example, it can be used to store the exposure ID as follow:
+        meta = {'ID': 12345}. Defaults to None.
+
     """
 
     def __init__(
@@ -124,15 +129,20 @@ class Exposure:
         self._set_meta(meta)
 
     def __getitem__(self, bounds):
-        """
-        Return a new Exposure instance with the corresponding subimages.
+        """Return a new Exposure instance with the corresponding subimages.
         Also handle the WCS.
 
-        Args:
-            bounds (galsim.BoundsI): New bounds for the images.
+        Parameters
+        ----------
+        bounds: galsim.BoundsI
+            Bounds of the subimages to return.
 
-        Returns:
-            Exposure: a new Exposure instance.
+        Returns
+        -------
+        new_exposure: Exposure
+            A new Exposure instance with the corresponding subimages and
+            WCS.
+
         """
         if not isinstance(bounds, galsim.BoundsI):
             raise TypeError("bounds must be a galsim.BoundsI.")
@@ -167,7 +177,7 @@ class Exposure:
         return new_exposure
 
     def _set_wcs(self, header=None, galsim_wcs=None, astropy_wcs=None):
-        """Set WCS
+        """Set WCS.
 
         Set the WCS in galsim and astropy format. The WCS are initialize from
         an astropy.io.fits.header.Header or astropy.wcs.wcs.WCS.
@@ -188,15 +198,17 @@ class Exposure:
             self.wcs.astropy = astropy_wcs
 
     def _set_astropy_wcs(self, galsim_image):
-        """Set astropy WCS
+        """Set astropy WCS.
 
         Convert galsim WCS to astropy. This can only be done once we have a
         galsim image.
 
-        Args:
-            galsim_image (galsim.Image): a galsim image.
-        """
+        Parameters
+        ----------
+        galsim_image: galsim.Image
+            A galsim image.
 
+        """
         h_tmp = fits.ImageHDU(galsim_image.array).header
         # h_tmp is directly updated
         galsim_image.wcs.writeToFitsHeader(h_tmp, galsim_image.bounds)
@@ -205,15 +217,21 @@ class Exposure:
         galsim_image.wcs.astropy = astropy_wcs
 
     def _set_galsim_image(self, image):
-        """Set GalSim image
+        """Set GalSim image.
 
         Transform the input image array as a galsim.Image.
-        Args:
-            image (numpy.ndarray): Image to transform to a galsim.Image.
-        Returns:
-            galsim.Image: The corresponding galsim.Image.
-        """
 
+        Parameters
+        ----------
+        image: numpy.ndarray
+            Image to transform to a galsim.Image.
+
+        Returns
+        -------
+        galsim_image: galsim.Image
+            The corresponding galsim.Image.
+
+        """
         if not hasattr(self, "wcs"):
             self._set_wcs()
 
@@ -228,16 +246,19 @@ class Exposure:
         return galsim_image
 
     def _init_input_image(self, image, image_kind):
-        """Set input image
+        """Set input image.
 
         Check if the input image is a valid input and add it to Exposure.
 
-        Args:
-            image (numpy.ndarray or galsim.Image): Image to setup.
-            image_kind (str): Name of the image to set. Must be in ['image',
-                'weight', 'flag', 'noise'].
-        """
+        Parameters
+        ----------
+        image: numpy.ndarray or galsim.Image
+            Image to setup.
+        image_kind: str
+            Name of the image to set. Must be in ['image', 'weight', 'flag',
+            'noise'].
 
+        """
         if isinstance(image, np.ndarray):
             galsim_image = self._set_galsim_image(image)
         elif isinstance(image, galsim.Image):
@@ -266,14 +287,15 @@ class Exposure:
             self._set_astropy_wcs(galsim_image)
 
     def _set_meta(self, meta):
-        """
-        Set metadata information.
+        """Set metadata information.
         At moment, save only the image bounds.
 
-        Args:
-            meta (dict): Metadata to add.
-        """
+        Parameters
+        ----------
+        meta: dict
+            Metadata information to set.
 
+        """
         if meta is not None:
             if not isinstance(meta, dict):
                 raise TypeError("meta must be a dictionary.")
@@ -285,7 +307,7 @@ class Exposure:
 
 
 class ExpList(list):
-    """Exposure list
+    """Exposure list.
 
     List of Exposure.
     """
@@ -295,13 +317,11 @@ class ExpList(list):
 
     @property
     def nepoch(self):
-        """
-        Return the number of exposures in the list.
-        """
+        """Return the number of exposures in the list."""
         return len(self)
 
     def append(self, exp):
-        """append
+        """Append.
 
         Add a new Exposure to the list.
 
@@ -309,14 +329,14 @@ class ExpList(list):
         ----------
         exp: metacoadd.Exposure
             Exposure to add.
-        """
 
+        """
         if not isinstance(exp, Exposure):
             raise TypeError("exp must be a metacoadd.Exposure.")
         super().append(exp)
 
     def __setitem__(self, index, exp):
-        """
+        """Setitem.
 
         Parameters
         ----------
@@ -324,6 +344,7 @@ class ExpList(list):
             Index of the list to set.
         exp: metacoadd.Exposure
             Exposure to set.
+
         """
         if not isinstance(exp, Exposure):
             raise TypeError("exp must be a metacoadd.Exposure.")
@@ -331,7 +352,7 @@ class ExpList(list):
 
 
 class MultiBandExpList(list):
-    """Multi-band exposure list
+    """Multi-band exposure list.
 
     List of multi-band of list of Exposure.
     """
@@ -341,13 +362,11 @@ class MultiBandExpList(list):
 
     @property
     def nband(self):
-        """
-        Return the number of bands in the list.
-        """
+        """Return the number of bands in the list."""
         return len(self)
 
     def append(self, explist):
-        """append
+        """Append.
 
         Add a new ExpList to the list.
 
@@ -355,21 +374,20 @@ class MultiBandExpList(list):
         ----------
         explist: metacoadd.ExpList
             ExpList to add.
-        """
 
+        """
         if not isinstance(explist, ExpList):
             raise TypeError("explist must be a metacoadd.ExpList.")
         super().append(explist)
 
     def __setitem__(self, index, explist):
-        """
-
-        Parameters
+        """Parameters
         ----------
         index: int
             Index of the list to set.
         explist: metacoadd.ExpList
             ExpList to set.
+
         """
         if not isinstance(explist, ExpList):
             raise TypeError("explist must be a metacoadd.ExpList.")
@@ -377,7 +395,7 @@ class MultiBandExpList(list):
 
 
 class CoaddImage:
-    """CoaddImage
+    """CoaddImage.
 
     Structure to store all the information to build a coadd image.
     This class do not build the coadd but will prepare the data (create
@@ -428,6 +446,7 @@ class CoaddImage:
     gsparams: galsim.GSParams, optional
         Set of parameters for the galsim objects. If `None` use the default
         configuration. Defaults to None.
+
     """
 
     def __init__(
@@ -557,7 +576,7 @@ class CoaddImage:
         self._mb_coadd_set = False
 
     def _set_image_coadd_size(self, world_coadd_size, scale):
-        """Set coadd size
+        """Set coadd size.
 
         Set the size of the coadd in pixels from angle.
 
@@ -567,8 +586,8 @@ class CoaddImage:
             Size of the coadd in world coordinates, in arcmin.
         scale : float
             Pixel scale of the coadd. In arcsec.
-        """
 
+        """
         from math import ceil
 
         size_x = ceil((world_coadd_size[0] / galsim.arcmin) / scale)
@@ -577,11 +596,9 @@ class CoaddImage:
         self.image_coadd_size = [size_x, size_y]
 
     def _set_coadd_bounds(self):
-        """
-        Create a galsim.Image that describe the coadd. This is just for
+        """Create a galsim.Image that describe the coadd. This is just for
         convenience.
         """
-
         self.coadd_bounds = galsim.BoundsI(
             xmin=1,
             xmax=self.image_coadd_size[0],
@@ -590,14 +607,11 @@ class CoaddImage:
         )
 
     def _set_image_coadd_center(self):
-        """
-        Set coadd center in pixel.
-        """
-
+        """Set coadd center in pixel."""
         self.image_coadd_center = self.coadd_bounds.true_center
 
     def _set_coadd_wcs(self, scale):
-        """Set coadd wcs
+        """Set coadd wcs.
 
         Set the coadd WCS as TAN projection with the given pixel scale.
 
@@ -605,8 +619,8 @@ class CoaddImage:
         ----------
         scale : float
             Coadd pixel scale.
-        """
 
+        """
         # Here we shift the center to match conventions
         affine_transform = galsim.AffineTransform(
             scale,
@@ -625,12 +639,11 @@ class CoaddImage:
         self.coadd_pixel_scale = scale
 
     def _set_astropy_wcs(self):
-        """Set astropy WCS
+        """Set astropy WCS.
 
         Convert galsim WCS to astropy. This can only be done once we have a
         galsim image.
         """
-
         h_tmp = fits.ImageHDU(np.zeros(self.image_coadd_size)).header
         # h_tmp is directly updated
         self.coadd_wcs.writeToFitsHeader(h_tmp, self.coadd_bounds)
@@ -638,14 +651,14 @@ class CoaddImage:
         self.coadd_wcs.astropy = astropy_wcs
 
     def resize_explist(self, relax_resize):
-        """Resize exposure list
+        """Resize exposure list.
 
         Parameters
         ----------
         relax_resize : float
             Resize relax parameter.
-        """
 
+        """
         resized_mb_explist = MultiBandExpList()
         for explist in self._orig_explist:
             resized_explist = ExpList()
@@ -669,7 +682,7 @@ class CoaddImage:
         self.mb_explist = resized_mb_explist
 
     def _resize_exp(self, exp, relax_resize):
-        """Resize exposure
+        """Resize exposure.
 
         Parameters
         ----------
@@ -683,8 +696,8 @@ class CoaddImage:
         metacoadd.Exposure or `None`
             Return the resized exposure or None if the exposure is not in the
             coadd footprint.
-        """
 
+        """
         exp_bounds = exp.image.bounds
 
         # Here we need to round the position of the coadd but this is just to
@@ -740,8 +753,7 @@ class CoaddImage:
         rms_keyword="BKG_RMS",
         **kwargs,
     ):
-        """
-        Get all the resampled images for all the exposures in the list.
+        """Get all the resampled images for all the exposures in the list.
 
         Parameters
         ----------
@@ -765,6 +777,7 @@ class CoaddImage:
             Defaults to 'BKG_RMS'.
         kwargs : dict
             Additional keyword arguments to pass to the resampling function.
+
         """
         resamp_method = "classic"
         # pix_area = 1.0
@@ -884,8 +897,7 @@ class CoaddImage:
         resamp_algo="interp",
         **kwargs,
     ):
-        """
-        Run resampling
+        """Run resampling.
 
         Parameters
         ----------
@@ -910,6 +922,7 @@ class CoaddImage:
         footprint : numpy.ndarray
             Footprint of the resampled image, indicating which pixels are
             valid.
+
         """
         resamp_config = {}
         # if resamp_algo == "interp":
@@ -967,7 +980,7 @@ class CoaddImage:
         return resamp_img, footprint
 
     def _get_image_rms(self, exp, rms_keyword):
-        """get_image_rms
+        """get_image_rms.
 
         Compute the RMS of the input image, used to rescale the associated
         weight.
@@ -983,8 +996,8 @@ class CoaddImage:
         -------
         Float
             Image RMS.
-        """
 
+        """
         if rms_keyword in exp._meta["header"]:
             return exp._meta["header"][rms_keyword]
         else:
@@ -997,15 +1010,14 @@ class CoaddImage:
         self,
         **kwargs,
     ):
-        """
-        Get all interpolated images.
+        """Get all interpolated images.
 
         Parameters
         ----------
         kwargs: dict
             Any additional keywords arguments for galsim.InterpolatedImage.
-        """
 
+        """
         for explist in self.mb_explist:
             for exp in explist:
                 # galsim.InterpolatedImage works with local WCS so we force it
@@ -1034,7 +1046,7 @@ class CoaddImage:
                 exp._interp = True
 
     def _do_interp(self, image, wcs, interp_method, **kwargs):
-        """Run interpolation
+        """Run interpolation.
 
         Interpolate an image using galsim and return a
         `galsim.interpolatedimage.InterpolatedImage`. This method use the wcs
@@ -1058,8 +1070,8 @@ class CoaddImage:
         -------
         interp_image: galsim.interpolatedimage.InterpolatedImage
             Interpolated image.
-        """
 
+        """
         interp_config = self.interp_config[interp_method]
         interp_config.update(kwargs)
 
@@ -1073,10 +1085,7 @@ class CoaddImage:
         return interp_image
 
     def setup_coadd(self):
-        """
-        Setup the coadd image and weight.
-        """
-
+        """Setup the coadd image and weight."""
         self.image = []
         self.noise = []
         self.weight = []
@@ -1107,13 +1116,13 @@ class CoaddImage:
             self.weight.append(weight)
 
     def setup_coadd_metacal(self, types):
-        """
-        Setup the coadd image and weight.
+        """Setup the coadd image and weight.
 
         Parameters
         ----------
         types: list
             Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
+
         """
         self.image = []
         self.noise = []
@@ -1149,13 +1158,13 @@ class CoaddImage:
             self.weight.append(b_weight)
 
     def setup_mb_coadd_metacal(self, types):
-        """
-        Setup the multi-band coadd image and weight.
+        """Setup the multi-band coadd image and weight.
 
         Parameters
         ----------
         types: list
             Metacal types in ["1m", "1p", "2m", "2p", "noshear"]
+
         """
         self.mb_image = {}
         self.mb_noise = {}
@@ -1186,8 +1195,7 @@ class CoaddImage:
 
 
 def exp2obs(mb_explist, psf_mb_explist, use_resamp=False):
-    """
-    Convert a MultiBandExpList, ExpList or Exposure to a MultiBandObsList.
+    """Convert a MultiBandExpList, ExpList or Exposure to a MultiBandObsList.
 
     Parameters
     ----------
@@ -1204,6 +1212,7 @@ def exp2obs(mb_explist, psf_mb_explist, use_resamp=False):
     -------
     mb_obslist : ngmix.MultiBandObsList
         Multi-band observation list containing the converted observations.
+
     """
     if isinstance(mb_explist, MultiBandExpList):
         mb_obslist = _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp)
@@ -1220,8 +1229,7 @@ def exp2obs(mb_explist, psf_mb_explist, use_resamp=False):
 
 
 def _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp=False):
-    """
-    Convert a MultiBandExpList to a MultiBandObsList.
+    """Convert a MultiBandExpList to a MultiBandObsList.
 
     Parameters
     ----------
@@ -1238,6 +1246,7 @@ def _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp=False):
     -------
     mbobs : ngmix.MultiBandObsList
         Multi-band observation list containing the converted observations.
+
     """
     mbobs = ngmix.MultiBandObsList()
     for i in range(mb_explist.nband):
@@ -1252,8 +1261,7 @@ def _mbexplist2obs(mb_explist, psf_mb_explist, use_resamp=False):
 
 
 def _explist2obs(explist, psf_explist, use_resamp=False):
-    """
-    Convert an ExpList to an ObsList.
+    """Convert an ExpList to an ObsList.
 
     Parameters
     ----------
@@ -1270,6 +1278,7 @@ def _explist2obs(explist, psf_explist, use_resamp=False):
     -------
     obslist : ngmix.ObsList
         Observation list containing the converted observations.
+
     """
     obslist = ngmix.ObsList()
     for i in range(explist.nepoch):

@@ -6,8 +6,7 @@ import numpy as np
 
 
 def shift_wcs(wcs, offset):
-    """
-    Shift the WCS by a given offset.
+    """Shift the WCS by a given offset.
 
     Parameters
     ----------
@@ -20,6 +19,7 @@ def shift_wcs(wcs, offset):
     -------
     new_wcs : galsim.wcs
         The shifted WCS.
+
     """
     # TODO: check inputs
 
@@ -131,9 +131,8 @@ def _exp2obs(exp, exp_psf=None, use_resamp=False):
 
 
 def atleast_mbobs(obs):
-    """
-    Convert an ngmix.Observation, ngmix.ObsList or ngmix.MultiBandObsList to a
-    ngmix.MultiBandObsList.
+    """Convert an ngmix.Observation, ngmix.ObsList or ngmix.MultiBandObsList to
+    a ngmix.MultiBandObsList.
 
     Parameters
     ----------
@@ -144,6 +143,7 @@ def atleast_mbobs(obs):
     -------
     mbobs : ngmix.MultiBandObsList
         The converted MultiBandObsList.
+
     """
     if isinstance(obs, ngmix.Observation):
         mbobs = ngmix.MultiBandObsList()

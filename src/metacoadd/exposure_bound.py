@@ -9,15 +9,15 @@ from .utils import shift_wcs
 
 
 class ExposureBound:
-    """ExposureBound
+    """ExposureBound.
 
     Structure to store all the information for an exposure bound.
 
     TODO: Add consistency check if several images are provided:
         Same size. Other?
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     image_bounds: numpy.ndarray, list or galsim.BoundsI
         The bounds of the exposure in image coordinates. If a `numpy.ndarray`
         or `list` is provided, it has to be of shape (4,) and contain the
@@ -34,6 +34,7 @@ class ExposureBound:
         Metadata to add to the exposure. At the moment, only the image bounds
         are saved in the metadata. If not provided, an empty dictionary will be
         created.
+
     """
 
     def __init__(
@@ -74,22 +75,22 @@ class ExposureBound:
         self._set_meta(meta)
 
     def __getitem__(self, bounds):
-        """
-        Return a new ExposureBound instance with the corresponding new
+        """Return a new ExposureBound instance with the corresponding new
         boundaries.
         Also handle the WCS.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         bounds: galsim.BoundsI
             The new bounds to set for the exposure. It has to be a
             `galsim.BoundsI` instance. The new bounds have to be within the
             original bounds of the exposure.
 
-        Returns:
-        --------
+        Returns
+        -------
         new_exposure: ExposureBound
             A new ExposureBound instance with the new bounds and updated WCS.
+
         """
         if not isinstance(bounds, galsim.BoundsI):
             raise TypeError("bounds must be a galsim.BoundsI.")
@@ -121,7 +122,7 @@ class ExposureBound:
         return new_exposure
 
     def _set_wcs(self, header=None, galsim_wcs=None, astropy_wcs=None):
-        """Set WCS
+        """Set WCS.
 
         Set the WCS in galsim and astropy format. The WCS are initialize from
         an astropy.io.fits.header.Header or astropy.wcs.wcs.WCS.
@@ -137,18 +138,18 @@ class ExposureBound:
             self.wcs.astropy = astropy_wcs
 
     def _set_astropy_wcs(self, galsim_bound):
-        """Set astropy WCS
+        """Set astropy WCS.
 
         Convert galsim WCS to astropy. This can only be done once we have a
         galsim image.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         galsim_bound: galsim.BoundsI
             The bounds of the image in galsim format. It is used to set the
             astropy WCS.
-        """
 
+        """
         h_tmp = fits.Header()
         # h_tmp is directly updated
         galsim_bound.wcs.writeToFitsHeader(h_tmp, galsim_bound)
@@ -157,19 +158,20 @@ class ExposureBound:
         galsim_bound.wcs.astropy = astropy_wcs
 
     def _set_galsim_bound(self, image_bounds):
-        """Set GalSim bound
-        Parameters
+        """Set GalSim bound.
+
+        Parameters.
         ----------
         image_bounds: numpy.ndarray or list
             The bounds of the image in image coordinates. It has to be of shape
             (4,) and contain the following values: [xmin, xmax, ymin, ymax].
 
-        Returns:
-        --------
+        Returns
+        -------
         galsim_bound: galsim.BoundsI
             The bounds of the image in galsim format.
-        """
 
+        """
         if not hasattr(self, "wcs"):
             self._set_wcs()
 
@@ -183,16 +185,17 @@ class ExposureBound:
         return galsim_bound
 
     def _init_input_image_bound(self, image_bounds):
-        """Set input image
+        """Set input image.
 
         Check if the input image is a valid input and add it to ExposureBound.
+
         Parameters
         ----------
         image_bounds: numpy.ndarray or list
             The bounds of the image in image coordinates. It has to be of shape
             (4,) and contain the following values: [xmin, xmax, ymin, ymax].
-        """
 
+        """
         if isinstance(image_bounds, np.ndarray) | isinstance(
             image_bounds, list
         ):
@@ -217,17 +220,16 @@ class ExposureBound:
             self._set_astropy_wcs(galsim_bound)
 
     def _set_meta(self, meta):
-        """
-        Set metadata information.
+        """Set metadata information.
         At moment, save only the image bounds.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         meta: dict
             Metadata to add to the exposure. If not provided, an empty
             dictionary will be created.
-        """
 
+        """
         if meta is not None:
             if not isinstance(meta, dict):
                 raise TypeError("meta must be a dictionary.")
@@ -239,7 +241,7 @@ class ExposureBound:
 
 
 class ExpBList(list):
-    """ExposureBound list
+    """ExposureBound list.
 
     List of ExposureBound.
     """
@@ -248,23 +250,22 @@ class ExpBList(list):
         super().__init__()
 
     def append(self, exp):
-        """append
+        """Append.
 
         Add a new ExposureBound to the list.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         exp: ExposureBound
             The ExposureBound to add to the list.
-        """
 
+        """
         if not isinstance(exp, ExposureBound):
             raise TypeError("exp must be a metacoadd.ExposureBound.")
         super().append(exp)
 
     def __setitem__(self, index, exp):
-        """
-        Set an ExposureBound at a given index.
+        """Set an ExposureBound at a given index.
 
         Parameters
         ----------
@@ -272,6 +273,7 @@ class ExpBList(list):
             The index at which to set the ExposureBound.
         exp: ExposureBound
             The ExposureBound to set at the given index.
+
         """
         if not isinstance(exp, ExposureBound):
             raise TypeError("exp must be a metacoadd.ExposureBound.")
@@ -279,7 +281,7 @@ class ExpBList(list):
 
 
 class PrepCoaddBound:
-    """PrepCoaddBound
+    """PrepCoaddBound.
 
     Structure to store all the information to prepare the coadd.
     This class do not build the coadd but will pre-compute the exposure
@@ -323,6 +325,7 @@ class PrepCoaddBound:
         (no good reason to go for more than 1 given that distortion effect are
         small). This can be internally change in case we reach one of the
         border of the exposure. Default to 0.10.
+
     """
 
     def __init__(
@@ -419,7 +422,7 @@ class PrepCoaddBound:
             self.resize_expblist(0)
 
     def _set_image_coadd_size(self, world_coadd_size, scale):
-        """Set coadd size
+        """Set coadd size.
 
         Set the size of the coadd in pixels from angle.
 
@@ -430,8 +433,8 @@ class PrepCoaddBound:
             or tuple of galsim.angle.Angle.
         scale: float
             Pixel scale of the coadd. In arcsec.
-        """
 
+        """
         from math import ceil
 
         size_x = ceil((world_coadd_size[0] / galsim.arcmin) / scale)
@@ -440,11 +443,9 @@ class PrepCoaddBound:
         self.image_coadd_size = [size_x, size_y]
 
     def _set_coadd_bounds(self):
-        """
-        Create a galsim.Image that describe the coadd. This is just for
+        """Create a galsim.Image that describe the coadd. This is just for
         convenience.
         """
-
         self.coadd_bounds = galsim.BoundsI(
             xmin=1,
             xmax=self.image_coadd_size[0],
@@ -453,14 +454,11 @@ class PrepCoaddBound:
         )
 
     def _set_image_coadd_center(self):
-        """
-        Set coadd center in pixel.
-        """
-
+        """Set coadd center in pixel."""
         self.image_coadd_center = self.coadd_bounds.true_center
 
     def _set_coadd_wcs(self, scale):
-        """Set coadd wcs
+        """Set coadd wcs.
 
         Set the coadd WCS as TAN projection with the given pixel scale.
 
@@ -468,8 +466,8 @@ class PrepCoaddBound:
         ----------
         scale: float
             Pixel scale of the coadd. In arcsec.
-        """
 
+        """
         # Here we shift the center to match conventions
         affine_transform = galsim.AffineTransform(
             scale,
@@ -488,7 +486,7 @@ class PrepCoaddBound:
         self.coadd_pixel_scale = scale
 
     def _set_astropy_wcs(self):
-        """Set astropy WCS
+        """Set astropy WCS.
 
         Convert galsim WCS to astropy. This can only be done once we have a
         galsim image.
@@ -497,8 +495,8 @@ class PrepCoaddBound:
         ----------
         galsim_image: galsim.Image
             The galsim image of the coadd. It is used to set the astropy WCS.
-        """
 
+        """
         h_tmp = fits.ImageHDU(np.zeros(self.image_coadd_size)).header
         # h_tmp is directly updated
         self.wcs.writeToFitsHeader(h_tmp, self.coadd_bounds)
@@ -506,14 +504,14 @@ class PrepCoaddBound:
         self.wcs.astropy = astropy_wcs
 
     def resize_expblist(self, relax_resize):
-        """Resize ExposureBound list
+        """Resize ExposureBound list.
 
         Parameters
         ----------
         relax_resize: float
             Resize relax parameter.
-        """
 
+        """
         resized_expblist = ExpBList()
         for expb in self._orig_expblist:
             resized_exp = self._resize_bound(expb, relax_resize)
@@ -529,7 +527,7 @@ class PrepCoaddBound:
             self.expblist = resized_expblist
 
     def _resize_bound(self, expb, relax_resize):
-        """Resize bound
+        """Resize bound.
 
         Parameters
         ----------
@@ -542,8 +540,8 @@ class PrepCoaddBound:
         -------
         metacoadd.ExposureBound or `None`: Return the resized bound or None
             if the bound is not in the coadd footprint.
-        """
 
+        """
         # Here we need to round the position of the coadd but this is just to
         # compute a rough footprint of the coadd on the exposure boundaries. We
         # will estimate this latter with a better accuracy.
@@ -588,7 +586,7 @@ class PrepCoaddBound:
             return expb[new_bounds]
 
     def make_images(self, do_coadd=False):
-        """make_image
+        """make_image.
 
         Create galsim.Image for each bounds in ExpBList.
 
@@ -603,8 +601,8 @@ class PrepCoaddBound:
             List of galsim.Image for each bounds in ExpBList.
         coadd_img: galsim.Image, optional
             The galsim.Image for the coadd. Only returned if do_coadd is True.
-        """
 
+        """
         images = []
         for expb in self.expblist:
             img = galsim.Image(expb.image_bounds, wcs=expb.wcs)
