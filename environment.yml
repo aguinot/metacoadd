@@ -10,6 +10,7 @@ dependencies:
   - sep
   - astropy
   - metadetect
+  - reproject
   - pip:
     - rocket-fft
   #   - lanczos @ git+https://github.com/aguinot/lanczos.git
