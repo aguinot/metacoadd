@@ -68,7 +68,7 @@ def _select(data, shear_type):
         (data["shear_type"] == shear_type) & (data["flags"] == 0)
     )
     (w,) = np.where(data["T"][wtype] / data["Tpsf"][wtype] > 1.2)
-    print("%s kept: %d/%d" % (shear_type, w.size, wtype.size))
+    print(f"{shear_type} kept: {w.size}/{wtype.size}")
     w = wtype[w]
     return w
 

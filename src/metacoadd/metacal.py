@@ -664,8 +664,8 @@ def _doadd_single_obs(obs, nobs):
     # automatically called upon exit
 
     with obs.writeable():
-        obs.image += nobs.noise
-        obs.noise += nobs.noise
+        obs.image += nobs.image
+        obs.noise += nobs.image
 
         wpos = np.where((obs.weight != 0.0) & (nobs.weight != 0.0))
         if wpos[0].size > 0:
