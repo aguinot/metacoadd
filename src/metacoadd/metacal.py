@@ -278,27 +278,6 @@ class MetacalFixGaussPSF:
         newobs.psf.galsim_obj = newpsf_obj
         return newobs
 
-    def get_obs_psfshear(self, shear):
-        """This is the case where we shear the psf image, for calculating Rpsf.
-
-        Parameters
-        ----------
-        shear : ngmix.Shape
-            The shear to apply
-
-        Returns
-        -------
-        newobs : ngmix.Observation
-            The metacalibrated observation with the specified shear applied to
-            the PSF.
-
-        """
-        newpsf_image, newpsf_obj = self.get_target_psf(shear, "psf_shear")
-        conv_image = self.get_target_image(newpsf_obj, shear=None)
-
-        newobs = self._make_obs(conv_image, newpsf_image)
-        return newobs
-
     def _get_psf_key(self, shear, doshear):
         """Need full g1 and g2 in key to support psf shearing."""
         return f"{doshear}-{shear.g1}-{shear.g2}"
@@ -336,10 +315,7 @@ class MetacalFixGaussPSF:
         return newim
 
     def _get_target_gal_obj(self, psf_obj, shear=None):
-        if shear is not None:
-            shim_nopsf = self.get_sheared_image_nopsf(shear)
-        else:
-            shim_nopsf = self.image_int_nopsf
+        shim_nopsf = self.get_sheared_image_nopsf(shear)
 
         imconv = galsim.Convolve([shim_nopsf, psf_obj])
 
@@ -534,10 +510,6 @@ class MetacalFixGaussPSF:
         newobs.image = im.array
         newobs.psf = self._make_psf_obs(psf_im)
         return newobs
-
-    def get_interp_param(self):
-        """Get the stepk and maxk values for the interpolant."""
-        return self._stepk, self._maxk
 
     def _clear_data(self):
         del self.image_int_nopsf

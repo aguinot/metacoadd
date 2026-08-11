@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 import ngmix
-from ngmix.tests._galsim_sims import _get_obs
 
+from galsim_sim import _get_obs
 from metacoadd.metacal import MetacalHandler
 
 
@@ -111,6 +111,54 @@ def test_metacal_fixnoise(fixnoise):
         else:
             assert mobs.weight[0, 0] == obs.weight[0, 0]
             assert mobs.pixels[0]["ierr"] == np.sqrt(obs.weight[0, 0])
+
+
+def test_metacal_wrong_class():
+    """
+    Test that the metacal handler raises an exception when the metacal class is
+    not recognized.
+    """
+    rng = np.random.RandomState(seed=100)
+
+    with pytest.raises(ValueError):
+        MetacalHandler(
+            rng=rng,
+            mcal_class="wrong_class",
+        )
+
+
+def test_fixnoise_without_noise_image():
+    """
+    Test that the metacal handler raises an exception when fixnoise is True but
+    without a using the noise image from the observation.
+    """
+    rng = np.random.RandomState(seed=100)
+
+    obs = _get_obs(rng, noise=0.005, set_noise_image=False)
+
+    mcal = MetacalHandler(
+        rng=rng, mcal_class="gauss_psf", fixnoise=True, use_noise_image=False
+    )
+
+    with pytest.raises(NotImplementedError):
+        mcal.get_all(obs, mcal_types=["noshear"])
+
+
+def test_metacal_without_psf():
+    """
+    Test that the metacal handler works correctly when the observation does not
+    have a PSF.
+    """
+    rng = np.random.RandomState(seed=100)
+
+    obs = _get_obs(rng, noise=0.005, set_noise_image=True, set_psf=False)
+
+    with pytest.raises(ValueError):
+        mcal = MetacalHandler(
+            rng=rng,
+            mcal_class="gauss_psf",
+        )
+        mcal.get_all(obs, mcal_types=["noshear"])
 
 
 def _do_test_low_psf_s2n():
