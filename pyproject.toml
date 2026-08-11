@@ -103,4 +103,5 @@ omit=[
     "src/metacoadd/exposure_bound.py",
     "src/metacoadd/metacoadd.py",
     "src/metacoadd/metacoadd_ngmix_det.py",
+    "src/metacoadd/swarp_wrapper.py",
 ]
