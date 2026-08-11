@@ -73,7 +73,7 @@ def _select(data, shear_type):
     return w
 
 
-def _make_data(rng, shear, wcs, psf_fwhm=0.9):
+def _make_data(rng, shear, wcs, has_pixel=True, psf_fwhm=0.9):
     """
     simulate an exponential object with moffat psf
     the hlr of the exponential is drawn from a gaussian
@@ -87,6 +87,8 @@ def _make_data(rng, shear, wcs, psf_fwhm=0.9):
         The shear in each component
     wcs: galsim.wcs
         The wcs to use for the image and psf
+    has_pixel: bool, optional
+        If set to True, include the pixel response in the simulation.
     psf_fwhm: float, optional
         The FWHM of the moffat psf in arcseconds.  Default 0.9
 
@@ -99,16 +101,12 @@ def _make_data(rng, shear, wcs, psf_fwhm=0.9):
     stamp_size = 91
 
     gal_hlr = 0.5
-    # psf = galsim.Moffat(
-    #     beta=2.5,
-    #     fwhm=psf_fwhm,
-    # )
-    # .shear(
-    #     g1=0.02,
-    #     g2=-0.01,
-    # )
-    psf = galsim.Gaussian(
+    psf = galsim.Moffat(
+        beta=2.5,
         fwhm=psf_fwhm,
+    ).shear(
+        g1=0.02,
+        g2=-0.01,
     )
     obj0 = galsim.Exponential(
         half_light_radius=gal_hlr,
@@ -117,8 +115,13 @@ def _make_data(rng, shear, wcs, psf_fwhm=0.9):
     )
     obj = galsim.Convolve(psf, obj0)
 
-    psf_im = psf.drawImage(nx=stamp_size, ny=stamp_size, wcs=wcs).array
-    im = obj.drawImage(nx=stamp_size, ny=stamp_size, wcs=wcs).array
+    method = "no_pixel" if has_pixel else "auto"
+    psf_im = psf.drawImage(
+        nx=stamp_size, ny=stamp_size, wcs=wcs, method=method
+    ).array
+    im = obj.drawImage(
+        nx=stamp_size, ny=stamp_size, wcs=wcs, method=method
+    ).array
 
     psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
     im += rng.normal(scale=noise, size=im.shape)
@@ -156,7 +159,8 @@ def _make_data(rng, shear, wcs, psf_fwhm=0.9):
 
 
 @pytest.mark.parametrize("mcal_class", ["gauss_psf", "fix_gauss_psf"])
-def test_metacal_accuracy(mcal_class):
+@pytest.mark.parametrize("has_pixel", [True, False])
+def test_metacal_accuracy(mcal_class, has_pixel):
     """
     Test that the metacal handler can recover the shear accurately with a
     simple simulation
@@ -165,6 +169,8 @@ def test_metacal_accuracy(mcal_class):
     ----------
     mcal_class: str
         The metacal class to use.  Either 'gauss_psf' or 'fix_gauss_psf'
+    has_pixel: bool
+        Whether to include the pixel response in the simulation.
     """
     ntrial = 100
     seed = 99
@@ -200,8 +206,8 @@ def test_metacal_accuracy(mcal_class):
     mcal_config = None
     if mcal_class == "fix_gauss_psf":
         mcal_config = {
-            "fwhm_target": psf_fwhm,
-            # "has_pixel": False,
+            "fwhm_target": psf_fwhm * (1.0 + shear_true),
+            "has_pixel": has_pixel,
         }
     mcal = MetacalHandler(
         rng=rng,
@@ -211,7 +217,11 @@ def test_metacal_accuracy(mcal_class):
     dlist = []
     for _ in range(ntrial):
         im, psf_im, obs = _make_data(
-            rng=rng, shear=shear_true, wcs=wcs, psf_fwhm=psf_fwhm
+            rng=rng,
+            shear=shear_true,
+            wcs=wcs,
+            psf_fwhm=psf_fwhm,
+            has_pixel=has_pixel,
         )
         obs_dict = mcal.get_all(obs, mcal_types=["noshear", "1p", "1m"])
         for stype, mcal_obs in obs_dict.items():

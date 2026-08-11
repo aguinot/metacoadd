@@ -299,44 +299,6 @@ class MetacalFixGaussPSF:
         newobs = self._make_obs(conv_image, newpsf_image)
         return newobs
 
-    def _get_dilated_psf(self, shear, doshear=False):
-        """Dilate the psf by the input shear and reconvolve by the pixel.  See
-        _do_dilate for the algorithm.
-
-        Parameters
-        ----------
-        shear : ngmix.Shape
-            The shear to apply to the PSF
-        doshear : bool
-            If True, shear the PSF by the input shear.  If False, do not shear
-            the PSF.
-
-        Returns
-        -------
-        psf_grown : galsim object
-            The dilated, possibly sheared, PSF object
-
-        """
-        psf_grown_nopix = self._do_dilate(
-            self.psf_int_nopix, shear, doshear=doshear
-        )
-
-        if doshear:
-            psf_grown_nopix = psf_grown_nopix.shear(g1=shear.g1, g2=shear.g2)
-
-        if self.has_pixel:
-            psf_grown = galsim.Convolve(psf_grown_nopix, self.pixel)
-        else:
-            psf_grown = psf_grown_nopix
-        return psf_grown
-
-    def _do_dilate(self, psf, shear, doshear=False):
-        key = self._get_psf_key(shear, doshear)
-        if key not in self._psf_cache:
-            self._psf_cache[key] = _do_dilate(psf, shear)
-
-        return self._psf_cache[key]
-
     def _get_psf_key(self, shear, doshear):
         """Need full g1 and g2 in key to support psf shearing."""
         return f"{doshear}-{shear.g1}-{shear.g2}"
@@ -425,11 +387,10 @@ class MetacalFixGaussPSF:
         key = self._get_psf_key(shear, doshear)
         if len(self._psf_cache) == 0 or "True" in key:
             if key not in self._psf_cache:
-                psf_grown_ = galsim.Gaussian(fwhm=self.fwhm_target)
-                if self.has_pixel:
-                    psf_grown = galsim.Convolve(psf_grown_, self.pixel)
-                else:
-                    psf_grown = psf_grown_
+                psf_grown = galsim.Gaussian(fwhm=self.fwhm_target)
+                # Here if we add the back the pixel response we get the
+                # wrong shear. I don't understand why
+                #     psf_grown = galsim.Convolve(psf_grown, self.pixel)
 
                 try:
                     psf_grown_image = psf_grown.drawImage(
