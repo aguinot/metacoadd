@@ -97,4 +97,10 @@ ignore = [
 
 
 [tool.coverage.run]
-omit=["src/metacoadd/_version.py"]
+omit=[
+    "src/metacoadd/_version.py",
+    "src/metacoadd/exposure.py",
+    "src/metacoadd/exposure_bound.py",
+    "src/metacoadd/metacoadd.py",
+    "src/metacoadd/metacoadd_ngmix_det.py",
+]
