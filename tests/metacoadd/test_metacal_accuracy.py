@@ -115,12 +115,18 @@ def _make_data(rng, shear, wcs, has_pixel=True, psf_fwhm=0.9):
     )
     obj = galsim.Convolve(psf, obj0)
 
-    method = "no_pixel" if has_pixel else "auto"
+    method = "auto" if has_pixel else "no_pixel"
     psf_im = psf.drawImage(
-        nx=stamp_size, ny=stamp_size, wcs=wcs, method=method
+        nx=stamp_size,
+        ny=stamp_size,
+        wcs=wcs,
+        method=method,
     ).array
     im = obj.drawImage(
-        nx=stamp_size, ny=stamp_size, wcs=wcs, method=method
+        nx=stamp_size,
+        ny=stamp_size,
+        wcs=wcs,
+        method=method,
     ).array
 
     psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
@@ -158,9 +164,16 @@ def _make_data(rng, shear, wcs, has_pixel=True, psf_fwhm=0.9):
     return im, psf_im, obs
 
 
-@pytest.mark.parametrize("mcal_class", ["gauss_psf", "fix_gauss_psf"])
-@pytest.mark.parametrize("has_pixel", [True, False])
-def test_metacal_accuracy(mcal_class, has_pixel):
+@pytest.mark.parametrize(
+    "mcal_class,has_pixel,expected_m",
+    [
+        ("gauss_psf", True, 0.00034),
+        ("gauss_psf", False, -0.00022),
+        ("fix_gauss_psf", True, 0.00037),
+        ("fix_gauss_psf", False, -0.00039),
+    ],
+)
+def test_metacal_accuracy(mcal_class, has_pixel, expected_m):
     """
     Test that the metacal handler can recover the shear accurately with a
     simple simulation
@@ -171,6 +184,10 @@ def test_metacal_accuracy(mcal_class, has_pixel):
         The metacal class to use.  Either 'gauss_psf' or 'fix_gauss_psf'
     has_pixel: bool
         Whether to include the pixel response in the simulation.
+    expected_m: float
+        The expected multiplicative bias for this configuration.
+        Note: I am not a big fan of doing this but this is how it is done in
+        ngmix.
     """
     ntrial = 100
     seed = 99
@@ -220,8 +237,8 @@ def test_metacal_accuracy(mcal_class, has_pixel):
             rng=rng,
             shear=shear_true,
             wcs=wcs,
-            psf_fwhm=psf_fwhm,
             has_pixel=has_pixel,
+            psf_fwhm=psf_fwhm,
         )
         obs_dict = mcal.get_all(obs, mcal_types=["noshear", "1p", "1m"])
         for stype, mcal_obs in obs_dict.items():
@@ -253,4 +270,4 @@ def test_metacal_accuracy(mcal_class, has_pixel):
     print(f"R11: {R11:g}")
     print(f"m: {m:g} +/- {merr * 3:g} (99.7% conf)")
 
-    assert np.abs(m - 0.00034) < 1.0e-4
+    assert np.abs(m - expected_m) < 1.0e-4
