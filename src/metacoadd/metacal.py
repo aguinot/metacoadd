@@ -308,7 +308,7 @@ class MetacalFixGaussPSF:
                 method="no_pixel",  # pixel is already in psf
                 dtype=np.float64,
             )
-        except RuntimeError as err:
+        except RuntimeError as err:  # pragma: no cover
             # argh, galsim uses generic exceptions
             raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
@@ -375,7 +375,7 @@ class MetacalFixGaussPSF:
                         wcs=self.get_psf_wcs(),
                         dtype=np.float64,
                     )
-                except RuntimeError as err:
+                except RuntimeError as err:  # pragma: no cover
                     # argh, galsim uses generic exceptions
                     raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
@@ -586,7 +586,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
                         wcs=self.get_psf_wcs(),
                         dtype=np.float64,
                     )
-                except RuntimeError as err:
+                except RuntimeError as err:  # pragma: no cover
                     # argh, galsim uses generic exceptions
                     raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
