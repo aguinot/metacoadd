@@ -1,3 +1,8 @@
+"""
+This file is called test_metacal_noise_noise_image.py in ngmix but I renamed it
+to make more explicit what is being tested.
+"""
+
 import galsim
 import numpy as np
 import ngmix
