@@ -63,9 +63,6 @@ class MetacalHandler:
         if mcal_config is not None:
             self.mcal_config.update(mcal_config)
 
-        self._stepk = None
-        self._maxk = None
-
         self._set_mcal_handler(mcal_class)
 
         self._stepk = None
