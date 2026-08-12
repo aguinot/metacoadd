@@ -38,7 +38,7 @@ jobs:
     - name: Run tests
       shell: micromamba-shell {0}
       run: |
-        pytest tests -vvv --cov=src/metadetect_driver --cov-report=xml
+        pytest tests -vvv --cov=src/metacoadd --cov-report=xml
     
     - name: Upload coverage report to codecov
       uses: codecov/codecov-action@v7

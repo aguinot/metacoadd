@@ -16,7 +16,7 @@ from ngmix.gexceptions import GMixRangeError
 
 DEFAULT_CONFIG = {
     "step": 0.01,
-    "has_pixel": False,
+    "has_pixel": True,
 }
 
 
@@ -60,12 +60,8 @@ class MetacalHandler:
         self.fixnoise = fixnoise
         self.use_noise_image = use_noise_image
         self.mcal_config = DEFAULT_CONFIG.copy()
-        self.mcal_config = {}
         if mcal_config is not None:
             self.mcal_config.update(mcal_config)
-
-        self._stepk = None
-        self._maxk = None
 
         self._set_mcal_handler(mcal_class)
 
@@ -223,7 +219,7 @@ class MetacalFixGaussPSF:
         self._set_interp()
 
         if self.has_pixel:
-            self._set_pixel(obs)
+            self._set_pixel()
 
         self._set_psf_data(obs)
         self._psf_cache = {}
@@ -279,65 +275,6 @@ class MetacalFixGaussPSF:
         newobs.psf.galsim_obj = newpsf_obj
         return newobs
 
-    def get_obs_psfshear(self, shear):
-        """This is the case where we shear the psf image, for calculating Rpsf.
-
-        Parameters
-        ----------
-        shear : ngmix.Shape
-            The shear to apply
-
-        Returns
-        -------
-        newobs : ngmix.Observation
-            The metacalibrated observation with the specified shear applied to
-            the PSF.
-
-        """
-        newpsf_image, newpsf_obj = self.get_target_psf(shear, "psf_shear")
-        conv_image = self.get_target_image(newpsf_obj, shear=None)
-
-        newobs = self._make_obs(conv_image, newpsf_image)
-        return newobs
-
-    def _get_dilated_psf(self, shear, doshear=False):
-        """Dilate the psf by the input shear and reconvolve by the pixel.  See
-        _do_dilate for the algorithm.
-
-        Parameters
-        ----------
-        shear : ngmix.Shape
-            The shear to apply to the PSF
-        doshear : bool
-            If True, shear the PSF by the input shear.  If False, do not shear
-            the PSF.
-
-        Returns
-        -------
-        psf_grown : galsim object
-            The dilated, possibly sheared, PSF object
-
-        """
-        psf_grown_nopix = self._do_dilate(
-            self.psf_int_nopix, shear, doshear=doshear
-        )
-
-        if doshear:
-            psf_grown_nopix = psf_grown_nopix.shear(g1=shear.g1, g2=shear.g2)
-
-        if self.has_pixel:
-            psf_grown = galsim.Convolve(psf_grown_nopix, self.pixel)
-        else:
-            psf_grown = psf_grown_nopix
-        return psf_grown
-
-    def _do_dilate(self, psf, shear, doshear=False):
-        key = self._get_psf_key(shear, doshear)
-        if key not in self._psf_cache:
-            self._psf_cache[key] = _do_dilate(psf, shear)
-
-        return self._psf_cache[key]
-
     def _get_psf_key(self, shear, doshear):
         """Need full g1 and g2 in key to support psf shearing."""
         return f"{doshear}-{shear.g1}-{shear.g2}"
@@ -368,17 +305,14 @@ class MetacalFixGaussPSF:
                 method="no_pixel",  # pixel is already in psf
                 dtype=np.float64,
             )
-        except RuntimeError as err:
+        except RuntimeError as err:  # pragma: no cover
             # argh, galsim uses generic exceptions
             raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
         return newim
 
     def _get_target_gal_obj(self, psf_obj, shear=None):
-        if shear is not None:
-            shim_nopsf = self.get_sheared_image_nopsf(shear)
-        else:
-            shim_nopsf = self.image_int_nopsf
+        shim_nopsf = self.get_sheared_image_nopsf(shear)
 
         imconv = galsim.Convolve([shim_nopsf, psf_obj])
 
@@ -426,11 +360,10 @@ class MetacalFixGaussPSF:
         key = self._get_psf_key(shear, doshear)
         if len(self._psf_cache) == 0 or "True" in key:
             if key not in self._psf_cache:
-                psf_grown_ = galsim.Gaussian(fwhm=self.fwhm_target)
-                if self.has_pixel:
-                    psf_grown = galsim.Convolve(psf_grown_, self.pixel)
-                else:
-                    psf_grown = psf_grown_
+                psf_grown = galsim.Gaussian(fwhm=self.fwhm_target)
+                # Here if we add the back the pixel response we get the
+                # wrong shear. I don't understand why
+                #     psf_grown = galsim.Convolve(psf_grown, self.pixel)
 
                 try:
                     psf_grown_image = psf_grown.drawImage(
@@ -439,7 +372,7 @@ class MetacalFixGaussPSF:
                         wcs=self.get_psf_wcs(),
                         dtype=np.float64,
                     )
-                except RuntimeError as err:
+                except RuntimeError as err:  # pragma: no cover
                     # argh, galsim uses generic exceptions
                     raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
@@ -575,10 +508,6 @@ class MetacalFixGaussPSF:
         newobs.psf = self._make_psf_obs(psf_im)
         return newobs
 
-    def get_interp_param(self):
-        """Get the stepk and maxk values for the interpolant."""
-        return self._stepk, self._maxk
-
     def _clear_data(self):
         del self.image_int_nopsf
 
@@ -654,7 +583,7 @@ class MetacalFitGaussPSF(MetacalFixGaussPSF, MetacalFitGaussPSF_):
                         wcs=self.get_psf_wcs(),
                         dtype=np.float64,
                     )
-                except RuntimeError as err:
+                except RuntimeError as err:  # pragma: no cover
                     # argh, galsim uses generic exceptions
                     raise GMixRangeError(f"galsim error: '{str(err)}'") from err
 
@@ -704,8 +633,8 @@ def _doadd_single_obs(obs, nobs):
     # automatically called upon exit
 
     with obs.writeable():
-        obs.image += nobs.noise
-        obs.noise += nobs.noise
+        obs.image += nobs.image
+        obs.noise += nobs.image
 
         wpos = np.where((obs.weight != 0.0) & (nobs.weight != 0.0))
         if wpos[0].size > 0:
