@@ -161,3 +161,14 @@ def atleast_mbobs(obs):
         )
 
     return mbobs
+
+
+def _identity_njit(*jit_args, **jit_kwargs):
+    """Return the original Python function without compiling it."""
+    if len(jit_args) == 1 and callable(jit_args[0]) and not jit_kwargs:
+        return jit_args[0]
+
+    def decorator(func):
+        return func
+
+    return decorator

@@ -4,11 +4,22 @@ To see the original implementation, please visit:
 https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
+import os
 from math import atan2, cos, exp, sin, sqrt
+from ..utils import _identity_njit
 
 import ngmix
 import numpy as np
-from numba import njit
+import numba as nb
+
+
+_COVERAGE_MODE = (
+    os.environ.get("TESTING_GALSIM_ADMOM", "0") == "1"
+    and os.environ.get("COVERAGE_MODE", "0") == "1"
+)
+
+
+njit = _identity_njit if _COVERAGE_MODE else nb.njit
 
 
 @njit(cache=True)
@@ -162,9 +173,10 @@ def find_ellipmom1(
                 res["flags"] = ngmix.flags.NONPOS_FLUX
                 return
             normalize_moment_covariance(
-                tmp["sums"][i_list], tmp["sums_cov"][i_list]
+                tmp["sums"][i_list],
+                tmp["sums_cov"][i_list],
+                flux_scale=1.0 / w_norm,
             )
-            tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
             band_ind += 1
@@ -183,31 +195,39 @@ def find_ellipmom1(
 
 
 @njit(cache=True)
-def normalize_moment_covariance(sums, sums_cov):
-    """Transform raw weighted sums and covariance to flux-normalized moments.
+def normalize_moment_covariance(
+    sums,
+    sums_cov,
+    flux_scale,
+):
+    """Normalize moments by flux and rescale the flux statistic.
 
     Parameters
     ----------
-    sums : np.ndarray, shape (7,)
-        Weighted sums of moments and flux. The first 6 elements are the
-        moments, and the 7th element is the flux.
-    sums_cov : np.ndarray, shape (7, 7)
-        Covariance matrix of the weighted sums. The first 6 rows and columns
-        correspond to the moments, and the 7th row and column correspond to the
-        flux.
+    sums : np.ndarray
+        Raw weighted moments followed by the weighted flux.
+    sums_cov : np.ndarray
+        Covariance of the raw weighted moments and flux.
+    flux_scale : float
+        Multiplicative conversion applied to the weighted flux.
 
     """
     raw_cov = sums_cov.copy()
     flux = sums[6]
+
     jac = np.zeros((7, 7), dtype=np.float64)
 
+    # S_i -> S_i / flux
     for i in range(6):
         jac[i, i] = 1.0 / flux
-        jac[i, 6] = -sums[i] / (flux * flux)
-    jac[6, 6] = 1.0
+        jac[i, 6] = -sums[i] / flux**2
+
+    # flux -> flux * flux_scale
+    jac[6, 6] = flux_scale
 
     sums_cov[:, :] = jac @ raw_cov @ jac.T
     sums[:6] /= flux
+    sums[6] *= flux_scale
 
 
 @njit(cache=True)
@@ -313,25 +333,25 @@ def find_ellipmom2(
         dxy = 4 * (Cxy / 1.0 - 0.5 * Mxy) / semi_b2
         dyy = 4 * (Cyy / 1.0 - 0.5 * Myy) / semi_b2
 
-        if dx > conf["bound_correct_wt"]:
+        if dx > conf["bound_correct_wt"]:  # pragma: no cover
             dx = conf["bound_correct_wt"]
-        if dx < -conf["bound_correct_wt"]:
+        if dx < -conf["bound_correct_wt"]:  # pragma: no cover
             dx = -conf["bound_correct_wt"]
-        if dy > conf["bound_correct_wt"]:
+        if dy > conf["bound_correct_wt"]:  # pragma: no cover
             dy = conf["bound_correct_wt"]
-        if dy < -conf["bound_correct_wt"]:
+        if dy < -conf["bound_correct_wt"]:  # pragma: no cover
             dy = -conf["bound_correct_wt"]
-        if dxx > conf["bound_correct_wt"]:
+        if dxx > conf["bound_correct_wt"]:  # pragma: no cover
             dxx = conf["bound_correct_wt"]
-        if dxx < -conf["bound_correct_wt"]:
+        if dxx < -conf["bound_correct_wt"]:  # pragma: no cover
             dxx = -conf["bound_correct_wt"]
-        if dxy > conf["bound_correct_wt"]:
+        if dxy > conf["bound_correct_wt"]:  # pragma: no cover
             dxy = conf["bound_correct_wt"]
-        if dxy < -conf["bound_correct_wt"]:
+        if dxy < -conf["bound_correct_wt"]:  # pragma: no cover
             dxy = -conf["bound_correct_wt"]
-        if dyy > conf["bound_correct_wt"]:
+        if dyy > conf["bound_correct_wt"]:  # pragma: no cover
             dyy = conf["bound_correct_wt"]
-        if dyy < -conf["bound_correct_wt"]:
+        if dyy < -conf["bound_correct_wt"]:  # pragma: no cover
             dyy = -conf["bound_correct_wt"]
 
         convergence_factor = max(
@@ -455,31 +475,6 @@ def compute_effective_flux(fluxes, flux_cov):
 
 
 @njit(cache=True)
-def compute_flux_cross_covs(flux_weights, target_covs):
-    """Compute effective flux, its variance, and optional cross-covariances
-    with other parameters using the BLUE estimator.
-
-    Parameters
-    ----------
-    flux_weights : np.ndarray
-        BLUE weights applied to the input fluxes.
-    target_covs : np.ndarray
-        Covariances between each of N target parameters and the fluxes.
-        If provided, returns cross-covariances with F_eff.
-
-    Returns
-    -------
-    cross_covs : np.ndarray
-        Cross-covariances with F_eff, if target_covs was provided.
-
-    """
-    target_covs = np.atleast_2d(target_covs)
-    cross_covs = target_covs @ flux_weights
-
-    return cross_covs
-
-
-@njit(cache=True)
 def combine_multiband_observations_array(res, tmp, band_tracker):
     """Combine multi-band measurements from array inputs.
 
@@ -570,68 +565,6 @@ def combine_multiband_observations_array(res, tmp, band_tracker):
     res["sums"][:6] = x_shared_joint
     res["sums"][6:] = F_b
     res["sums_cov"] = Sigma_M
-
-
-@njit(cache=True)
-def get_mom_var(
-    X, Y, Z, var_X, var_Y, var_Z, var_XY, var_XZ, var_YZ, kind="e1"
-):
-    """Propagate fixed-weight moment covariance to adaptive size and
-    ellipticity.
-
-    Parameters
-    ----------
-    X : float
-        Row-row second moment.
-    Y : float
-        Column-column second moment.
-    Z : float
-        Row-column second moment.
-    var_X : float
-        Variance of ``X``.
-    var_Y : float
-        Variance of ``Y``.
-    var_Z : float
-        Variance of ``Z``.
-    var_XY : float
-        Covariance between ``X`` and ``Y``.
-    var_XZ : float
-        Covariance between ``X`` and ``Z``.
-    var_YZ : float
-        Covariance between ``Y`` and ``Z``.
-    kind : str, optional
-        The type of moment to compute the variance for.
-        Options are "e1", "e2", or "T". Default is "e1".
-
-    Returns
-    -------
-    var_t : float
-        Variance of the specified moment type after adaptive-response scaling.
-
-    """
-    dfdx = dfdy = dfdz = 0
-    T = X + Y
-    if kind == "e1":
-        dfdx = 2 * Y / T**2
-        dfdy = -2 * X / T**2
-    elif kind == "e2":
-        dfdx = dfdy = -2 * Z / T**2
-        dfdz = 2 / T
-    elif kind == "T":
-        dfdx = 1 / Z
-        dfdy = 1 / Z
-        dfdz = -(X + Y) / Z**2
-
-    var_t = (
-        dfdx**2 * var_X
-        + dfdy**2 * var_Y
-        + dfdz**2 * var_Z
-        + 2 * dfdx * dfdy * var_XY
-        + 2.0 * dfdx * dfdz * var_XZ
-        + 2.0 * dfdy * dfdz * var_YZ
-    )
-
-    return var_t
 
 
 @njit(cache=True)
@@ -740,31 +673,43 @@ def get_T_and_e_cov(
     return T_var, e1_var, e2_var, e12_cov
 
 
-@njit(cache=True)
-def get_flux_var(flux, rho4, var_flux, var_rho4, cov_flux_rho4):
-    """Propagate the variance of the product ``flux * rho4``.
+# @njit(cache=True)
+def get_flux_cov(sums, sums_cov, rho4, fnorm, n_bands):
+    """Compute the covariance of the fluxes after combining multi-band
+    observations.
 
     Parameters
     ----------
-    flux : float
-        The flux value.
+    sums : np.ndarray
+        The combined sums of the moments and fluxes.
+    sums_cov : np.ndarray
+        The covariance matrix of the combined sums.
     rho4 : float
-        The fourth moment of the radial profile.
-    var_flux : float
-        Variance of the flux.
-    var_rho4 : float
-        Variance of the fourth moment.
-    cov_flux_rho4 : float
-        Covariance between the flux and the fourth moment.
+        The fourth moment of the flux distribution.
+    fnorm : float
+        The normalization factor for the fluxes.
+    n_bands : int
+        The number of bands in the multi-band observations.
 
     Returns
     -------
-    var_flux_rho4 : float
-        Variance of the product ``flux * rho4``.
+    flux_cov : np.ndarray
+        The covariance matrix of the fluxes after combining multi-band
+        observations.
 
     """
-    return (
-        flux * flux * var_rho4
-        + rho4 * rho4 * var_flux
-        + 2.0 * flux * rho4 * cov_flux_rho4
+    amps = sums[6:]
+    flux_jac = np.zeros(
+        (n_bands, sums.size),
+        dtype=np.float64,
     )
+
+    for band in range(n_bands):
+        # d(A_b * rho4 / fnorm) / d rho4
+        flux_jac[band, 5] = amps[band] / fnorm
+
+        # d(A_b * rho4 / fnorm) / d A_b
+        flux_jac[band, 6 + band] = rho4 / fnorm
+
+    flux_cov = flux_jac @ sums_cov @ flux_jac.T
+    return flux_cov

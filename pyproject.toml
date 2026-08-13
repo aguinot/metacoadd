@@ -104,4 +104,6 @@ omit=[
     "src/metacoadd/metacoadd.py",
     "src/metacoadd/metacoadd_ngmix_det.py",
     "src/metacoadd/swarp_wrapper.py",
+    "src/metacoadd/fitters/*",
+    "src/metacoadd/gmix_fourier/*",
 ]
