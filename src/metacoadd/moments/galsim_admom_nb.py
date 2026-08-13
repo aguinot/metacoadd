@@ -162,9 +162,10 @@ def find_ellipmom1(
                 res["flags"] = ngmix.flags.NONPOS_FLUX
                 return
             normalize_moment_covariance(
-                tmp["sums"][i_list], tmp["sums_cov"][i_list]
+                tmp["sums"][i_list],
+                tmp["sums_cov"][i_list],
+                flux_scale=1.0 / w_norm,
             )
-            tmp["sums"][i_list][6] /= w_norm
         tracking += 1
         if tracking == band_tracker[band_ind]:
             band_ind += 1
@@ -183,31 +184,39 @@ def find_ellipmom1(
 
 
 @njit(cache=True)
-def normalize_moment_covariance(sums, sums_cov):
-    """Transform raw weighted sums and covariance to flux-normalized moments.
+def normalize_moment_covariance(
+    sums,
+    sums_cov,
+    flux_scale,
+):
+    """Normalize moments by flux and rescale the flux statistic.
 
     Parameters
     ----------
-    sums : np.ndarray, shape (7,)
-        Weighted sums of moments and flux. The first 6 elements are the
-        moments, and the 7th element is the flux.
-    sums_cov : np.ndarray, shape (7, 7)
-        Covariance matrix of the weighted sums. The first 6 rows and columns
-        correspond to the moments, and the 7th row and column correspond to the
-        flux.
+    sums : np.ndarray
+        Raw weighted moments followed by the weighted flux.
+    sums_cov : np.ndarray
+        Covariance of the raw weighted moments and flux.
+    flux_scale : float
+        Multiplicative conversion applied to the weighted flux.
 
     """
     raw_cov = sums_cov.copy()
     flux = sums[6]
+
     jac = np.zeros((7, 7), dtype=np.float64)
 
+    # S_i -> S_i / flux
     for i in range(6):
         jac[i, i] = 1.0 / flux
-        jac[i, 6] = -sums[i] / (flux * flux)
-    jac[6, 6] = 1.0
+        jac[i, 6] = -sums[i] / flux**2
+
+    # flux -> flux * flux_scale
+    jac[6, 6] = flux_scale
 
     sums_cov[:, :] = jac @ raw_cov @ jac.T
     sums[:6] /= flux
+    sums[6] *= flux_scale
 
 
 @njit(cache=True)

@@ -16,7 +16,6 @@ from ngmix.util import get_ratio_error
 from .galsim_admom_nb import (
     compute_effective_flux,
     compute_flux_cross_covs,
-    get_flux_var,
     get_T_and_e_cov,
 )
 
@@ -375,22 +374,28 @@ def get_result(ares, jac_area, wgt_norm):
     ):
         fnorm = jac_area * wgt_norm * res["wsum"]
         rho4 = res["pars"][5]
-        res["flux"][:] = res["sums"][6:] * rho4 / fnorm
+        amps = res["sums"][6:]
+
+        res["flux"][:] = amps * rho4 / fnorm
+
+        flux_jac = np.zeros(
+            (n_bands, res["sums"].size),
+            dtype=np.float64,
+        )
+
         for band in range(n_bands):
-            flux_var = (
-                get_flux_var(
-                    res["sums"][6 + band],
-                    rho4,
-                    res["sums_cov"][6 + band, 6 + band],
-                    res["sums_cov"][5, 5],
-                    res["sums_cov"][6 + band, 5],
-                )
-                / fnorm**2
-            )
-            res["flux_cov"][band, band] = flux_var
-        flux_vars = res["flux_cov"].diagonal()
-        if np.isfinite(flux_vars).all() and (flux_vars > 0).all():
-            np.sqrt(flux_vars, out=res["flux_err"])
+            # d(A_b * rho4 / fnorm) / d rho4
+            flux_jac[band, 5] = amps[band] / fnorm
+
+            # d(A_b * rho4 / fnorm) / d A_b
+            flux_jac[band, 6 + band] = rho4 / fnorm
+
+        res["flux_cov"][:, :] = flux_jac @ res["sums_cov"] @ flux_jac.T
+
+        flux_vars = np.diag(res["flux_cov"])
+
+        if np.all(np.isfinite(flux_vars)) and np.all(flux_vars > 0):
+            res["flux_err"][:] = np.sqrt(flux_vars)
         else:
             res["flux_flags"] |= ngmix.flags.NONPOS_VAR
     else:
