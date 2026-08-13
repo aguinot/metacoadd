@@ -18,7 +18,7 @@ import ngmix.flags
 from ngmix.moments import fwhm_to_T
 
 from metacoadd.moments.galsim_admom import GAdmomFitter, get_result
-from metacoadd.moments import galsim_admom_nb
+from metacoadd.moments import galsim_admom, galsim_admom_nb
 from metacoadd.moments.galsim_admom_nb import find_ellipmom1, find_ellipmom2
 
 
@@ -662,14 +662,14 @@ def test_flux_s2n_scaling():
     np.testing.assert_allclose(
         double_noise["flux"],
         reference["flux"],
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
     # Doubling the pixel noise doubles flux_err.
     np.testing.assert_allclose(
         double_noise["flux_err"],
         2.0 * reference["flux_err"],
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
     # Doubling the object amplitude doubles
@@ -677,7 +677,7 @@ def test_flux_s2n_scaling():
     np.testing.assert_allclose(
         double_flux["flux"],
         2.0 * reference["flux"],
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
     # In the background-dominated regime, the
@@ -685,7 +685,7 @@ def test_flux_s2n_scaling():
     np.testing.assert_allclose(
         double_flux["flux_err"],
         reference["flux_err"],
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
     reference_s2n = reference["flux"] / reference["flux_err"]
@@ -697,13 +697,13 @@ def test_flux_s2n_scaling():
     np.testing.assert_allclose(
         double_noise_s2n,
         0.5 * reference_s2n,
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
     np.testing.assert_allclose(
         double_flux_s2n,
         2.0 * reference_s2n,
-        rtol=1.0e-8,
+        rtol=1.0e-7,
     )
 
 
@@ -1004,3 +1004,209 @@ def test_admom_nb_defensive_failure_checks(
             result_array,
             case["flag"],
         )
+
+
+def test_observation_containers_and_internal_failures(
+    monkeypatch,
+):
+    """Test ObsList, MultiBandObsList, and internal exception handling."""
+    scale = 0.2
+    sigma_pix = 4.0
+    noise_std = 0.2
+    guess_fwhm = _FWHM_PER_SIGMA * sigma_pix * scale
+
+    def make_observation(flux):
+        image = _make_gaussian_image(
+            sigma_pix=sigma_pix,
+            flux=flux,
+        )
+        return _make_observation(
+            image=image,
+            scale=scale,
+            noise_std=noise_std,
+        )
+
+    def make_obslist(observation):
+        obslist = ngmix.ObsList()
+        obslist.append(observation)
+        return obslist
+
+    fitter = GAdmomFitter(
+        guess_fwhm=guess_fwhm,
+    )
+
+    # Cover _get_rng with and without an existing RNG.
+    generated_rng = fitter._get_rng()
+    assert isinstance(
+        generated_rng,
+        np.random.RandomState,
+    )
+    assert fitter._get_rng() is generated_rng
+
+    # Exercise the ObsList input branch.
+    observation = make_observation(
+        flux=1000.0,
+    )
+    obslist_result = fitter.go(
+        make_obslist(observation),
+    )
+
+    assert obslist_result["flags"] == 0
+    assert obslist_result["n_bands"] == 1
+
+    # Exercise the MultiBandObsList branch and the multiband
+    # compute_effective_flux path.
+    fluxes = np.array(
+        [600.0, 1400.0],
+        dtype=np.float64,
+    )
+    mbobs = ngmix.MultiBandObsList()
+
+    for flux in fluxes:
+        mbobs.append(
+            make_obslist(
+                make_observation(flux),
+            )
+        )
+
+    multiband_result = fitter.go(
+        mbobs,
+    )
+
+    assert multiband_result["flags"] == 0
+    assert multiband_result["flux_flags"] == 0
+    assert multiband_result["n_bands"] == 2
+
+    np.testing.assert_allclose(
+        multiband_result["flux"],
+        fluxes,
+        rtol=5.0e-4,
+        atol=0.0,
+    )
+
+    # Exercise the LinAlgError handler around
+    # compute_effective_flux.
+    def raise_linalg_error(*args, **kwargs):
+        raise np.linalg.LinAlgError(
+            "synthetic singular covariance",
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            galsim_admom,
+            "compute_effective_flux",
+            raise_linalg_error,
+        )
+
+        singular_result = get_result(
+            copy.deepcopy(multiband_result),
+            jac_area=scale**2,
+            wgt_norm=multiband_result["wnorm"],
+        )
+
+    assert singular_result["flux_flags"] & ngmix.flags.NONPOS_VAR
+    assert singular_result["T_flags"] & ngmix.flags.NONPOS_VAR
+
+    # Exercise the exception handler around find_ellipmom2.
+    def raise_internal_error(*args, **kwargs):
+        raise RuntimeError(
+            "synthetic adaptive-moment failure",
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            galsim_admom_nb,
+            "find_ellipmom2",
+            raise_internal_error,
+        )
+
+        failed_result = fitter.go(
+            observation,
+        )
+
+    assert failed_result["flags"] & 2**16
+
+
+def test_get_result_invalid_covariances(
+    monkeypatch,
+):
+    """Test defensive handling of invalid propagated covariances."""
+    scale = 0.2
+    sigma_pix = 4.0
+    noise_std = 0.2
+
+    image = _make_gaussian_image(
+        sigma_pix=sigma_pix,
+        flux=1000.0,
+    )
+    valid_result = _measure(
+        image=image,
+        scale=scale,
+        sigma_pix=sigma_pix,
+        noise_std=noise_std,
+    )
+
+    def rerun(result):
+        return get_result(
+            result,
+            jac_area=scale**2,
+            wgt_norm=result["wnorm"],
+        )
+
+    # Exercise rejection of a non-positive flux covariance.
+    def zero_flux_cov(
+        sums,
+        sums_cov,
+        rho4,
+        fnorm,
+        n_bands,
+    ):
+        return np.zeros(
+            (n_bands, n_bands),
+            dtype=np.float64,
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            galsim_admom,
+            "get_flux_cov",
+            zero_flux_cov,
+        )
+
+        invalid_flux_cov = rerun(
+            copy.deepcopy(valid_result),
+        )
+
+    assert invalid_flux_cov["flux_flags"] & ngmix.flags.NONPOS_VAR
+    assert np.all(np.isnan(invalid_flux_cov["flux_err"]))
+
+    # Exercise invalid second-moment covariance. This reaches both
+    # the T covariance failure and the non-finite shape variance.
+    invalid_moment_cov = copy.deepcopy(
+        valid_result,
+    )
+    invalid_moment_cov["sums_cov"][2, :] = 0.0
+    invalid_moment_cov["sums_cov"][:, 2] = 0.0
+
+    invalid_moment_cov = rerun(
+        invalid_moment_cov,
+    )
+
+    assert invalid_moment_cov["T_flags"] & ngmix.flags.NONPOS_VAR
+    assert invalid_moment_cov["flags"] & ngmix.flags.NONPOS_SHAPE_VAR
+    assert np.all(np.isnan(invalid_moment_cov["e_err"]))
+
+    # Exercise invalid rho4 covariance without invalidating the
+    # per-band flux covariance.
+    invalid_rho4_cov = copy.deepcopy(
+        valid_result,
+    )
+    invalid_rho4_cov["sums_cov"][5, :] = 0.0
+    invalid_rho4_cov["sums_cov"][:, 5] = 0.0
+
+    invalid_rho4_cov = rerun(
+        invalid_rho4_cov,
+    )
+
+    assert invalid_rho4_cov["T_flags"] & ngmix.flags.NONPOS_VAR
+    assert np.isnan(invalid_rho4_cov["rho4_err"])

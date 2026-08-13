@@ -262,19 +262,17 @@ class GAdmomFitter:
         return self.rng
 
     def _generate_guess(self, scale, nband, guess_fwhm):  # noqa
-        # rng = self._get_rng()
+        rng = self._get_rng()
 
         pars = np.zeros(5, dtype=np.float64)
         half_T = guess_fwhm * guess_fwhm / self._fwhm2sig_sq
-        # pars[0 : 0 + 2] = rng.uniform(
-        #     low=-0.5 * scale, high=0.5 * scale, size=2
-        # )
-        pars[0] = 0
-        pars[1] = 0
-        pars[2] = half_T  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
-        pars[3] = 0  # rng.uniform(low=-1e-3, high=1e-3)
-        pars[4] = half_T  # * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
-        # pars[5:] = 1.0
+        pars[0 : 0 + 2] = rng.uniform(
+            low=-0.5 * scale, high=0.5 * scale, size=2
+        )
+        pars[2] = half_T * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        pars[3] = 0 + rng.uniform(low=-1e-3, high=1e-3)
+        pars[4] = half_T * (1.0 + rng.uniform(low=-1e-3, high=1e-3))
+        pars[5:] = 1.0
 
         return pars
 
@@ -393,6 +391,12 @@ def get_result(ares, jac_area, wgt_norm):
     else:
         res["flux_flags"] |= res["flags"] | ngmix.flags.NONPOS_SIZE
 
+    # Defaults used when covariance validation fails before
+    # get_T_and_e_cov is called.
+    T_var = np.nan
+    e1_var = np.nan
+    e2_var = np.nan
+    e12_cov = np.nan
     if res["flags"] == 0 and res["flux_flags"] == 0:
         if (
             res["sums_cov"][2, 2] > 0
