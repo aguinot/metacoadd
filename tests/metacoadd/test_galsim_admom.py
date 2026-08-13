@@ -18,6 +18,8 @@ import ngmix.flags
 from ngmix.moments import fwhm_to_T
 
 from metacoadd.moments.galsim_admom import GAdmomFitter, get_result
+from metacoadd.moments import galsim_admom_nb
+from metacoadd.moments.galsim_admom_nb import find_ellipmom1, find_ellipmom2
 
 
 _FWHM_PER_SIGMA = 2.0 * np.sqrt(2.0 * np.log(2.0))
@@ -703,3 +705,302 @@ def test_flux_s2n_scaling():
         2.0 * reference_s2n,
         rtol=1.0e-8,
     )
+
+
+def test_failure_flags_and_get_result():
+    """Test public failure handling and get_result flag propagation."""
+    scale = 0.2
+    sigma_pix = 4.0
+    noise_std = 0.2
+    guess_fwhm = _FWHM_PER_SIGMA * sigma_pix * scale
+
+    def assert_failure(result, expected_flag):
+        # Additional flags may be set while processing the failed fit,
+        # so each expected flag is checked as a bitmask.
+        for flag_name in (
+            "flags",
+            "flux_flags",
+            "T_flags",
+        ):
+            assert result[flag_name] & expected_flag
+
+        assert np.all(np.isnan(result["flux"]))
+        assert np.all(np.isnan(result["flux_err"]))
+
+    # Test a real end-to-end negative-flux failure. This triggers the
+    # first NONPOS_FLUX check in find_ellipmom1 and then passes through
+    # get_result inside GAdmomFitter.go.
+    negative_image = _make_gaussian_image(
+        sigma_pix=sigma_pix,
+        flux=-1000.0,
+    )
+    negative_observation = _make_observation(
+        image=negative_image,
+        scale=scale,
+        noise_std=noise_std,
+    )
+
+    fitter = GAdmomFitter(
+        guess_fwhm=guess_fwhm,
+    )
+    negative_result = fitter.go(
+        negative_observation,
+    )
+
+    assert_failure(
+        negative_result,
+        ngmix.flags.NONPOS_FLUX,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="fit failed",
+    ):
+        negative_result.get_gmix()
+
+    with pytest.raises(
+        RuntimeError,
+        match="fit failed",
+    ):
+        negative_result.make_image()
+
+    # Start from a valid result and force an invalid moment matrix to
+    # exercise the NONPOS_SIZE validation performed by get_result.
+    positive_image = _make_gaussian_image(
+        sigma_pix=sigma_pix,
+        flux=1000.0,
+    )
+    valid_result = _measure(
+        image=positive_image,
+        scale=scale,
+        sigma_pix=sigma_pix,
+        noise_std=noise_std,
+    )
+
+    invalid_size_result = copy.deepcopy(
+        valid_result,
+    )
+    invalid_size_result["flags"] = 0
+    invalid_size_result["pars"][2] = -1.0
+    invalid_size_result["pars"][3] = 0.0
+    invalid_size_result["pars"][4] = -1.0
+
+    invalid_size_result = get_result(
+        invalid_size_result,
+        jac_area=scale**2,
+        wgt_norm=invalid_size_result["wnorm"],
+    )
+
+    assert invalid_size_result["T"] <= 0.0
+    assert_failure(
+        invalid_size_result,
+        ngmix.flags.NONPOS_SIZE,
+    )
+    assert np.all(np.isnan(invalid_size_result["e"]))
+
+
+@pytest.mark.skipif(
+    os.environ.get("COVERAGE_MODE", "0") != "1",
+    reason="Synthetic tests for coverage-only defensive branches",
+)
+def test_admom_nb_defensive_failure_checks(
+    monkeypatch,
+):
+    """Exercise defensive checks that valid fitter inputs cannot reach."""
+    scale = 0.2
+    sigma_pix = 4.0
+    noise_std = 0.2
+    guess_fwhm = _FWHM_PER_SIGMA * sigma_pix * scale
+
+    image = _make_gaussian_image(
+        sigma_pix=sigma_pix,
+        flux=1000.0,
+    )
+    observation = _make_observation(
+        image=image,
+        scale=scale,
+        noise_std=noise_std,
+    )
+
+    fitter = GAdmomFitter(
+        guess_fwhm=guess_fwhm,
+    )
+    guess = fitter._get_guess(
+        scale=scale,
+        nband=1,
+        guess_fwhm=guess_fwhm,
+    )
+
+    pixels_list = [
+        observation.pixels,
+    ]
+    band_tracker = np.array(
+        [1],
+        dtype=np.int64,
+    )
+
+    def make_state():
+        result_array = fitter._get_am_result(
+            nband=1,
+        )
+        tmp_array = fitter._get_am_tmp(
+            nobs=1,
+            nband=1,
+        )
+        return result_array, tmp_array
+
+    def assert_propagated(result_array, expected_flag):
+        # Check the low-level result first.
+        assert result_array["flags"][0] & expected_flag
+
+        # Then verify that get_result preserves the original failure in
+        # all applicable public flag fields.
+        result = get_result(
+            result_array,
+            jac_area=scale**2,
+            wgt_norm=1.0,
+        )
+
+        for flag_name in (
+            "flags",
+            "flux_flags",
+            "T_flags",
+        ):
+            assert result[flag_name] & expected_flag
+
+        assert np.all(np.isnan(result["flux"]))
+        assert np.all(np.isnan(result["flux_err"]))
+
+    # Exercise the covariance-pass check:
+    #
+    #     if flux <= 0.0:
+    #
+    # Using a separate negative values array bypasses the earlier
+    # non-covariance check and enters find_ellipmom1 with do_cov=True.
+    result_array, tmp_array = make_state()
+
+    find_ellipmom1(
+        pixels_list=pixels_list,
+        values_list=[
+            -observation.pixels["val"],
+        ],
+        band_tracker=band_tracker,
+        x0=guess[0],
+        y0=guess[1],
+        Mxx=guess[2],
+        Mxy=guess[3],
+        Myy=guess[4],
+        res=result_array[0],
+        tmp=tmp_array[0],
+        conf=fitter.conf[0],
+        do_cov=True,
+    )
+
+    assert_propagated(
+        result_array,
+        ngmix.flags.NONPOS_FLUX,
+    )
+
+    # The remaining checks are protected by earlier validation and cannot
+    # be reached using a valid end-to-end observation. Replace the lower
+    # moment accumulator only during this coverage-specific test.
+    fake_result = {
+        "amplitude": 1.0,
+        "centroid": 0.0,
+    }
+
+    def fake_find_ellipmom1(
+        pixels_list,
+        values_list,
+        band_tracker,
+        x0,
+        y0,
+        Mxx,
+        Mxy,
+        Myy,
+        res,
+        tmp,
+        conf,
+        do_cov=False,
+    ):
+        res["flags"] = 0
+        res["sums"][:] = 0.0
+        res["sums"][0] = fake_result["centroid"]
+        res["sums"][6] = fake_result["amplitude"]
+
+    monkeypatch.setattr(
+        galsim_admom_nb,
+        "find_ellipmom1",
+        fake_find_ellipmom1,
+    )
+
+    invalid_size_guess = guess.copy()
+    invalid_size_guess[2] = -1.0
+    invalid_size_guess[3] = 0.0
+    invalid_size_guess[4] = -1.0
+
+    # Each entry targets one defensive check in find_ellipmom2:
+    #
+    # 1. Amp <= 0
+    # 2. semi_b2 <= 0
+    # 3. centroid shift exceeds shiftmax
+    # 4. numiter == maxiter
+    cases = [
+        {
+            "flag": ngmix.flags.NONPOS_FLUX,
+            "amplitude": -1.0,
+            "centroid": 0.0,
+            "guess": guess,
+        },
+        {
+            "flag": ngmix.flags.NONPOS_SIZE,
+            "amplitude": 1.0,
+            "centroid": 0.0,
+            "guess": invalid_size_guess,
+        },
+        {
+            "flag": ngmix.flags.CEN_SHIFT,
+            "amplitude": 1.0,
+            "centroid": 1.0,
+            "guess": guess,
+            "shiftmax": 0.0,
+        },
+        {
+            "flag": ngmix.flags.MAXITER,
+            "amplitude": 1.0,
+            "centroid": 1.0,
+            "guess": guess,
+            "maxiter": 1,
+        },
+    ]
+
+    for case in cases:
+        result_array, tmp_array = make_state()
+        conf = fitter.conf.copy()
+
+        if "shiftmax" in case:
+            conf["shiftmax"] = case["shiftmax"]
+
+        if "maxiter" in case:
+            conf["maxiter"] = case["maxiter"]
+
+        fake_result["amplitude"] = case["amplitude"]
+        fake_result["centroid"] = case["centroid"]
+
+        find_ellipmom2(
+            pixels_list=pixels_list,
+            values_list=[
+                observation.pixels["val"],
+            ],
+            band_tracker=band_tracker,
+            guess=case["guess"],
+            resarray=result_array,
+            tmparray=tmp_array,
+            confarray=conf,
+            do_covariance=False,
+        )
+
+        assert_propagated(
+            result_array,
+            case["flag"],
+        )
