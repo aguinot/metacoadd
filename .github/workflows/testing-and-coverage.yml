@@ -35,12 +35,19 @@ jobs:
       run: |
         pip install -e ".[dev]"
 
-    - name: Run tests
+    - name: Run tests with Numba JIT enabled
       shell: micromamba-shell {0}
       run: |
-        pytest tests -vvv --cov=src/metacoadd --cov-report=xml
-    
+        pytest tests -vvv
+
+    - name: Run code coverage
+      if: matrix.python-version == '3.12'
+      shell: micromamba-shell {0}
+      run: |
+        bash tests/metacoadd/run_tests.sh
+
     - name: Upload coverage report to codecov
+      if: matrix.python-version == '3.12'
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

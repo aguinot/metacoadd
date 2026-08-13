@@ -4,11 +4,20 @@ To see the original implementation, please visit:
 https://github.com/GalSim-developers/GalSim/blob/releases/2.7/src/hsm/PSFCorr.cpp.
 """
 
+import os
 from math import atan2, cos, exp, sin, sqrt
 
 import ngmix
 import numpy as np
+import numba as nb
 from numba import njit
+
+# This allows having coverage
+if (
+    os.environ.get("TESTING_GALSIM_ADMOM", "0") == "1"
+    and os.environ.get("COVERAGE_MODE", "0") == "1"
+):
+    nb.config.DISABLE_JIT = 1
 
 
 @njit(cache=True)
