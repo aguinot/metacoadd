@@ -52,7 +52,7 @@ def _get_obs(
     else:
         psf_obs = None
 
-    bmask = np.zeros(im.shape, dtype="i2")
+    bmask = np.zeros(im.shape, dtype=np.int32)
     obs = ngmix.Observation(
         im,
         weight=wt,
