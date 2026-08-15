@@ -163,7 +163,6 @@ class MetaDetect:
             "fixnoise": True,
             "has_pixel": False,
         }
-        self.mcal_config = {}
         if mcal_config is not None:
             if not isinstance(mcal_config, dict):
                 raise ValueError("mcal_config must be a dictionary")
@@ -239,13 +238,20 @@ class MetaDetect:
             The multi-band multi-epoch observations.
 
         """
-        if isinstance(mb_obs, ngmix.MultiBandObsList):
-            self._nband = len(mb_obs)
-            scale = mb_obs[0][0].jacobian.get_scale()
-        else:
+        if not isinstance(
+            mb_obs,
+            ngmix.MultiBandObsList,
+        ):
             raise ValueError(
                 "mb_obs must be an instance of ngmix.MultiBandObsList"
             )
+
+        if not self._check_valid_obs(mb_obs):
+            return None
+
+        self._nband = len(mb_obs)
+        scale = mb_obs[0][0].jacobian.get_scale()
+
         # print("Setting up fitters...")
         self.gal_runners = get_fitters(
             models=self._models,
@@ -260,7 +266,7 @@ class MetaDetect:
 
         has_fourier = False
         for gal_runner in self.gal_runners:
-            if "fourier" in gal_runner:
+            if "fourier" in gal_runner:  # pragma: no cover
                 has_fourier = True
 
         # print("Running metacalibration...")
@@ -314,6 +320,8 @@ class MetaDetect:
                     detect_image,
                     detect_noise,
                     detect_weight,
+                    detect_bmask,
+                    detect_ormask,
                 ) = self.get_coadd_multiband(
                     mcal_mbobs,
                     fscale=self._coadd_fscale,
@@ -322,8 +330,10 @@ class MetaDetect:
                 )
             else:
                 # Debug only
-                detect_image = mcal_mbobs[0][0].image
-                detect_weight = mcal_mbobs[0][0].weight
+                detect_image = mcal_mbobs[0][0].image.copy()
+                detect_weight = mcal_mbobs[0][0].weight.copy()
+                detect_bmask = mcal_mbobs[0][0].bmask.copy()
+                detect_ormask = mcal_mbobs[0][0].ormask.copy()
             # print("Done getting detection image.")
 
             # print("Getting catalog...")
@@ -331,6 +341,8 @@ class MetaDetect:
                 detect_image,
                 detect_weight,
                 wcs=mcal_mbobs[0][0].jacobian.get_galsim_wcs(),
+                bmask=detect_bmask,
+                ormask=detect_ormask,
             )
             # print(
             #     "Done getting catalog.",
@@ -338,7 +350,7 @@ class MetaDetect:
             #     "objects detected."
             # )
 
-            if has_fourier:
+            if has_fourier:  # pragma: no cover
                 self._set_power_spectrum(mcal_mbobs)
 
             # print("Getting shape catalog...")
@@ -407,6 +419,30 @@ class MetaDetect:
 
         return final_cat
 
+    def _check_valid_obs(self, mbobs):
+        """Check that every observation contains usable pixels.
+
+        An observation with an entirely zero weight map cannot
+        contribute to detection, metacalibration, or measurement.
+
+        Parameters
+        ----------
+        mbobs : ngmix.MultiBandObsList
+            Multi-band observations to validate.
+
+        Returns
+        -------
+        valid : bool
+            True when every observation contains at least one
+            nonzero-weight pixel.
+        """
+        for obslist in mbobs:
+            for obs in obslist:
+                if np.all(obs.weight == 0):
+                    return False
+
+        return True
+
     def get_metacal(self, mb_obs):
         """Run metacalibration on the input multi-band multi-epoch observations.
 
@@ -434,7 +470,7 @@ class MetaDetect:
         mcal_mbobs = mcal_handler.get_all(mb_obs, self.mcal_config["types"])
         return mcal_mbobs
 
-    def _set_power_spectrum(self, mb_obs):
+    def _set_power_spectrum(self, mb_obs):  # pragma: no cover
         do_ps = False
         for model_name in self.gal_runners:
             if "fourier" in model_name:
@@ -515,6 +551,10 @@ class MetaDetect:
             The coadded noise image.
         coadd_weight : ngmix.Image
             The coadded weight image.
+        coadd_bmask : np.ndarray or None
+            The coadded bitmask image.
+        coadd_ormask : np.ndarray or None
+            The coadded original mask image.
 
         """
         coadd_maker = get_coadd_class(self._coadd_type)
@@ -523,9 +563,16 @@ class MetaDetect:
         )
 
         coadd_image, coadd_noise, coadd_weight = coadd_maker.make()
-        return coadd_image, coadd_noise, coadd_weight
+        coadd_bmask, coadd_ormask = coadd_maker.make_masks()
+        return (
+            coadd_image,
+            coadd_noise,
+            coadd_weight,
+            coadd_bmask,
+            coadd_ormask,
+        )
 
-    def get_cat(self, img, weight, wcs=None):
+    def get_cat(self, img, weight, bmask=None, ormask=None, wcs=None):
         """Get the catalog of detected objects in the image.
 
         Parameters
@@ -534,6 +581,10 @@ class MetaDetect:
             The image to detect objects in.
         weight : ngmix.Image
             The weight image.
+        bmask : np.ndarray, optional
+            A bitmask to apply to the input image. Default is None.
+        ormask : np.ndarray, optional
+            A bitmask containing original-mask provenance. Default is None.
         wcs : astropy.wcs.WCS, optional
             The world coordinate system of the image.
 
@@ -554,7 +605,10 @@ class MetaDetect:
             deblend_nthresh=self._detect_deblend_nthresh,
             deblend_cont=self._detect_deblend_cont,
             kernel=self._detect_kernel,
+            filter_type=self._detect_filter_type,
             wcs=wcs,
+            bmask=bmask,
+            ormask=ormask,
         )
 
         return cat, seg_map
@@ -605,12 +659,11 @@ class MetaDetect:
             for name, runner in self.gal_runners.items():
                 res_ = runner.go(mb_obs)
                 res = {k: v for k, v in res_.items()}
+                if "nimage" not in res:
+                    res["nimage"] = sum(len(obslist) for obslist in mb_obs)
                 if "g" in res:
                     res["g1"] = res["g"][0]
                     res["g2"] = res["g"][1]
-                elif "e" in res:
-                    res["g1"] = res["e"][0]
-                    res["g2"] = res["e"][1]
                 res["Tpsf"] = T_psf
 
                 all_shape_cat[name].append(res)
@@ -675,7 +728,7 @@ class MetaDetect:
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
                     runner_name = key.split("_")[0]
-                    if runner_name == "fourier":
+                    if runner_name == "fourier":  # pragma: no cover
                         runner_name = "_".join(key.split("_")[:2])
                     shape_key = key.split(f"{runner_name}_")[1]
                     if shape_key == "dx":
@@ -779,7 +832,7 @@ def do_metadetect(
         ],
         stamp_size=config["meds"]["min_box_size"],
         do_uberseg=config["meds"].get("weight_type", None) == "uberseg",
-        mcal_config={},
+        mcal_config=config.get("metacal", None),
         original_image_config=config.get("original_image", None),
         imcom_map_config=config.get("IMCOM_maps", None),
     )

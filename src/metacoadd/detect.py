@@ -1,5 +1,3 @@
-import copy
-
 from math import sqrt
 
 import numpy as np
@@ -106,7 +104,8 @@ DET_CAT_DTYPE = [
     ("snr", np.float64),
     ("flags", np.int64),
     ("flux_flags", np.int64),
-    ("ext_flags", np.int64),
+    ("bmask", np.int64),
+    ("ormask", np.int64),
 ]
 
 
@@ -432,6 +431,57 @@ def get_xyToradec_func(wcs):
     return xyToradec
 
 
+def reduce_mask_by_segmentation(
+    mask,
+    segmentation,
+    n_obj,
+):
+    """Combine mask bits inside each segmentation footprint.
+
+    Parameters
+    ----------
+    mask : np.ndarray or None
+        Integer bitmask image.
+    segmentation : np.ndarray
+        Segmentation image with object labels starting at one.
+    n_obj : int
+        Number of detected objects.
+
+    Returns
+    -------
+    values : np.ndarray
+        Bitwise OR of the mask pixels belonging to each object.
+    """
+    values = np.zeros(
+        n_obj,
+        dtype=np.int64,
+    )
+
+    if mask is None:
+        return values
+
+    mask = np.asarray(
+        mask,
+        dtype=np.int64,
+    )
+    segmentation = np.asarray(segmentation)
+
+    if mask.shape != segmentation.shape:
+        raise ValueError("mask and segmentation must have the same shape")
+
+    object_pixels = (segmentation > 0) & (segmentation <= n_obj)
+
+    object_indices = segmentation[object_pixels].astype(np.intp) - 1
+
+    np.bitwise_or.at(
+        values,
+        object_indices,
+        mask[object_pixels],
+    )
+
+    return values
+
+
 def get_cat(
     img,
     weight,
@@ -444,7 +494,8 @@ def get_cat(
     filter_type="conv",
     header=None,
     wcs=None,
-    mask=None,
+    bmask=None,
+    ormask=None,
 ):
     """Get a catalog of detected objects from an image using SEP.
 
@@ -476,6 +527,10 @@ def get_cat(
         The WCS object of the input image. Default is None.
     mask : np.ndarray, optional
         A mask to apply to the input image. Default is None.
+    bmask : np.ndarray, optional
+        Bitmask associated with the current detection image. Default is None.
+    ormask : np.ndarray, optional
+        Bitmask containing original-mask provenance. Default is None.
 
     Returns
     -------
@@ -591,15 +646,16 @@ def get_cat(
     #     ra, dec = xyToradec(obj["x"], obj["y"])
 
     # Build the equivalent to IMAFLAGS_ISO
-    # But you only know if the object is flagged or not, you don't get the flag
-    ext_flags = np.zeros(n_obj, dtype=int)
-    if mask is not None:
-        for i, seg_id_tmp in enumerate(seg_id):
-            seg_map_tmp = copy.deepcopy(seg)
-            seg_map_tmp[seg_map_tmp != seg_id_tmp] = 0
-            check_map = seg_map_tmp + mask
-            if (check_map > seg_id_tmp).any():
-                ext_flags[i] = 1
+    bmask_values = reduce_mask_by_segmentation(
+        bmask,
+        seg,
+        n_obj,
+    )
+    ormask_values = reduce_mask_by_segmentation(
+        ormask,
+        seg,
+        n_obj,
+    )
 
     out = get_output_cat(n_obj)
 
@@ -623,7 +679,8 @@ def get_cat(
     out["snr"] = snr
     out["flags"] = obj["flag"]
     out["flux_flags"] = krflags | flags | flags_rad
-    out["ext_flags"] = ext_flags
+    out["bmask"] = bmask_values
+    out["ormask"] = ormask_values
     # if wcs is not None:
     #     out["ra"] = ra
     #     out["dec"] = dec
