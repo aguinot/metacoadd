@@ -330,10 +330,10 @@ class MetaDetect:
                 )
             else:
                 # Debug only
-                detect_image = mcal_mbobs[0][0].image
-                detect_weight = mcal_mbobs[0][0].weight
-                detect_bmask = mcal_mbobs[0][0].bmask
-                detect_ormask = mcal_mbobs[0][0].ormask
+                detect_image = mcal_mbobs[0][0].image.copy()
+                detect_weight = mcal_mbobs[0][0].weight.copy()
+                detect_bmask = mcal_mbobs[0][0].bmask.copy()
+                detect_ormask = mcal_mbobs[0][0].ormask.copy()
             # print("Done getting detection image.")
 
             # print("Getting catalog...")
@@ -470,7 +470,7 @@ class MetaDetect:
         mcal_mbobs = mcal_handler.get_all(mb_obs, self.mcal_config["types"])
         return mcal_mbobs
 
-    def _set_power_spectrum(self, mb_obs):
+    def _set_power_spectrum(self, mb_obs):  # pragma: no cover
         do_ps = False
         for model_name in self.gal_runners:
             if "fourier" in model_name:
@@ -664,9 +664,6 @@ class MetaDetect:
                 if "g" in res:
                     res["g1"] = res["g"][0]
                     res["g2"] = res["g"][1]
-                elif "e" in res:
-                    res["g1"] = res["e"][0]
-                    res["g2"] = res["e"][1]
                 res["Tpsf"] = T_psf
 
                 all_shape_cat[name].append(res)
@@ -731,7 +728,7 @@ class MetaDetect:
             for key in np.dtype(SHAPE_CAT_DTYPE).names:
                 try:
                     runner_name = key.split("_")[0]
-                    if runner_name == "fourier":
+                    if runner_name == "fourier":  # pragma: no cover
                         runner_name = "_".join(key.split("_")[:2])
                     shape_key = key.split(f"{runner_name}_")[1]
                     if shape_key == "dx":
