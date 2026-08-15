@@ -72,6 +72,61 @@ class Coadd:
             )
         self.fscale = np.asarray(self.fscale, dtype=np.float64)
 
+    def make_masks(self):
+        """Combine bmask and ormask across all observations.
+
+        Each mask type is treated independently. If a mask is present on every
+        observation, its values are combined pixel-by-pixel using bitwise OR.
+        If it is absent from every observation, None is returned for that mask
+        type.
+
+        A mask present on only a subset of observations is considered
+        inconsistent and raises an error.
+
+        Returns
+        -------
+        bmask : np.ndarray or None
+            Combined bmask, or None if no observations contain
+            a bmask.
+        ormask : np.ndarray or None
+            Combined ormask, or None if no observations contain
+            an ormask.
+        """
+
+        n_image = 0
+        n_bmask = 0
+        n_ormask = 0
+        for i in range(self._n_band):
+            for j in range(self._n_obs[i]):
+                obs = self.mb_obs[i][j]
+                if obs.has_bmask():
+                    if n_bmask == 0:
+                        bmask = np.zeros_like(obs.bmask)
+                    bmask |= obs.bmask
+                    n_bmask += 1
+                if obs.has_ormask():
+                    if n_ormask == 0:
+                        ormask = np.zeros_like(obs.ormask)
+                    ormask |= obs.ormask
+                    n_ormask += 1
+                n_image += 1
+        if n_bmask == 0:
+            bmask = None
+        else:
+            if n_bmask != n_image:
+                raise ValueError(
+                    "bmask must be set on all observations or none"
+                )
+        if n_ormask == 0:
+            ormask = None
+        else:
+            if n_ormask != n_image:
+                raise ValueError(
+                    "ormask must be set on all observations or none"
+                )
+
+        return bmask, ormask
+
     def make(self):
         """Make the coadd image, noise and weight.
         Implemented in subclasses.
