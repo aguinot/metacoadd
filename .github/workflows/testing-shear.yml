@@ -13,9 +13,6 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12', '3.13', '3.14']
 
     steps:
     - uses: actions/checkout@v7
@@ -27,7 +24,7 @@ jobs:
         # cache-environment: true
         generate-run-shell: true
         create-args: >-
-          python=${{ matrix.python-version }}
+          python=3.14
 
     - name: Install package
       shell: micromamba-shell {0}

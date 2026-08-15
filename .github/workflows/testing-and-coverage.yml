@@ -41,13 +41,13 @@ jobs:
         pytest tests/metacoadd -vvv
 
     - name: Run code coverage
-      if: matrix.python-version == '3.12'
+      if: matrix.python-version == '3.14'
       shell: micromamba-shell {0}
       run: |
         bash tests/metacoadd/run_tests.sh
 
     - name: Upload coverage report to codecov
-      if: matrix.python-version == '3.12'
+      if: matrix.python-version == '3.14'
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
