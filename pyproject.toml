@@ -24,6 +24,7 @@ requires-python = ">=3.12"
 [project.optional-dependencies]
 dev = [
     "jupyter", # Clears output from Jupyter notebooks
+    "joblib", # Used to parallelize tests
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
     "pytest-cov", # Used to report total code coverage
