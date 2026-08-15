@@ -1,4 +1,5 @@
 [![pytests](https://github.com/aguinot/metacoadd/actions/workflows/testing-and-coverage.yml/badge.svg)](https://github.com/aguinot/metacoadd/actions/workflows/testing-and-coverage.yml)
+[![shear-tests](https://github.com/aguinot/metacoadd/actions/workflows/testing-shear.yml/badge.svg)](https://github.com/aguinot/metacoadd/actions/workflows/testing-shear.yml)
 [![codecov](https://codecov.io/gh/aguinot/metacoadd/graph/badge.svg?token=Q9R3QX9XXH)](https://codecov.io/gh/aguinot/metacoadd)
 
 # Metacoadd
