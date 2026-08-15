@@ -106,4 +106,6 @@ omit=[
     "src/metacoadd/swarp_wrapper.py",
     "src/metacoadd/fitters/*",
     "src/metacoadd/gmix_fourier/*",
+    "src/metacoadd/moments/galsim_regauss.py",
+    "src/metacoadd/moments/galsim_regauss_nb.py",
 ]
