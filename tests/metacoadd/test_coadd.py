@@ -114,13 +114,18 @@ def test_mb_obs_fixture(mb_obs):
 
 
 def test_default_fscale_and_base_make(mb_obs):
-    """Test default scaling and the abstract base implementation."""
+    """Test default scaling, missing masks, and base make."""
     coadd = Coadd(mb_obs)
 
     np.testing.assert_array_equal(
         coadd.fscale,
         np.ones((2, 2)),
     )
+
+    bmask, ormask = coadd.make_masks()
+
+    assert bmask is None
+    assert ormask is None
 
     with pytest.raises(
         NotImplementedError,
@@ -230,6 +235,138 @@ def test_invalid_flux_scaling_inputs(mb_obs):
                 [30.0, 30.0],
             ],
         )
+
+
+def test_make_masks(mb_obs):
+    """Test bitwise mask combination across observations."""
+    bmask_bits = np.asarray(
+        [
+            [2**0, 2**1],
+            [2**2, 2**3],
+        ],
+        dtype=np.int64,
+    )
+    ormask_bits = np.asarray(
+        [
+            [2**4, 2**5],
+            [2**6, 2**7],
+        ],
+        dtype=np.int64,
+    )
+
+    for band_index, obslist in enumerate(mb_obs):
+        for obs_index, obs in enumerate(obslist):
+            obs.set_bmask(
+                np.full(
+                    SHAPE,
+                    bmask_bits[
+                        band_index,
+                        obs_index,
+                    ],
+                    dtype=np.int64,
+                )
+            )
+            obs.set_ormask(
+                np.full(
+                    SHAPE,
+                    ormask_bits[
+                        band_index,
+                        obs_index,
+                    ],
+                    dtype=np.int64,
+                )
+            )
+
+    bmask, ormask = Coadd(mb_obs).make_masks()
+
+    expected_bmask = np.full(
+        SHAPE,
+        2**0 | 2**1 | 2**2 | 2**3,
+        dtype=np.int64,
+    )
+    expected_ormask = np.full(
+        SHAPE,
+        2**4 | 2**5 | 2**6 | 2**7,
+        dtype=np.int64,
+    )
+
+    np.testing.assert_array_equal(
+        bmask,
+        expected_bmask,
+    )
+    np.testing.assert_array_equal(
+        ormask,
+        expected_ormask,
+    )
+
+    assert bmask.dtype == np.int64
+    assert ormask.dtype == np.int64
+
+    # Mask values are preserved even where every input
+    # observation has zero weight.
+    assert np.all(
+        [obs.weight[0, 2] == 0 for obslist in mb_obs for obs in obslist]
+    )
+    assert bmask[0, 2] == 15
+    assert ormask[0, 2] == 240
+
+
+def test_make_masks_with_bmask_only(mb_obs):
+    """Test that bmask and ormask are independent."""
+    expected = np.zeros(
+        SHAPE,
+        dtype=np.int64,
+    )
+
+    for index, obs in enumerate(obs for obslist in mb_obs for obs in obslist):
+        mask = np.zeros(
+            SHAPE,
+            dtype=np.int64,
+        )
+        mask[index // SHAPE[1], index % SHAPE[1]] = 2**index
+        obs.set_bmask(mask)
+
+        expected |= mask
+
+    bmask, ormask = Coadd(mb_obs).make_masks()
+
+    np.testing.assert_array_equal(
+        bmask,
+        expected,
+    )
+    assert ormask is None
+
+
+def test_make_masks_requires_all_bmasks(mb_obs):
+    """Reject bmask present on only some observations."""
+    mb_obs[0][0].set_bmask(
+        np.ones(
+            SHAPE,
+            dtype=np.int64,
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("bmask must be set on all observations or none"),
+    ):
+        Coadd(mb_obs).make_masks()
+
+
+def test_make_masks_requires_all_ormasks(mb_obs):
+    """Reject ormask present on only some observations."""
+    mb_obs[1][0].set_ormask(
+        np.ones(
+            SHAPE,
+            dtype=np.int64,
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("ormask must be set on all observations or none"),
+    ):
+        Coadd(mb_obs).make_masks()
 
 
 def test_average_coadd(mb_obs):
