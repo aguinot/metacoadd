@@ -1,4 +1,6 @@
+import os
 from math import sqrt
+from .utils import _identity_njit
 
 import numpy as np
 import numba as nb
@@ -12,6 +14,14 @@ import sep
 from astropy.wcs import WCS
 
 from .uberseg import fast_uberseg
+
+_COVERAGE_MODE = (
+    os.environ.get("TESTING_DETECT", "0") == "1"
+    and os.environ.get("COVERAGE_MODE", "0") == "1"
+)
+
+
+njit = _identity_njit if _COVERAGE_MODE else nb.njit
 
 DES_KERNEL = np.array(
     [
@@ -109,7 +119,7 @@ DET_CAT_DTYPE = [
 ]
 
 
-@nb.njit(fastmath=True, cache=True)
+@njit(fastmath=True, cache=True)
 def get_cutout_size(Qxx, Qxy, Qyy, n_sigma=3.0):
     """Compute the size of the cutout based on the second moments of the object.
 
@@ -299,12 +309,14 @@ def get_stamp_mbobs(
                 dvdcol=obs.jacobian.get_dvdcol(),
             )
 
+            obs_psf = obs.psf if obs.has_psf() else None
+
             newobs = Observation(
                 image=img,
                 weight=wgt,
                 jacobian=jac,
                 noise=noise,
-                psf=obs.psf,
+                psf=obs_psf,
                 bmask=bmask,
                 ormask=ormask,
             )
@@ -353,8 +365,9 @@ def get_pixel_scale(wcs):
 
     """
     if isinstance(wcs, WCS):
-        mat = wcs.pixel_scale_matrix
-        pixel_scale = mat[0, 0] * 3600.0  # arcsec/pixel
+        pixel_scale = (
+            np.sqrt(np.abs(np.linalg.det(wcs.pixel_scale_matrix))) * 3600.0
+        )
     elif isinstance(wcs, galsim.wcs.BaseWCS):
         pixel_scale = np.sqrt(wcs.pixelArea(wcs.origin))
     elif wcs is None:
@@ -686,63 +699,3 @@ def get_cat(
     #     out["dec"] = dec
 
     return out, seg
-
-
-def _shear_positions(x_pix, y_pix, g1, g2, jacobian):
-    """Shift pixel positions to account for a metacal shear.
-
-    When metacal applies a reduced shear (g1, g2) to an image, each galaxy
-    moves from its noshear pixel position to a new position given by the
-    forward action of the shear matrix on the sky-coordinate offset from the
-    image centre:
-
-        [u', v'] = S @ [u, v]
-        S = [[1+g1,  g2 ],
-             [ g2,  1-g1]] / (1 - g1^2 - g2^2)
-
-    This is the reduced-shear convention used by GalSim's ``galsim.Shear``.
-    The result is converted back to pixel coordinates via the inverse of the
-    Jacobian (WCS).
-
-    Parameters
-    ----------
-    x_pix, y_pix : array-like
-        Truth pixel positions in the noshear image (0-indexed, SEP convention:
-        x = col, y = row).
-    g1, g2 : float
-        Reduced-shear components of the metacal step.
-    jacobian : ngmix.Jacobian
-        Full-image Jacobian whose ``row0``/``col0`` give the reference pixel
-        (image centre) and whose WCS elements map pixel offsets to sky offsets.
-
-    Returns
-    -------
-    x_new, y_new : np.ndarray
-        Shifted pixel positions (col, row) in the sheared image.
-
-    """
-    dudcol = jacobian.get_dudcol()
-    dudrow = jacobian.get_dudrow()
-    dvdcol = jacobian.get_dvdcol()
-    dvdrow = jacobian.get_dvdrow()
-    col0 = jacobian.col0
-    row0 = jacobian.row0
-
-    # Pixel offsets from image centre → sky offsets (arcsec)
-    dcol = np.asarray(x_pix, dtype=np.float64) - col0
-    drow = np.asarray(y_pix, dtype=np.float64) - row0
-    u = dudcol * dcol + dudrow * drow
-    v = dvdcol * dcol + dvdrow * drow
-
-    # Forward reduced-shear transformation (GalSim convention)
-    absgsq = g1 * g1 + g2 * g2
-    inv_denom = 1.0 / (1.0 - absgsq)
-    u_new = inv_denom * ((1.0 + g1) * u + g2 * v)
-    v_new = inv_denom * (g2 * u + (1.0 - g1) * v)
-
-    # Sky offsets → pixel offsets via J^{-1}
-    det_J = dudcol * dvdrow - dudrow * dvdcol
-    dcol_new = (dvdrow * u_new - dudrow * v_new) / det_J
-    drow_new = (-dvdcol * u_new + dudcol * v_new) / det_J
-
-    return col0 + dcol_new, row0 + drow_new
