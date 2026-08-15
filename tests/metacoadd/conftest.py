@@ -3,6 +3,14 @@
 import os
 
 
+def pytest_configure(config):
+    """Register custom pytest markers."""
+    config.addinivalue_line(
+        "markers",
+        "coverage_all_params: run all parameters during coverage",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
     """Keep one parametrization per test during coverage runs."""
     if os.environ.get("COVERAGE_MODE", "0") != "1":
@@ -13,12 +21,15 @@ def pytest_collection_modifyitems(config, items):
     seen_parametrized_tests = set()
 
     for item in items:
-        # Non-parametrized tests are always retained.
         if not hasattr(item, "callspec"):
             selected.append(item)
             continue
 
-        # Remove the parameter ID from the pytest node ID.
+        # Keep every parametrization for explicitly marked tests.
+        if item.get_closest_marker("coverage_all_params") is not None:
+            selected.append(item)
+            continue
+
         test_id = item.nodeid.split("[", maxsplit=1)[0]
 
         if test_id in seen_parametrized_tests:
