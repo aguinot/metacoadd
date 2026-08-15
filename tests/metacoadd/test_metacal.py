@@ -49,6 +49,7 @@ def test_metacal_obs(mcal_class):
     assert np.all(obs_dict["noshear"].image != obs_dict["1p"].image)
 
 
+@pytest.mark.coverage_all_params
 @pytest.mark.parametrize("otype", ["obs", "obslist", "mbobs"])
 def test_metacal_fixnoise_smoke(otype, set_noise_image=True):
     """
