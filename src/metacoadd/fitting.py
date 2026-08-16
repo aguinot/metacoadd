@@ -3,6 +3,7 @@ from ngmix.gmix.gmix import _gmix_model_dict
 from ngmix.runners import Runner
 from ngmix.bootstrap import Bootstrapper, remove_failed_psf_obs
 
+from .moments.galsim_admom import GAdmomFitter
 from .moments.wmom_runner import MBMomRunner
 from .fitters.fourier_fitting import FourierFitter
 
@@ -76,7 +77,7 @@ def parse_model(model):
         The parsed model string.
 
     """
-    if model in ["wmom", "pgauss", "am"]:
+    if model in ["wmom", "pgauss", "gam", "am"]:
         pass
     elif model in _gmix_model_dict:
         pass
@@ -131,7 +132,7 @@ def get_runner(
     """
     model = parse_model(model)
 
-    if model in ["wmom", "pgauss", "am"]:
+    if model in ["wmom", "pgauss", "gam", "am"]:
         runner = build_mb_wmom_runner(
             model, fwhm=fwhm, symmetrize=symmetrize, rng=rng
         )
@@ -167,9 +168,24 @@ def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
 
     """
     if model == "wmom":
-        runner = ngmix.gaussmom.GaussMom(fwhm=fwhm)
+        fitter = ngmix.gaussmom.GaussMom(fwhm=fwhm)
+        runner = MBMomRunner(
+            fitter=fitter,
+            fitter_name=model,
+            symmetrize=symmetrize,
+        )
     elif model == "pgauss":
-        runner = ngmix.prepsfmom.PGaussMom(fwhm=fwhm)
+        fitter = ngmix.prepsfmom.PGaussMom(fwhm=fwhm)
+        runner = MBMomRunner(
+            fitter=fitter,
+            fitter_name=model,
+            symmetrize=symmetrize,
+        )
+    elif model == "gam":
+        fitter = GAdmomFitter(guess_fwhm=fwhm, rng=rng)
+        runner = RunnerGuess(
+            fitter=fitter,
+        )
     elif model == "am":
         fitter = ngmix.admom.AdmomFitter()
         guesser = ngmix.guessers.GMixPSFGuesser(
@@ -182,11 +198,7 @@ def build_mb_wmom_runner(model, fwhm=None, symmetrize=True, rng=None):
             guesser=guesser,
             ntry=2,
         )
-    return MBMomRunner(
-        fitter=runner,
-        fitter_name=model,
-        symmetrize=symmetrize,
-    )
+    return runner
 
 
 def build_model_fitting_runner(model, rng, nband, scale):

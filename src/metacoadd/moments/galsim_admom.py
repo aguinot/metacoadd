@@ -146,7 +146,7 @@ class GAdmomFitter:
 
         self.rng = rng
 
-    def go(self, obs):
+    def go(self, obs, guess=None):
         """Run the adpative moments.
 
         Parameters
@@ -197,9 +197,10 @@ class GAdmomFitter:
         atmp = self._get_am_tmp(sum(band_tracker), nband)
 
         scale = mb_obs[0][0].jacobian.scale
-        guess = self._get_guess(
-            scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
-        )
+        if guess is None:
+            guess = self._get_guess(
+                scale=scale, nband=nband, guess_fwhm=self.guess_fwhm
+            )
 
         try:
             find_ellipmom2(
@@ -493,7 +494,6 @@ def _get_admom_result_dtype(nband):
     _admom_result_dtype = [
         ("flags", "i4"),
         ("numiter", "i4"),
-        ("nimage", "i4"),
         ("npix", "i4"),
         ("wsum", "f8"),
         ("wnorm", "f8"),
