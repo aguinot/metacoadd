@@ -30,6 +30,7 @@ SUPPORTED_MODELS = [
     "wmom",
     "pgauss",
     # "am",
+    "gam",
     "gauss",
 ]
 
@@ -135,7 +136,7 @@ def _get_fitter_config(model):
         "symmetrize": True,
     }
 
-    if model in {"wmom", "pgauss"}:
+    if model in {"wmom", "pgauss", "gam"}:
         fitter["weight"] = {
             "fwhm": 1.2,
         }
@@ -720,17 +721,8 @@ def test_metadetect_fitter_multi_meas():
         assert not np.allclose(wmom_g, pgauss_g)
 
 
-@pytest.mark.parametrize(
-    "model, nband",
-    [
-        ("wmom", 1),
-        ("wmom", 3),
-        ("wmom", 4),
-        ("pgauss", 1),
-        ("pgauss", 3),
-        ("pgauss", 4),
-    ],
-)
+@pytest.mark.parametrize("model", SUPPORTED_MODELS)
+@pytest.mark.parametrize("nband", [1, 3, 4])
 def test_metadetect_flux(model, nband):
     """Test fluxes using upstream make_mbobs_sim."""
     flux_factors = np.linspace(1.0, 2.0, nband)
@@ -782,7 +774,7 @@ def test_metadetect_flux(model, nband):
         np.testing.assert_allclose(
             measured_ratios,
             expected_ratios,
-            rtol=0.20,
+            rtol=0.01,
             atol=0.05,
         )
 

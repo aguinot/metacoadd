@@ -11,44 +11,87 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
-
+  tests:
+    name: Tests - Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
-        python-version: ['3.12', '3.13', '3.14']
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - uses: mamba-org/setup-micromamba@v3
-      with:
-        environment-name: metacoadd
-        environment-file: environment.yml
-        # cache-environment: true
-        generate-run-shell: true
-        create-args: >-
-          python=${{ matrix.python-version }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: metacoadd
+          environment-file: environment.yml
+          generate-run-shell: true
+          create-args: >-
+            python=${{ matrix.python-version }}
 
-    - name: Install package
-      shell: micromamba-shell {0}
-      run: |
-        pip install -e ".[dev]"
+      - name: Install package
+        shell: micromamba-shell {0}
+        run: pip install -e ".[dev]"
 
-    - name: Run tests with Numba JIT enabled
-      shell: micromamba-shell {0}
-      run: |
-        pytest tests/metacoadd -vvv
+      - name: Run tests with Numba JIT enabled
+        shell: micromamba-shell {0}
+        run: pytest -vvv tests/metacoadd
 
-    - name: Run code coverage
-      if: matrix.python-version == '3.14'
-      shell: micromamba-shell {0}
-      run: |
-        bash tests/metacoadd/run_tests.sh
+  shear-tests:
+    name: Shear test - ${{ matrix.model }}
+    runs-on: ubuntu-latest
 
-    - name: Upload coverage report to codecov
-      if: matrix.python-version == '3.14'
-      uses: codecov/codecov-action@v7
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: false  # Don't mark failure to upload coverage report as test failure.
+    strategy:
+      matrix:
+        model: ["wmom", "pgauss", "gam", "gauss"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: metacoadd
+          environment-file: environment.yml
+          generate-run-shell: true
+          create-args: >-
+            python=3.14
+
+      - name: Install package
+        shell: micromamba-shell {0}
+        run: pip install -e ".[dev]"
+
+      - name: Run shear test
+        shell: micromamba-shell {0}
+        run: |
+          pytest -vvs \
+            "tests/shear_meas/test_shear_meas_mdet.py::test_shear_meas_simple[${{ matrix.model }}-1000000.0-7-64]"
+
+  coverage:
+    name: Coverage - Python 3.14
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: metacoadd
+          environment-file: environment.yml
+          generate-run-shell: true
+          create-args: >-
+            python=3.14
+
+      - name: Install package
+        shell: micromamba-shell {0}
+        run: pip install -e ".[dev]"
+
+      - name: Run code coverage
+        shell: micromamba-shell {0}
+        run: bash tests/metacoadd/run_tests.sh
+
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

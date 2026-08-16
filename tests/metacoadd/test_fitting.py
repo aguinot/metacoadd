@@ -13,6 +13,7 @@ from ngmix.moments import fwhm_to_T
 
 from galsim_sim import _get_obs
 from metacoadd import fitting
+from metacoadd.moments.galsim_admom import GAdmomFitter
 from metacoadd.fitters.fourier_fitting import FourierFitter
 from metacoadd.fitting import (
     BootstrapperGuess,
@@ -46,6 +47,7 @@ def test_parse_model():
         "wmom",
         "pgauss",
         "am",
+        "gam",
         "gauss",
         "exp",
         "dev",
@@ -110,6 +112,7 @@ def test_get_fitters_types():
         "wmom",
         "pgauss",
         "am",
+        "gam",
         "gauss",
         "exp",
         "dev",
@@ -117,8 +120,30 @@ def test_get_fitters_types():
         "fourier_exp",
         "fourier_dev",
     ]
-    fwhms = [1.2, 1.2, None, None, None, None, None, None, None]
-    symmetrizes = [False, True, True, True, True, True, True, True, True]
+    fwhms = [
+        1.2,
+        1.2,
+        None,
+        1.2,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ]
+    symmetrizes = [
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
 
     fitters = get_fitters(
         models=models,
@@ -138,7 +163,6 @@ def test_get_fitters_types():
         ngmix.gaussmom.GaussMom,
     )
     assert fitters["wmom"].fitter_name == "wmom"
-    assert fitters["wmom"].symmetrize is False
 
     assert isinstance(fitters["pgauss"], MBMomRunner)
     assert isinstance(
@@ -146,14 +170,12 @@ def test_get_fitters_types():
         ngmix.prepsfmom.PGaussMom,
     )
     assert fitters["pgauss"].fitter_name == "pgauss"
-    assert fitters["pgauss"].symmetrize is True
 
-    assert isinstance(fitters["am"], MBMomRunner)
-    assert isinstance(fitters["am"].fitter, RunnerGuess)
-    assert isinstance(
-        fitters["am"].fitter.fitter,
-        ngmix.admom.AdmomFitter,
-    )
+    assert isinstance(fitters["am"], RunnerGuess)
+    assert isinstance(fitters["am"].fitter, ngmix.admom.AdmomFitter)
+
+    assert isinstance(fitters["gam"], RunnerGuess)
+    assert isinstance(fitters["gam"].fitter, GAdmomFitter)
 
     for model in ["gauss", "exp", "dev"]:
         runner = fitters[model]
@@ -395,7 +417,7 @@ def test_gauss_psf_runner_same():
 
 def test_moment_runners_smoke():
     """Test weighted-moment and pre-PSF-moment runners."""
-    for model in ["wmom", "pgauss"]:
+    for model in ["wmom", "pgauss", "gam"]:
         obs = _get_obs(
             np.random.RandomState(50),
             noise=1.0e-4,

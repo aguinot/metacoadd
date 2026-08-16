@@ -176,10 +176,7 @@ def make_sim(
         np.sqrt(
             np.sum(
                 galsim.Convolve(
-                    [
-                        psf,
-                        galsim.Exponential(half_light_radius=0.5),
-                    ]
+                    [psf, galsim.Exponential(half_light_radius=0.5)]
                 )
                 .drawImage(scale=0.25)
                 .array
@@ -392,11 +389,12 @@ def run_sim(seed, mdet_seed, model, **kwargs):
     [
         ("wmom", 1e6, 7, 64),
         ("pgauss", 1e6, 7, 64),
+        ("gam", 1e6, 7, 64),
         # ("am", 1e6, 7, 64),
         ("gauss", 1e6, 7, 64),
         # This test takes about three hours in the original
         # metadetect GitHub Actions workflow.
-        # ("wmom", 1e6, None, 9500),
+        ("gam", 1e6, None, 9500),
     ],
 )
 def test_shear_meas_simple(model, snr, ngrid, ntrial):
