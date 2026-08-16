@@ -10,23 +10,36 @@ def _get_obs(
     noise=1.0e-6,
     psf_fwhm=0.9,
     n=None,
+    has_pixel=True,
 ):
     psf_noise = 1.0e-6
 
     scale = 0.263
-
     gal_fwhm = 0.7
 
     psf = galsim.Gaussian(fwhm=psf_fwhm)
     obj0 = galsim.Gaussian(fwhm=gal_fwhm)
-
     obj = galsim.Convolve(psf, obj0)
 
-    psf_im = psf.drawImage(scale=scale).array
+    draw_method = "auto" if has_pixel else "no_pixel"
+
+    psf_im = psf.drawImage(
+        scale=scale,
+        method=draw_method,
+    ).array
+
     if n is not None:
-        im = obj.drawImage(scale=scale, nx=n, ny=n).array
+        im = obj.drawImage(
+            scale=scale,
+            nx=n,
+            ny=n,
+            method=draw_method,
+        ).array
     else:
-        im = obj.drawImage(scale=scale).array
+        im = obj.drawImage(
+            scale=scale,
+            method=draw_method,
+        ).array
 
     psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
     im += rng.normal(scale=noise, size=im.shape)
@@ -34,8 +47,16 @@ def _get_obs(
     cen = (np.array(im.shape) - 1.0) / 2.0
     psf_cen = (np.array(psf_im.shape) - 1.0) / 2.0
 
-    j = ngmix.DiagonalJacobian(row=cen[0], col=cen[1], scale=scale)
-    pj = ngmix.DiagonalJacobian(row=psf_cen[0], col=psf_cen[1], scale=scale)
+    j = ngmix.DiagonalJacobian(
+        row=cen[0],
+        col=cen[1],
+        scale=scale,
+    )
+    pj = ngmix.DiagonalJacobian(
+        row=psf_cen[0],
+        col=psf_cen[1],
+        scale=scale,
+    )
 
     wt = im * 0 + 1.0 / noise**2
 
@@ -43,7 +64,6 @@ def _get_obs(
 
     if set_psf:
         psf_wt = psf_im * 0 + 1.0 / psf_noise**2
-
         psf_obs = ngmix.Observation(
             psf_im,
             weight=psf_wt,
